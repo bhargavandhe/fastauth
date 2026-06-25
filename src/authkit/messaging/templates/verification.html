@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <p>Hello {{ name or "there" }},</p>
+    <p>Please verify your email address by clicking the link below:</p>
+    <p><a href="{{ verify_url }}">{{ verify_url }}</a></p>
+    <p>This link expires in {{ expires_in_minutes or 15 }} minutes.</p>
+  </body>
+</html>

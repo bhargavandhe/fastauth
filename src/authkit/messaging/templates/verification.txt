@@ -1,0 +1,6 @@
+Hello {{ name or "there" }},
+
+Please verify your email address by visiting:
+{{ verify_url }}
+
+This link expires in {{ expires_in_minutes or 15 }} minutes.

@@ -1,0 +1,7 @@
+Hello {{ name or "there" }},
+
+Confirm your email change with this code: {{ otp }}
+
+Once you enter it, your account email will be updated to {{ new_email }}.
+
+This code expires in {{ expires_in_minutes }} minutes. If you didn't request an email change, ignore this message — your account is safe.

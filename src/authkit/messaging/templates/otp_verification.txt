@@ -1,0 +1,7 @@
+Hello {{ name or "there" }},
+
+Your email verification code is: {{ otp }}
+
+Enter it on the verification page to confirm this email address belongs to you.
+
+This code expires in {{ expires_in_minutes }} minutes.

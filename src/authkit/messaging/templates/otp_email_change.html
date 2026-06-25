@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <p>Hello {{ name or "there" }},</p>
+    <p>Confirm your email change with this code:</p>
+    <p style="font-size: 28px; font-weight: 600; letter-spacing: 4px;">{{ otp }}</p>
+    <p>Once you enter it, your account email will be updated to <strong>{{ new_email }}</strong>.</p>
+    <p>This code expires in {{ expires_in_minutes }} minutes. If you didn't request an email change, ignore this message — your account is safe.</p>
+  </body>
+</html>

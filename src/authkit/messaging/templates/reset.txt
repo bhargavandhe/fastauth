@@ -1,0 +1,6 @@
+Hello {{ name or "there" }},
+
+We received a password reset request. Reset your password by visiting:
+{{ reset_url }}
+
+This link expires in {{ expires_in_minutes or 30 }} minutes. If you did not request a reset, ignore this email.

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <p>Hello {{ name or "there" }},</p>
+    <p>Your sign-in code is:</p>
+    <p style="font-size: 28px; font-weight: 600; letter-spacing: 4px;">{{ otp }}</p>
+    <p>Enter it on the sign-in page to access your account.</p>
+    <p>This code expires in {{ expires_in_minutes }} minutes. If you didn't request it, you can safely ignore this email.</p>
+  </body>
+</html>

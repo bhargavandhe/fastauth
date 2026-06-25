@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  lint-typecheck:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev --extra jwt --extra cli --extra beanie --extra postgres
+      - run: uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres ruff check src tests examples
+      - run: uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres pyright
+
+  tests:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev --extra jwt --extra cli --extra beanie --extra postgres
+      - run: >
+          uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres pytest
+          tests/unit
+          tests/integration
+          tests/cli
+          tests/adapters/test_memory_adapter.py
+
+  docker-tests:
+    name: Docker-backed adapter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev --extra jwt --extra cli --extra beanie --extra postgres
+      - run: >
+          uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres pytest
+          tests/adapters/test_beanie_adapter.py
+          tests/adapters/test_postgres_adapter.py
+          examples/quickstart/tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra docs
+      - run: uv run --extra docs mkdocs build --strict

@@ -1,0 +1,56 @@
+site_name: authkit
+site_description: A modular, Pydantic-native, async-only authentication library for FastAPI.
+repo_url: https://github.com/your-org/authkit
+strict: true
+
+exclude_docs: |
+  superpowers/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+    - scheme: slate
+      primary: indigo
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+
+nav:
+  - Introduction: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - Concepts:
+      - Configuration: concepts/config.md
+      - Adapters: concepts/adapters.md
+      - Sessions: concepts/sessions.md
+      - Hooks: concepts/hooks.md
+      - Events: concepts/events.md
+      - Plugins: concepts/plugins.md
+      - CSRF: concepts/csrf.md
+      - Rate limiting: concepts/rate-limit.md
+  - Plugins:
+      - API keys: plugins/api-key.md
+      - JWT: plugins/jwt.md
+      - Email OTP: plugins/email-otp.md
+      - Audit logs: plugins/audit-logs.md
+      - OpenAPI / Scalar: plugins/openapi.md
+      - Test utils: plugins/test-utils.md
+  - Guides:
+      - Email verification: guides/email-verification.md
+      - Password reset: guides/password-reset.md
+      - Bearer auth: guides/bearer-auth.md
+      - KMS signing: guides/kms-signing.md
+      - Deploying: guides/deploying.md
+  - Reference: reference/index.md

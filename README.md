@@ -1,0 +1,278 @@
+# authkit
+
+A modular, Pydantic-native, async-only authentication library for FastAPI.
+
+```bash
+pip install authkit-fastapi[beanie,jwt]
+```
+
+```python
+from fastapi import FastAPI
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import SecretStr
+
+from authkit import AuthKit, AuthKitConfig
+from authkit.config import DatabaseConfig
+from authkit.storage.beanie import BeanieAdapter
+
+app_secret = "replace-me-with-a-secret-from-your-application-config"
+mongo_url = "mongodb://localhost:27017"
+database_name = "myapp"
+
+config = AuthKitConfig(
+    secret_key=SecretStr(app_secret),
+    database=DatabaseConfig(
+        mongo_url=mongo_url,
+        database_name=database_name,
+    ),
+)
+
+mongo = AsyncIOMotorClient(config.database.mongo_url, uuidRepresentation="standard")
+db = mongo[config.database.database_name]
+adapter = BeanieAdapter(db)
+auth = AuthKit(config, adapter=adapter)
+
+app = FastAPI(lifespan=adapter.lifespan(auth))
+auth.install(app)
+```
+
+That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
+`/auth/sign-out`, `/auth/get-session`, `/auth/verify-email`,
+`/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`,
+`/auth/change-email/{request,confirm}`, `/auth/sessions` (list / revoke /
+revoke-others), `/auth/refresh`, and `/auth/health` wired into your
+FastAPI application. Rate-limiting, account-lockout, and refresh tokens are
+part of the router. CSRF and security headers are ASGI middleware installed
+by `auth.install(app)`. If you use `auth.as_asgi()` instead, authkit returns a
+standalone app with the same routes and middleware already installed.
+
+## Why authkit
+
+Built deliberately for the **modern Python web stack** — FastAPI + Pydantic
+v2 + async-only + MongoDB or Postgres persistence:
+
+- **Pydantic v2 everywhere.** Every domain model, every request body, every
+  response is a `BaseModel`. No `dataclass`/`NamedTuple`/`TypedDict` smuggled
+  in. Four documented carve-outs for plain dicts (OpenAPI schema, JWK,
+  JWT payload, HTTP headers); everything else is typed.
+- **Async-only.** No sync wrappers, no thread-pool shims. Your event loop
+  doesn't get hijacked.
+- **Strict-typed.** `pyright --strict` passes with **0 errors, 0 warnings**.
+  `py.typed` marker ships with the wheel — your IDE and your CI get full
+  type information.
+- **Source-agnostic config.** `AuthKitConfig` is a plain `BaseModel`. The
+  framework **never reads process-level configuration**. You build config
+  from your application settings object, vault client, parameter store, or
+  test fixture and pass it in explicitly.
+- **Plugins as first-class extension points.** Six built-in plugins
+  (`ApiKeyPlugin`, `JwtPlugin`, `EmailOtpPlugin`, `AuditLogsPlugin`,
+  `OpenApiPlugin`, `TestUtilsPlugin`) — each contributes endpoints,
+  event handlers, lifecycle hooks, and rate-limit policies through a
+  tight `Plugin` ABC. Write your own for OAuth providers, webhooks,
+  custom MFA — whatever your app needs.
+- **Capability-based storage protocols.** `DatabaseAdapter` covers the core
+  auth flows. Optional surfaces (`ApiKeyStore`, `JwksKeyStore`,
+  `AuditLogStore`, `RateLimitStore`) are only required when you enable the
+  matching plugin or database-backed feature.
+- **Pure events.** A single typed `EventBus` carries 19 concrete
+  `AuthEvent` subclasses (`UserSignedUp`, `UserEmailVerified`,
+  `PasswordChanged`, `AccountLockedOut`, …). Subscribe and react —
+  send emails, ping Slack, write audit rows, whatever.
+
+## What's in the box
+
+### Auth flows
+- Sign-up / sign-in / sign-out by email or username
+- Email verification with anti-enumeration
+- Password reset with anti-enumeration and session-wide revoke
+- Authenticated change-password (keeps current session, revokes others)
+- Authenticated change-email with re-verification
+- Refresh tokens with **one-time-use rotation** and
+  **family-revocation on reuse** (OAuth 2.1-style theft detection)
+- Multi-session management: list, revoke one, revoke-all-except-current
+
+### Sessions
+- Database-backed sessions (revocable, IP/UA bound) **or** JWT sessions
+  (stateless, JWKS-signed). One config flag flips between them.
+- JWKS with auto-generated keys, AES-GCM at-rest encryption with master-key
+  rotation support, and an opt-in `set-auth-jwt` response header that
+  attaches a JWT to every authenticated response.
+- Local key signing **or** plug in your own `KmsSigner` (HSM, AWS KMS,
+  GCP KMS, …) via a tiny Protocol.
+
+### Security
+- **Argon2id** password hashing (configurable cost).
+- **Account lockout** — HTTP 423 + `Retry-After` after 5 failed sign-ins in 15 min.
+- **CSRF middleware** — Origin/Referer validation on state-changing methods,
+  bearer-only requests are exempt.
+- **Rate limiting** with /64 IPv6-subnet bucketing, per-(IP, path) windowing,
+  pluggable storage (memory, MongoDB, Postgres).
+- **Security headers** — HSTS, `X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy` on by default; opt-in `Permissions-Policy` and CSP.
+
+### Plugins (each optional)
+- **ApiKeyPlugin** — create/verify/list/update/delete API keys with optional
+  refilling quotas and per-key rate limits.
+- **JwtPlugin** — `/auth/token` to mint a JWT from a session, `/auth/jwks`
+  for the public key set.
+- **EmailOtpPlugin** — passwordless sign-in, email verification, password
+  reset, and (optional) email change via 6-digit OTPs delivered to email.
+  Hashed storage, per-OTP attempt cap, lockout-coupled.
+- **AuditLogsPlugin** — auto-captures every `AuthEvent` into a paginated
+  audit-log collection.
+- **OpenApiPlugin** — Scalar UI at `/auth/reference`, OpenAPI 3.1 schema
+  at `/auth/openapi.json`.
+- **TestUtilsPlugin** — factories, login helpers, OTP capture for tests.
+
+### Developer experience
+- **`CurrentUser` / `CurrentSession` FastAPI dependencies** with optional
+  variants, both `Depends(...)` and `Annotated[...]` calling styles
+  documented.
+- **`auth.install(app)`** — install routes, CSRF, and security headers on your
+  FastAPI app in one call. `AuthKit.as_asgi()` still returns a standalone app
+  when you want authkit mounted separately.
+- **Typer CLI** — `authkit init`, `authkit migrate`, `authkit generate-secret`.
+- **mkdocs-material docs** + quickstart example app with its own test suite.
+
+## Installation
+
+```bash
+# Core (in-memory adapter only — useful for tests and local dev)
+pip install authkit-fastapi
+
+# MongoDB-backed production
+pip install authkit-fastapi[beanie,jwt]
+
+# Postgres-backed production
+pip install authkit-fastapi[postgres,jwt]
+
+# All implemented optional extras
+pip install authkit-fastapi[beanie,postgres,jwt,cli,docs]
+```
+
+Extras: `beanie` (MongoDB), `postgres` (SQLAlchemy async + asyncpg), `jwt`
+(JOSE signing + crypto for at-rest JWK encryption), `cli` (Typer CLI),
+`docs` (mkdocs-material toolchain).
+
+Python 3.11+ required. FastAPI 0.115+, Pydantic 2.8+.
+
+## Protecting routes
+
+```python
+from fastapi import Depends
+from authkit.domain.models import User
+
+@app.get("/me")
+async def me(user: User = Depends(auth.get_current_user)) -> User:
+    return user
+```
+
+Or with the `Annotated` style (FastAPI's idiom):
+
+```python
+from typing import Annotated
+from fastapi import Depends
+from authkit.domain.models import User
+
+CurrentUser = Annotated[User, Depends(auth.get_current_user)]
+
+@app.get("/me")
+async def me(user: CurrentUser) -> User:
+    return user
+```
+
+Cookie auth and `Authorization: Bearer …` both work — authkit handles either
+transparently. Use `auth.get_optional_current_user` if anonymous requests
+are allowed.
+
+## Configuration
+
+`AuthKitConfig` is a plain `pydantic.BaseModel`. Every field has a sensible
+default; pass only what you want to override:
+
+```python
+from authkit import AuthKitConfig
+from authkit.config import (
+    AppConfig, CookieConfig, CsrfConfig,
+    LockoutConfig, RefreshTokenConfig, SecurityHeadersConfig,
+)
+
+config = AuthKitConfig(
+    secret_key=SecretStr("…"),
+    app=AppConfig(name="My App", base_url="https://myapp.com"),
+    cookie=CookieConfig(secure=True, same_site="strict"),
+    csrf=CsrfConfig(trusted_origins=["https://myapp.com"]),
+    lockout=LockoutConfig(max_failures=10, window_seconds=300),
+    refresh_token=RefreshTokenConfig(max_age_seconds=14 * 24 * 3600),
+    security_headers=SecurityHeadersConfig(
+        content_security_policy="default-src 'self'",
+    ),
+)
+```
+
+15 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
+`email_verification`, `password_reset`, `email_change`, `rate_limit`,
+`csrf`, `lockout`, `refresh_token`, `security_headers`, `database`, `advanced`.
+
+See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.
+
+## Documentation
+
+Full docs site (under construction): `mkdocs serve` from a checkout.
+
+- [Quickstart](docs/quickstart.md)
+- [Config](docs/concepts/config.md) · [Sessions](docs/concepts/sessions.md) ·
+  [Plugins](docs/concepts/plugins.md) · [Adapters](docs/concepts/adapters.md) ·
+  [CSRF](docs/concepts/csrf.md) · [Events](docs/concepts/events.md) ·
+  [Hooks](docs/concepts/hooks.md)
+- [Email verification guide](docs/guides/email-verification.md) ·
+  [Password reset guide](docs/guides/password-reset.md) ·
+  [KMS signing guide](docs/guides/kms-signing.md)
+
+## Project layout
+
+```
+authkit/
+├── config.py / exceptions.py          # top-level
+├── domain/        # pure data: enums, models, events
+├── security/      # auth primitives: passwords, tokens, sessions, jwt,
+│                  #                  refresh_tokens, lockout, rate_limit
+├── storage/       # Core/optional adapter protocols + InMemory/Beanie/Postgres backends
+├── messaging/     # email + Jinja2 templates
+├── flows/         # sign-up, sign-in, verification, refresh, …
+├── plugins/       # api_key, jwt, audit_logs, openapi, test_utils
+├── runtime/       # AuthKit, AuthContext, AuthApi, EventBus, hooks
+├── web/           # FastAPI integration + CSRF + security headers
+└── cli/           # Typer CLI
+```
+
+## Status
+
+**v0.1.0** — first release. Coverage spans unit tests, adapter-contract tests,
+integration flows, CLI behavior, and the quickstart example. `pyright --strict`
+is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed feature list.
+
+**Roadmap** (v0.2+):
+- OAuth providers (Google → GitHub → Apple → Microsoft)
+- 2FA / TOTP
+- Webhooks
+- HIBP password breach check
+- Audit-log enrichment (geo-IP, UA parsing)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project-wide rules
+(no leading-underscore names, async-only, Pydantic-everywhere, …).
+Quick development loop:
+
+```bash
+uv sync --all-extras
+uv run ruff check
+uv run pyright
+uv run pytest
+uv run mkdocs serve
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

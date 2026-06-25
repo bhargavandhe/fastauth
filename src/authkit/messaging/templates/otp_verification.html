@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <p>Hello {{ name or "there" }},</p>
+    <p>Your email verification code is:</p>
+    <p style="font-size: 28px; font-weight: 600; letter-spacing: 4px;">{{ otp }}</p>
+    <p>Enter it on the verification page to confirm this email address belongs to you.</p>
+    <p>This code expires in {{ expires_in_minutes }} minutes.</p>
+  </body>
+</html>

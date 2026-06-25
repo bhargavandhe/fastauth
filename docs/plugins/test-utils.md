@@ -1,0 +1,38 @@
+# Test utils
+
+`TestUtilsPlugin` contributes no HTTP endpoints. Instead it exposes a
+`TestHelpers` surface that test code retrieves from the plugin registry:
+
+```python
+from authkit.plugins.test_utils import TestUtilsConfig, TestUtilsPlugin
+
+auth = AuthKit(
+    config,
+    adapter=adapter,
+    plugins=[TestUtilsPlugin(TestUtilsConfig(capture_otp=True))],
+)
+
+helpers = auth.context.plugins.by_id["authkit-test-utils"].helpers
+```
+
+## Helper surface
+
+- `helpers.create_user(**overrides)` — build an unsaved `User` with sensible
+  defaults.
+- `helpers.save_user(user)` / `helpers.delete_user(user_id)` — go through the
+  bound `DatabaseAdapter`.
+- `helpers.login(user_id)` — create a session and return a `LoginResult`
+  containing the plain token, prebuilt headers, and serialised cookies ready
+  for `httpx.AsyncClient`.
+- `helpers.get_auth_headers(user_id)` — shortcut returning only the
+  `{"cookie": "..."}` dict.
+- `helpers.get_otp(identifier)` / `helpers.clear_otps()` — read or wipe the
+  most recent captured one-time password (requires `capture_otp=True`).
+
+## Example
+
+```python
+user = await helpers.save_user(helpers.create_user(email="alice@example.com"))
+session = await helpers.login(user.id)
+response = await client.get("/auth/get-session", headers=session.headers)
+```
