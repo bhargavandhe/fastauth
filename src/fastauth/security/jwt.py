@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 from collections.abc import Callable
 from collections.abc import Sequence as TypingSequence
 from datetime import UTC, datetime, timedelta
@@ -18,7 +19,7 @@ from joserfc.errors import JoseError
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from fastauth.domain.enums import JwtAlgorithm
-from fastauth.domain.models import JwksKey, Session, User, new_object_id_hex
+from fastauth.domain.models import JwksKey, Session, User
 from fastauth.exceptions import JwksDecryptionError
 from fastauth.security.sessions import SessionContext
 from fastauth.storage.base import JwksKeyStore, UserStore
@@ -148,7 +149,7 @@ class JwksRegistry:
         else:
             key_obj = jwk.RSAKey.generate_key(2048)
 
-        kid = new_object_id_hex()
+        kid = secrets.token_urlsafe(12)
         public_jwk = json.dumps(key_obj.as_dict(private=False))
         private_bytes = json.dumps(key_obj.as_dict(private=True)).encode("utf-8")
         if self.encrypt_private_keys:

@@ -2,7 +2,7 @@
 
 **Native MongoDB identity convention.** Every primary key (``_id``), every
 foreign-key field (``*_id``), and every Mongo-owned relation id used for
-rotation or key lookup is a real ``bson.ObjectId`` in BSON. The Pydantic domain
+rotation is a real ``bson.ObjectId`` in BSON. The Pydantic domain
 layer (:mod:`fastauth.domain.models`) keeps these as ``str`` for storage
 agnosticism and stable wire format — this adapter does the string⇄ObjectId
 conversion at its boundary. See CONTRIBUTING.md rule #5.
@@ -16,12 +16,12 @@ Mongo-owned ids stored as ObjectId in BSON:
 * ``Account.user_id``        → ``users._id``
 * ``ApiKey.user_id``         → ``users._id``
 * ``AuditLog.user_id``       → ``users._id`` (nullable)
-* ``JwksKey.kid``            → ``jwks_keys._id``
 
 Non-FK identifier-shaped fields stay as strings because they are not Mongo
 references: ``Account.account_id`` (provider-side identifier),
 ``Verification.identifier`` (email/username), the various ``*_hash`` columns
-(content-derived hashes), ``RateLimit.key`` (composite IP+path bucket).
+(content-derived hashes), ``JwksKey.kid`` (JOSE key id), ``RateLimit.key``
+(composite IP+path bucket).
 """
 
 from __future__ import annotations
@@ -71,9 +71,11 @@ from fastauth.storage.beanie.documents import (
     to_verification,
 )
 from fastauth.storage.beanie.helpers import (
+    apply_model_updates,
     normalise_datetimes,
     require_object_id,
     to_object_id_or_none,
+    to_pydantic_object_id_or_none,
     truncate_to_millis,
 )
 
@@ -154,7 +156,9 @@ class BeanieAdapter:
         if doc is None:
             raise NotFoundError(resource="user")
         user.updated_at = datetime.now(UTC)
-        await doc.set(user.model_dump(exclude={"id"}))
+        normalise_datetimes(user)
+        apply_model_updates(doc, user)
+        await doc.replace()
         return user
 
     async def delete_user(self, user_id: str) -> None:
@@ -207,7 +211,9 @@ class BeanieAdapter:
         if doc is None:
             raise NotFoundError(resource="session")
         session.updated_at = datetime.now(UTC)
-        await doc.set(session.model_dump(exclude={"id"}))
+        normalise_datetimes(session)
+        apply_model_updates(doc, session)
+        await doc.replace()
         return session
 
     async def delete_session(self, session_id: str) -> None:
@@ -239,11 +245,23 @@ class BeanieAdapter:
     async def create_refresh_token(self, token: RefreshToken) -> RefreshToken:
         normalise_datetimes(token)
         data = token.model_dump(exclude={"id"})
-        data["user_id"] = to_object_id_or_none(token.user_id)
-        data["family_id"] = require_object_id(token.family_id)
+        doc_id = to_pydantic_object_id_or_none(token.id) or PydanticObjectId()
+        family_id = to_object_id_or_none(token.family_id)
+        if family_id is None:
+            if token.family_id != token.id:
+                raise ValueError("refresh token family_id must reference a token id")
+            family_id = doc_id
+        data["user_id"] = require_object_id(token.user_id)
+        data["family_id"] = family_id
+        if token.replaced_by is not None:
+            data["replaced_by"] = require_object_id(token.replaced_by)
         doc = RefreshTokenDoc(**data)
+        doc.id = doc_id
         await doc.insert()
         token.id = str(doc.id)
+        token.family_id = str(doc.family_id)
+        if doc.replaced_by is not None:
+            token.replaced_by = str(doc.replaced_by)
         return token
 
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
@@ -259,9 +277,8 @@ class BeanieAdapter:
             raise NotFoundError(resource="refresh_token")
         token.updated_at = datetime.now(UTC)
         normalise_datetimes(token)
-        updates = token.model_dump(exclude={"id"})
-        updates["user_id"] = to_object_id_or_none(token.user_id)
-        await doc.set(updates)
+        apply_model_updates(doc, token)
+        await doc.replace()
         return token
 
     async def rotate_refresh_token(
@@ -276,7 +293,7 @@ class BeanieAdapter:
             return None
         normalise_datetimes(new_token)
         data = new_token.model_dump(exclude={"id"})
-        data["user_id"] = to_object_id_or_none(new_token.user_id)
+        data["user_id"] = require_object_id(new_token.user_id)
         data["family_id"] = require_object_id(new_token.family_id)
         new_oid = PydanticObjectId()
         new_token.id = str(new_oid)
@@ -356,7 +373,9 @@ class BeanieAdapter:
         if doc is None:
             raise NotFoundError(resource="account")
         account.updated_at = datetime.now(UTC)
-        await doc.set(account.model_dump(exclude={"id"}))
+        normalise_datetimes(account)
+        apply_model_updates(doc, account)
+        await doc.replace()
         return account
 
     async def delete_account(self, account_id: str) -> None:
@@ -415,7 +434,8 @@ class BeanieAdapter:
             raise NotFoundError(resource="verification")
         verification.updated_at = datetime.now(UTC)
         normalise_datetimes(verification)
-        await doc.set(verification.model_dump(exclude={"id"}))
+        apply_model_updates(doc, verification)
+        await doc.replace()
         return verification
 
     async def delete_verification(self, verification_id: str) -> None:
@@ -479,7 +499,9 @@ class BeanieAdapter:
         if doc is None:
             raise NotFoundError(resource="api_key")
         api_key.updated_at = datetime.now(UTC)
-        await doc.set(api_key.model_dump(exclude={"id"}))
+        normalise_datetimes(api_key)
+        apply_model_updates(doc, api_key)
+        await doc.replace()
         return api_key
 
     async def delete_api_key(self, api_key_id: str) -> None:
@@ -498,7 +520,6 @@ class BeanieAdapter:
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
         normalise_datetimes(key)
         data = key.model_dump(exclude={"id"})
-        data["kid"] = require_object_id(key.kid)
         doc = JwksKeyDoc(**data)
         await doc.insert()
         if doc.id is not None:
@@ -516,7 +537,9 @@ class BeanieAdapter:
         doc = await JwksKeyDoc.find_one(JwksKeyDoc.id == oid)
         if doc is None:
             raise NotFoundError(resource="jwks_key")
-        await doc.set(key.model_dump(exclude={"id"}))
+        normalise_datetimes(key)
+        apply_model_updates(doc, key)
+        await doc.replace()
         return key
 
     async def delete_jwks_key(self, key_id: str) -> None:

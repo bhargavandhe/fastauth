@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from fastauth.config import RefreshTokenConfig
-from fastauth.domain.models import RefreshToken, new_object_id_hex
+from fastauth.domain.models import RefreshToken, new_id
 from fastauth.exceptions import RefreshTokenReuseError, TokenExpiredError, TokenInvalidError
 from fastauth.security.tokens import TokenPair, TokenService
 from fastauth.storage.base import DatabaseAdapter
@@ -83,7 +83,7 @@ class RefreshTokenService:
         expires_at: datetime | None = None,
     ) -> tuple[RefreshToken, str]:
         """Insert a new ``RefreshToken`` row. ``family_id=None`` starts a new chain."""
-        token_id = new_object_id_hex()
+        token_id = new_id()
         chain_root = family_id or token_id
         exp = expires_at or datetime.now(UTC) + timedelta(seconds=self.config.max_age_seconds)
         record = RefreshToken(
@@ -137,7 +137,7 @@ class RefreshTokenService:
         # caller can win this compare-and-set; a loser means the token was
         # reused and the whole family must be burned.
         new_pair = self.token_service.generate_pair()
-        token_id = new_object_id_hex()
+        token_id = new_id()
         new_record = RefreshToken(
             id=token_id,
             user_id=existing.user_id,

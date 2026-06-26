@@ -4,6 +4,8 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-27
+
 ### Added
 
 - **`FastAuthConfig.wire_format: WireFormat`** (default
@@ -33,17 +35,26 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
   `change_email_verify_current=True` for a double-confirm flow that
   requires an OTP from the current email before issuing one to the new
   email. See [docs/plugins/email-otp.md](docs/plugins/email-otp.md).
+- Cross-adapter refresh-token rotation contract coverage now runs through the
+  shared adapter contract suite. Every first-party adapter must preserve the
+  root family id, set `consumed_at`, set `replaced_by`, persist the successor,
+  and reject a second rotation of the same token.
 
 ### Changed
 
-- `FastAuth(config)` now uses `InMemoryAdapter` automatically when
-  `DatabaseConfig.backend == "memory"` (the default). Persistent backends still
-  require an explicit adapter so production wiring remains clear.
+- **Breaking:** `FastAuth(config)` no longer silently creates an
+  `InMemoryAdapter`. Pass storage explicitly, for example
+  `FastAuth(config, adapter=InMemoryAdapter())`, `BeanieAdapter`, or
+  `PostgresAdapter`.
 - `fastauth init` now accepts `--backend memory|mongo|postgres`; the default
   scaffold is dependency-light and no longer Mongo-specific.
 - `Plugin` now stores bound `AuthContext` by default and exposes
   `require_context()`, `require_capability(...)`, and
   `require_session(request)` helpers for common plugin-author boilerplate.
+- `Plugin` now exposes `extend_session_response(user, response)` so plugins can
+  add response behavior without the core FastAPI router importing concrete
+  plugin modules. `JwtPlugin` uses this hook for the optional `set-auth-jwt`
+  header.
 - Postgres schema setup now runs through an ordered migration registry under a
   transaction-level advisory lock. The current migration set records version
   `1` for the initial fastauth schema.
@@ -76,6 +87,19 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
   tracking. The pre-existing `OtpGenerated` event still carries
   plaintext for `TestUtilsPlugin.get_otp(...)`; `AuditLogsPlugin`
   filters it out.
+
+### Fixed
+
+- Beanie update methods no longer clobber Mongo `ObjectId` fields into strings
+  on update. Updates now assign through the Beanie document and call
+  `replace()`.
+- Beanie storage keeps Mongo-owned PK/FK fields as BSON `ObjectId` while
+  keeping protocol identifiers such as `JwksKey.kid` as strings.
+- Refresh-token and JWKS key ids are storage-neutral again in the domain and
+  security layers; Mongo-specific id conversion lives in the Beanie adapter.
+- Camel wire-format rendering no longer rewrites application/spec-defined
+  nested JSON keys such as `User.metadata`, API-key `permissions`, audit-log
+  `event_data`, and JWKS `keys`.
 
 ## [0.1.0] — 2026-06-24
 

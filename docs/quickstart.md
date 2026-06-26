@@ -12,10 +12,11 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthConfig
+from fastauth.storage.memory import InMemoryAdapter
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 config = FastAuthConfig(secret_key=SecretStr(app_secret))
-auth = FastAuth(config)
+auth = FastAuth(config, adapter=InMemoryAdapter())
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
 auth.install(app)
@@ -26,9 +27,8 @@ middleware on the host FastAPI application. If you use `auth.as_asgi()` as a
 standalone app instead, fastauth returns an app with the same routes and
 middleware already installed.
 
-The default `DatabaseConfig.backend` is `memory`, so this first app is suitable
-for tests and local demos. Pick Mongo or Postgres explicitly for persistent
-deployments.
+`InMemoryAdapter` is suitable for tests and local demos. Pick Mongo or Postgres
+explicitly for persistent deployments and pass the matching adapter yourself.
 
 For Postgres, install `fastauth-py[postgres,jwt]` and pass an async
 SQLAlchemy URL or engine explicitly:

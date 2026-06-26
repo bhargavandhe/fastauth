@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -144,18 +144,26 @@ def http_status_for(exc: FastAuthError) -> int:
     return 500
 
 
+RAW_JSON_FIELD_NAMES = frozenset({"metadata", "permissions", "event_data", "eventData", "keys"})
+
+
 def camelize_keys(value: object) -> object:
     """Recursively convert dict keys from ``snake_case`` to ``camelCase``.
 
-    Lists are walked element-wise; primitives pass through unchanged. Dict
-    *values* are NOT transformed except recursively — application data such
-    as ``User.metadata`` (an opaque ``dict[str, Any]``) keeps its keys
-    untouched if it's stored as a value rather than re-emitted via a
-    Pydantic model. Each model in the response tree was already
-    ``model_dump``-ed by FastAPI, so the input here is a plain dict tree.
+    Lists are walked element-wise; primitives pass through unchanged. Known
+    raw JSON containers keep their application/spec-defined inner keys.
+    Each model in the response tree was already ``model_dump``-ed by FastAPI,
+    so the input here is a plain dict tree.
     """
     if isinstance(value, dict):
-        return {to_camel(key): camelize_keys(inner) for key, inner in value.items()}  # type: ignore[arg-type]
+        dict_value = cast("dict[object, object]", value)
+        converted: dict[str, object] = {}
+        for key, inner in dict_value.items():
+            key_text = str(key)
+            converted[to_camel(key_text)] = (
+                inner if key_text in RAW_JSON_FIELD_NAMES else camelize_keys(inner)
+            )
+        return converted
     if isinstance(value, list):
         return [camelize_keys(item) for item in value]  # type: ignore[arg-type]
     return value
@@ -353,16 +361,8 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         if session_response is None:
             return Response(status_code=204)
         response = response_class(content=session_response.model_dump(mode="json"))
-        # Optional JWT header injection. Done with a local import to keep
-        # ``integrations.fastapi`` free of a top-level dependency on a specific
-        # plugin module — the plugin layer depends on the integration, not the
-        # other way around.
-        from fastauth.plugins.jwt import JwtPlugin
-
-        jwt_plugin = context.plugins.by_id.get("fastauth-jwt")
-        if isinstance(jwt_plugin, JwtPlugin) and not jwt_plugin.config.disable_setting_jwt_header:
-            jwt_token = await jwt_plugin.issue_token_for(session_response.user)
-            response.headers["set-auth-jwt"] = jwt_token
+        for plugin in context.plugins.plugins:
+            await plugin.extend_session_response(session_response.user, response)
         return response
 
     @router.post(

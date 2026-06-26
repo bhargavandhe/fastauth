@@ -18,6 +18,7 @@ from fastauth.domain.models import (
     Session,
     User,
     Verification,
+    new_id,
 )
 from fastauth.storage.base import (
     ApiKeyStore,
@@ -138,11 +139,13 @@ class AdapterContract:
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
             )
         )
+        refresh_root_id = new_id()
         await adapter.create_refresh_token(
             RefreshToken(
+                id=refresh_root_id,
                 user_id=user.id,
                 token_hash="delete-refresh",
-                family_id="delete-family",
+                family_id=refresh_root_id,
                 expires_at=datetime.now(UTC) + timedelta(days=1),
             )
         )
@@ -306,3 +309,53 @@ class AdapterContract:
         rl = await adapter.get_rate_limit("k")
         assert rl is not None
         assert rl.count == 2
+
+    async def test_refresh_token_rotation_contract(self, adapter: ContractAdapter) -> None:
+        user = await adapter.create_user(User(email="refresh-contract@example.com"))
+        root_id = new_id()
+        root = await adapter.create_refresh_token(
+            RefreshToken(
+                id=root_id,
+                user_id=user.id,
+                token_hash="refresh-contract-root",
+                family_id=root_id,
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        assert root.family_id == root.id
+
+        consumed_at = datetime.now(UTC)
+        successor = RefreshToken(
+            user_id=user.id,
+            token_hash="refresh-contract-successor",
+            family_id=root.family_id,
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+        )
+        rotated = await adapter.rotate_refresh_token(
+            current_token_id=root.id,
+            new_token=successor,
+            consumed_at=consumed_at,
+        )
+        assert rotated is not None
+        assert rotated.user_id == user.id
+        assert rotated.family_id == root.family_id
+
+        consumed_root = await adapter.get_refresh_token_by_hash("refresh-contract-root")
+        assert consumed_root is not None
+        assert consumed_root.consumed_at is not None
+        assert consumed_root.replaced_by == rotated.id
+
+        stored_successor = await adapter.get_refresh_token_by_hash("refresh-contract-successor")
+        assert stored_successor == rotated
+
+        second_rotate = await adapter.rotate_refresh_token(
+            current_token_id=root.id,
+            new_token=RefreshToken(
+                user_id=user.id,
+                token_hash="refresh-contract-loser",
+                family_id=root.family_id,
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            ),
+            consumed_at=datetime.now(UTC),
+        )
+        assert second_rotate is None

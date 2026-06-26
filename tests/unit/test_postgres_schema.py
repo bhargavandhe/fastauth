@@ -15,7 +15,7 @@ from fastauth.storage.postgres import (
 )
 
 
-def test_postgres_adapter_uses_configurable_table_prefix() -> None:
+def test_postgres_schema_uses_configurable_table_prefix() -> None:
     adapter = PostgresAdapter.from_url(
         "postgresql+asyncpg://fastauth:fastauth@localhost/fastauth",
         table_prefix="custom_",

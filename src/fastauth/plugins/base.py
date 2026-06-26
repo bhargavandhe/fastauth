@@ -11,8 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = ["EndpointSpec", "HttpMethod", "Plugin", "PluginRegistry", "RateLimitRule"]
 
 if TYPE_CHECKING:
-    from fastapi import Request
+    from fastapi import Request, Response
 
+    from fastauth.domain.models import User
     from fastauth.runtime.context import AuthContext
     from fastauth.security.sessions import SessionContext
 
@@ -176,6 +177,9 @@ class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses
 
     def rate_limit_rules(self) -> Sequence[RateLimitRule]:
         return []
+
+    async def extend_session_response(self, user: User, response: Response) -> None:
+        return None
 
     async def lifespan_startup(self) -> None:
         return None

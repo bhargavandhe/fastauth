@@ -10,8 +10,16 @@ from fastauth.exceptions import ConfigError
 from fastauth.storage.memory import InMemoryAdapter
 
 
-def test_fastauth_uses_in_memory_adapter_by_default() -> None:
-    auth = FastAuth(FastAuthConfig(secret_key=SecretStr("a" * 64)))
+def test_fastauth_requires_explicit_adapter() -> None:
+    with pytest.raises(ConfigError, match="requires an explicit adapter"):
+        FastAuth(FastAuthConfig(secret_key=SecretStr("a" * 64)))
+
+
+def test_fastauth_accepts_explicit_in_memory_adapter() -> None:
+    auth = FastAuth(
+        FastAuthConfig(secret_key=SecretStr("a" * 64)),
+        adapter=InMemoryAdapter(),
+    )
 
     assert isinstance(auth.context.adapter, InMemoryAdapter)
 

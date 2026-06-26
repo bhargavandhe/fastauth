@@ -30,6 +30,8 @@ app = FastAPI(lifespan=adapter.lifespan(auth))
 The Mongo adapter stores primary keys and Mongo-owned relation ids as
 `ObjectId` values in BSON. Domain models still expose them as strings at the
 boundary; the adapter converts them to and from `ObjectId` internally.
+Protocol identifiers such as JWKS `kid` remain strings because they are not
+Mongo references.
 
 For Postgres, install `fastauth-py[postgres]` and pass a SQLAlchemy async
 engine or URL:

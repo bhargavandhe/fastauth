@@ -10,15 +10,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from beanie import Document, PydanticObjectId
 from bson import ObjectId
 from bson.errors import InvalidId
 from pydantic import BaseModel
 
 __all__ = [
-    "new_object_id",
+    "apply_model_updates",
     "normalise_datetimes",
     "require_object_id",
     "to_object_id_or_none",
+    "to_pydantic_object_id_or_none",
     "truncate_to_millis",
 ]
 
@@ -26,11 +28,6 @@ __all__ = [
 def truncate_to_millis(value: datetime) -> datetime:
     """Round a datetime to the millisecond, matching BSON's storage resolution."""
     return value.replace(microsecond=(value.microsecond // 1000) * 1000)
-
-
-def new_object_id() -> ObjectId:
-    """Return a fresh BSON ObjectId."""
-    return ObjectId()
 
 
 def normalise_datetimes(model: BaseModel) -> None:
@@ -47,6 +44,19 @@ def normalise_datetimes(model: BaseModel) -> None:
             setattr(model, field_name, truncate_to_millis(value))
 
 
+def apply_model_updates(doc: Document, model: BaseModel) -> None:
+    """Copy validated values from a domain model into a Beanie document.
+
+    Field assignment on the Document re-runs Pydantic validation, so Mongo-owned
+    ids declared as ``PydanticObjectId`` stay BSON ObjectIds instead of being
+    written back as plain strings.
+    """
+    data = model.model_dump(exclude={"id"})
+    for field_name, value in data.items():
+        if field_name in type(doc).model_fields:
+            setattr(doc, field_name, value)
+
+
 def to_object_id_or_none(value: str | None) -> ObjectId | None:
     """Return ``ObjectId(value)`` if the string is a valid 24-char hex, else ``None``.
 
@@ -61,6 +71,12 @@ def to_object_id_or_none(value: str | None) -> ObjectId | None:
         return ObjectId(value)
     except (InvalidId, TypeError):
         return None
+
+
+def to_pydantic_object_id_or_none(value: str | None) -> PydanticObjectId | None:
+    """Return ``PydanticObjectId(value)`` if valid, else ``None``."""
+    oid = to_object_id_or_none(value)
+    return PydanticObjectId(str(oid)) if oid is not None else None
 
 
 def require_object_id(value: str | None) -> ObjectId:

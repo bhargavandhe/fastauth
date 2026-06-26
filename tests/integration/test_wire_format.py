@@ -155,6 +155,39 @@ async def test_camel_wire_format_accepts_camel_case_input(
     assert body["token"] is not None
 
 
+async def test_camel_wire_format_preserves_user_metadata_keys(
+    camel_client: httpx.AsyncClient,
+) -> None:
+    response = await camel_client.post(
+        "/auth/sign-up/email",
+        json={
+            "email": "alice@example.com",
+            "password": "supersecret123",
+            "includeToken": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    response = await camel_client.patch(
+        "/auth/user",
+        json={
+            "metadata": {
+                "preferred_locale": "fr-FR",
+                "avatar_url": "https://example.com/avatar.png",
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["metadata"] == {
+        "preferred_locale": "fr-FR",
+        "avatar_url": "https://example.com/avatar.png",
+    }
+    assert "preferredLocale" not in body["metadata"]
+    assert "avatarUrl" not in body["metadata"]
+
+
 async def test_snake_wire_format_also_accepts_camel_case_input(
     snake_client: httpx.AsyncClient,
 ) -> None:

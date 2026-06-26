@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
 
 from fastauth.config import FastAuthConfig
-from fastauth.domain.enums import DatabaseBackendKind, RateLimitStorageKind, SessionStrategyKind
+from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
@@ -28,7 +28,6 @@ from fastauth.security.refresh_tokens import RefreshTokenService
 from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
 from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import DatabaseAdapter, JwksKeyStore, RateLimitStore
-from fastauth.storage.memory import InMemoryAdapter
 from fastauth.web.csrf import CsrfMiddleware
 from fastauth.web.fastapi import build_router, extract_session_token
 from fastauth.web.security_headers import SecurityHeadersMiddleware
@@ -54,14 +53,7 @@ class FastAuth:
         token_service: TokenService | None = None,
     ) -> None:
         if adapter is None:
-            if config.database.backend is not DatabaseBackendKind.MEMORY:
-                raise ConfigError(
-                    message=(
-                        f"DatabaseConfig.backend == {config.database.backend.value!r} "
-                        "requires an explicit adapter"
-                    ),
-                )
-            adapter = InMemoryAdapter()
+            raise ConfigError(message="FastAuth requires an explicit adapter")
 
         password_hasher = password_hasher or Argon2idHasher(config.password)
         token_service = token_service or TokenService()

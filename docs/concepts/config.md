@@ -83,9 +83,9 @@ configuration layer and pass the resulting strings into `FastAuthConfig`.
 Pass any subset of sections to override the defaults; omitted sections get
 the `BaseModel` `default_factory` values.
 
-`DatabaseConfig.backend` defaults to `memory`, which has no connection
-settings. Choose `mongo` or `postgres` explicitly when your application uses a
-persistent adapter.
+`DatabaseConfig.backend` defaults to `memory`, but `FastAuth` still requires an
+explicit adapter instance. Pass `InMemoryAdapter()` for tests/local demos, or
+choose `mongo` / `postgres` and pass the matching persistent adapter.
 
 ## Wire format
 
@@ -126,6 +126,9 @@ config = FastAuthConfig(
   even though they don't carry an alias generator on the model class.
   Persistence via Beanie writes snake_case to MongoDB regardless,
   because the database layer never goes through `CamelJSONResponse`.
+- Free-form JSON containers keep their application-defined keys. For example,
+  `User.metadata`, API-key `permissions`, audit-log `event_data`, and JWKS
+  key parameters are not recursively renamed in camel mode.
 - Request-body parsing uses Pydantic's `populate_by_name=True` +
   `alias_generator=to_camel` on the `WireModel` base. This is what
   lets either casing be accepted on input.

@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
-from fastapi import Request
+from fastapi import Request, Response
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from fastauth.domain.enums import JwtAlgorithm
@@ -192,6 +192,11 @@ class JwtPlugin(Plugin):
             header={"alg": self.config.alg.value, "typ": "JWT"},
             payload=payload,
         )
+
+    async def extend_session_response(self, user: User, response: Response) -> None:
+        if self.config.disable_setting_jwt_header:
+            return
+        response.headers["set-auth-jwt"] = await self.issue_token_for(user)
 
     async def token_handler(self, request: Request) -> TokenResponse:
         """``POST /auth/token`` — issue a JWT for the user attached to the current session."""

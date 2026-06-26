@@ -11,11 +11,12 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthConfig
+from fastauth.storage.memory import InMemoryAdapter
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 
 config = FastAuthConfig(secret_key=SecretStr(app_secret))
-auth = FastAuth(config)
+auth = FastAuth(config, adapter=InMemoryAdapter())
 
 app = FastAPI(lifespan=auth.lifespan)
 auth.install(app)
@@ -89,6 +90,9 @@ v2 + async-only + MongoDB or Postgres persistence:
   attaches a JWT to every authenticated response.
 - Local key signing **or** plug in your own `KmsSigner` (HSM, AWS KMS,
   GCP KMS, …) via a tiny Protocol.
+- JWT/JWKS crypto has not been independently audited. For high-stakes
+  production deployments, use an external KMS/HSM signer and run your own
+  security review before relying on local private-key storage.
 
 ### Security
 - **Argon2id** password hashing (configurable cost).
@@ -118,8 +122,8 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **`CurrentUser` / `CurrentSession` FastAPI dependencies** with optional
   variants, both `Depends(...)` and `Annotated[...]` calling styles
   documented.
-- **`FastAuth(config)`** — uses the in-memory adapter by default when
-  `DatabaseConfig.backend == "memory"` for compact tests and first-run demos.
+- **Explicit storage wiring** — pass `InMemoryAdapter()`, `BeanieAdapter`, or
+  `PostgresAdapter` yourself. Fastauth never silently chooses persistence.
 - **`auth.install(app)`** — install routes, CSRF, and security headers on your
   FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
   when you want fastauth mounted separately.

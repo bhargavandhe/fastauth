@@ -5,6 +5,10 @@ can keep private keys inside a hardware-backed KMS rather than the
 application database. The factory receives the plugin's `JwksRegistry` and
 must return any object satisfying the `KmsSigner` Protocol:
 
+Fastauth's local JWT/JWKS encryption and signing path has not been
+independently audited. For high-stakes production deployments, prefer a
+KMS/HSM-backed signer and run an application-specific security review.
+
 ```python
 from typing import Any
 from fastauth.security.jwt import KmsSigner

@@ -156,7 +156,6 @@ class ApiKeyDoc(ApiKey, Document):  # pyright: ignore[reportIncompatibleVariable
 
 class JwksKeyDoc(JwksKey, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
     id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
-    kid: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
 
     class Settings:
         name = "jwks_keys"
@@ -263,7 +262,6 @@ def to_jwks_key(doc: JwksKeyDoc) -> JwksKey:
     data = doc.model_dump()
     if doc.id is not None:
         data["id"] = str(doc.id)
-    data["kid"] = str(doc.kid)
     return JwksKey.model_validate(data)
 
 
