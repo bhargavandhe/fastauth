@@ -27,7 +27,7 @@ adapter = BeanieAdapter(mongo_database)
 app = FastAPI(lifespan=adapter.lifespan(auth))
 ```
 
-For Postgres, install `fastauth-fastapi[postgres]` and pass a SQLAlchemy async
+For Postgres, install `fastauth-py[postgres]` and pass a SQLAlchemy async
 engine or URL:
 
 ```python

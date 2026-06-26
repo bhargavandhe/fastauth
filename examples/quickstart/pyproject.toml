@@ -4,10 +4,10 @@ version = "0.0.0"
 description = "Example FastAPI app exercising every fastauth v1 feature."
 requires-python = ">=3.11"
 dependencies = [
-  "fastauth[beanie,jwt,cli] @ file://../../",
+  "fastauth-py[beanie,jwt,cli] @ file://../../",
   "fastapi",
   "uvicorn",
 ]
 
 [tool.uv.sources]
-fastauth = { path = "../.." }
+fastauth-py = { path = "../.." }

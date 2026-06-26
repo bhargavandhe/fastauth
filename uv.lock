@@ -129,84 +129,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastauth"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "argon2-cffi" },
-    { name = "fastapi" },
-    { name = "itsdangerous" },
-    { name = "jinja2" },
-    { name = "pydantic", extra = ["email"] },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-]
-
-[package.optional-dependencies]
-beanie = [
-    { name = "beanie" },
-    { name = "motor" },
-]
-cli = [
-    { name = "rich" },
-    { name = "typer" },
-]
-dev = [
-    { name = "httpx" },
-    { name = "pre-commit" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "testcontainers", extra = ["mongodb"] },
-    { name = "uvicorn", extra = ["standard"] },
-]
-docs = [
-    { name = "mkdocs-material" },
-    { name = "mkdocstrings", extra = ["python"] },
-]
-jwt = [
-    { name = "cryptography" },
-    { name = "joserfc" },
-]
-postgres = [
-    { name = "asyncpg" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "argon2-cffi", specifier = ">=23.1" },
-    { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29" },
-    { name = "beanie", marker = "extra == 'beanie'", specifier = ">=1.27,<2" },
-    { name = "cryptography", marker = "extra == 'jwt'", specifier = ">=43.0" },
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "itsdangerous", specifier = ">=2.2" },
-    { name = "jinja2", specifier = ">=3.1" },
-    { name = "joserfc", marker = "extra == 'jwt'", specifier = ">=1.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.26" },
-    { name = "motor", marker = "extra == 'beanie'", specifier = ">=3.6" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
-    { name = "pydantic", extras = ["email"], specifier = ">=2.8" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.380" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "rich", marker = "extra == 'cli'", specifier = ">=13.7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'postgres'", specifier = ">=2.0,<3" },
-    { name = "starlette", specifier = ">=0.40" },
-    { name = "testcontainers", extras = ["mongodb", "postgres"], marker = "extra == 'dev'", specifier = ">=4.8" },
-    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
-    { name = "typing-extensions", specifier = ">=4.12" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dev'", specifier = ">=0.30" },
-]
-provides-extras = ["beanie", "postgres", "jwt", "cli", "dev", "docs"]
-
-[[package]]
 name = "babel"
 version = "2.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -647,6 +569,84 @@ sdist = { url = "https://files.pythonhosted.org/packages/5b/58/ff455d9fe47c60aba
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6c/ff/8496d9847a5fedae775eb49460722d3efaa80487854273e9647ae876218c/fastapi-0.138.0-py3-none-any.whl", hash = "sha256:b6f54fd1bd72c80b0f899f172c61a600f6f7af9b43d4d772a018f35624048cb0", size = 126779, upload-time = "2026-06-20T01:18:03.483Z" },
 ]
+
+[[package]]
+name = "fastauth-py"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "argon2-cffi" },
+    { name = "fastapi" },
+    { name = "itsdangerous" },
+    { name = "jinja2" },
+    { name = "pydantic", extra = ["email"] },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+]
+
+[package.optional-dependencies]
+beanie = [
+    { name = "beanie" },
+    { name = "motor" },
+]
+cli = [
+    { name = "rich" },
+    { name = "typer" },
+]
+dev = [
+    { name = "httpx" },
+    { name = "pre-commit" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "testcontainers", extra = ["mongodb"] },
+    { name = "uvicorn", extra = ["standard"] },
+]
+docs = [
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+jwt = [
+    { name = "cryptography" },
+    { name = "joserfc" },
+]
+postgres = [
+    { name = "asyncpg" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "argon2-cffi", specifier = ">=23.1" },
+    { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29" },
+    { name = "beanie", marker = "extra == 'beanie'", specifier = ">=1.27,<2" },
+    { name = "cryptography", marker = "extra == 'jwt'", specifier = ">=43.0" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "itsdangerous", specifier = ">=2.2" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "joserfc", marker = "extra == 'jwt'", specifier = ">=1.0" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
+    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.26" },
+    { name = "motor", marker = "extra == 'beanie'", specifier = ">=3.6" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
+    { name = "pydantic", extras = ["email"], specifier = ">=2.8" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.380" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=13.7" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'postgres'", specifier = ">=2.0,<3" },
+    { name = "starlette", specifier = ">=0.40" },
+    { name = "testcontainers", extras = ["mongodb", "postgres"], marker = "extra == 'dev'", specifier = ">=4.8" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
+    { name = "typing-extensions", specifier = ">=4.12" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dev'", specifier = ">=0.30" },
+]
+provides-extras = ["beanie", "postgres", "jwt", "cli", "dev", "docs"]
 
 [[package]]
 name = "filelock"

@@ -2,7 +2,7 @@
   "release-type": "python",
   "packages": {
     ".": {
-      "package-name": "fastauth",
+      "package-name": "fastauth-py",
       "release-type": "python",
       "bump-minor-pre-major": true
     }

@@ -30,7 +30,7 @@ The default `DatabaseConfig.backend` is `memory`, so this first app is suitable
 for tests and local demos. Pick Mongo or Postgres explicitly for persistent
 deployments.
 
-For Postgres, install `fastauth-fastapi[postgres,jwt]` and pass an async
+For Postgres, install `fastauth-py[postgres,jwt]` and pass an async
 SQLAlchemy URL or engine explicitly:
 
 ```python

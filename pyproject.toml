@@ -1,5 +1,5 @@
 [project]
-name = "fastauth"
+name = "fastauth-py"
 version = "0.1.0"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"

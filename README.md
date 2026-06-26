@@ -3,7 +3,7 @@
 A modular, Pydantic-native, async-only authentication library for FastAPI.
 
 ```bash
-pip install fastauth
+pip install fastauth-py
 ```
 
 ```python
@@ -131,16 +131,16 @@ v2 + async-only + MongoDB or Postgres persistence:
 
 ```bash
 # Core (in-memory adapter only — useful for tests and local dev)
-pip install fastauth
+pip install fastauth-py
 
 # MongoDB-backed production
-pip install fastauth[beanie,jwt]
+pip install fastauth-py[beanie,jwt]
 
 # Postgres-backed production
-pip install fastauth[postgres,jwt]
+pip install fastauth-py[postgres,jwt]
 
 # All implemented optional extras
-pip install fastauth[beanie,postgres,jwt,cli,docs]
+pip install fastauth-py[beanie,postgres,jwt,cli,docs]
 ```
 
 Extras: `beanie` (MongoDB), `postgres` (SQLAlchemy async + asyncpg), `jwt`

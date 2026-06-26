@@ -1,10 +1,10 @@
 # Installation
 
-`fastauth` is published as the `fastauth-fastapi` distribution with optional
+`fastauth` is published as the `fastauth-py` distribution with optional
 extras. Install the combination you need:
 
 ```bash
-pip install "fastauth-fastapi[beanie,jwt,cli]"
+pip install "fastauth-py[beanie,jwt,cli]"
 ```
 
 The available extras are:
