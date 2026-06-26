@@ -293,5 +293,5 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe2310/fastauth/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/bhargavandhe2310/fastauth/releases/tag/v0.1.0
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/bhargavandhe/fastauth/releases/tag/v0.1.0
