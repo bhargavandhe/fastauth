@@ -1,6 +1,6 @@
 [project]
 name = "fastauth-py"
-version = "0.2.1"
+version = "0.2.2"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }

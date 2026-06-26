@@ -4,6 +4,14 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-06-27
+
+### Fixed
+
+- Fixed the quickstart Docker-backed test fixture for PyMongo's async client by
+  constructing the Mongo client inside the same event loop that drives the
+  FastAPI lifespan and HTTP client.
+
 ## [0.2.1] — 2026-06-27
 
 ### Fixed
