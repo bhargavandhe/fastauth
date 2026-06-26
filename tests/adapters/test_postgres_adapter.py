@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer  # pyright: ignore[reportMissingTypeStubs]
 
-from authkit.storage.postgres import PostgresAdapter
+from fastauth.storage.postgres import PostgresAdapter
 from tests.adapters.adapter_contract import AdapterContract
 
 
@@ -48,7 +48,7 @@ class TestPostgresAdapter(AdapterContract):
     async def adapter(self, postgres_engine: AsyncEngine) -> PostgresAdapter:
         adapter = PostgresAdapter(
             postgres_engine,
-            table_prefix=f"authkit_test_{uuid4().hex[:8]}_",
+            table_prefix=f"fastauth_test_{uuid4().hex[:8]}_",
         )
         await adapter.apply_migrations()
         return adapter

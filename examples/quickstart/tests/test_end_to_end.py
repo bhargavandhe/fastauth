@@ -1,4 +1,4 @@
-"""End-to-end test exercising every authkit v1 surface against a live Mongo."""
+"""End-to-end test exercising every fastauth v1 surface against a live Mongo."""
 
 from __future__ import annotations
 

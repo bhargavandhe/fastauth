@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
-from authkit.domain.enums import JwtAlgorithm
-from authkit.domain.models import User
-from authkit.security.jwt import JwksRegistry, JwtSessionStrategy, LocalKmsSigner
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.domain.enums import JwtAlgorithm
+from fastauth.domain.models import User
+from fastauth.security.jwt import JwksRegistry, JwtSessionStrategy, LocalKmsSigner
+from fastauth.storage.memory import InMemoryAdapter
 
 
 async def build_registry(adapter: InMemoryAdapter | None = None) -> JwksRegistry:
@@ -92,7 +92,7 @@ async def test_decrypt_succeeds_with_rotation_kek_when_primary_changes() -> None
     """A key encrypted under the previous secret_key decrypts via the rotation list."""
     from pydantic import SecretStr
 
-    from authkit.storage.memory import InMemoryAdapter
+    from fastauth.storage.memory import InMemoryAdapter
 
     adapter = InMemoryAdapter()
     old_secret = SecretStr("o" * 64)
@@ -131,7 +131,7 @@ async def test_ensure_key_recovers_when_secret_changes_with_no_rotation() -> Non
     """
     from pydantic import SecretStr
 
-    from authkit.storage.memory import InMemoryAdapter
+    from fastauth.storage.memory import InMemoryAdapter
 
     adapter = InMemoryAdapter()
     old_secret = SecretStr("o" * 64)

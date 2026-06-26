@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import httpx
 
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 async def test_get_session_works_with_bearer_only(client: httpx.AsyncClient) -> None:
@@ -14,7 +14,7 @@ async def test_get_session_works_with_bearer_only(client: httpx.AsyncClient) -> 
         json={"email": "alice@example.com", "password": "correct-horse-staple"},
     )
     assert sign_up.status_code == 200
-    cookie_value = client.cookies.get("authkit.session_token")
+    cookie_value = client.cookies.get("fastauth.session_token")
     assert cookie_value is not None
 
     # Drop cookies entirely; use the raw bearer.
@@ -35,7 +35,7 @@ async def test_get_session_works_with_bearer_only(client: httpx.AsyncClient) -> 
 
 async def test_get_session_with_valid_bearer_via_test_helper(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
     adapter: InMemoryAdapter,
 ) -> None:
     sign_up = await client.post(

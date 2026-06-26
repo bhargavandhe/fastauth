@@ -5,8 +5,8 @@ core mutation paths. Each hook is registered against a `(HookPhase, model_name)`
 pair and receives a `HookContext` describing the call.
 
 ```python
-from authkit.domain.enums import HookPhase
-from authkit.runtime.hooks import HookContext
+from fastauth.domain.enums import HookPhase
+from fastauth.runtime.hooks import HookContext
 
 async def stamp_signup_metadata(ctx: HookContext) -> object:
     user = ctx.payload

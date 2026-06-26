@@ -7,12 +7,12 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from authkit.plugins.openapi import OpenApiConfig, OpenApiPlugin
-from authkit.runtime.auth import AuthKit
+from fastauth.plugins.openapi import OpenApiConfig, OpenApiPlugin
+from fastauth.runtime.auth import FastAuth
 
 
 @pytest.fixture
-def auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
+def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(plugins=[OpenApiPlugin(OpenApiConfig())])
 
 
@@ -32,6 +32,6 @@ async def test_openapi_json_returns_3_1_schema(client: httpx.AsyncClient) -> Non
     assert any(path.endswith("/sign-up/email") for path in paths)
 
 
-async def test_auth_api_generate_schema(auth: AuthKit) -> None:
+async def test_auth_api_generate_schema(auth: FastAuth) -> None:
     schema = await auth.api.generate_openapi_schema()
-    assert schema["info"]["title"] == "authkit API"
+    assert schema["info"]["title"] == "fastauth API"

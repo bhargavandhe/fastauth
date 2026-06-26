@@ -8,22 +8,22 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from authkit.flows.email_otp import EmailOtpConfig
-from authkit.plugins.email_otp import EmailOtpPlugin
-from authkit.plugins.test_utils import TestHelpers, TestUtilsConfig, TestUtilsPlugin
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter as MemoryAdapter
+from fastauth.flows.email_otp import EmailOtpConfig
+from fastauth.plugins.email_otp import EmailOtpPlugin
+from fastauth.plugins.test_utils import TestHelpers, TestUtilsConfig, TestUtilsPlugin
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter as MemoryAdapter
 
 
-def get_helpers(auth: AuthKit) -> TestHelpers:
-    plugin = auth.context.plugins.by_id["authkit-test-utils"]
+def get_helpers(auth: FastAuth) -> TestHelpers:
+    plugin = auth.context.plugins.by_id["fastauth-test-utils"]
     assert isinstance(plugin, TestUtilsPlugin)
     assert plugin.helpers is not None
     return plugin.helpers
 
 
 @pytest.fixture
-def auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
+def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(
         plugins=[
             EmailOtpPlugin(EmailOtpConfig(change_email_enabled=True)),
@@ -33,7 +33,7 @@ def auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
 
 
 @pytest.fixture
-def disable_signup_auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
+def disable_signup_auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(
         plugins=[
             EmailOtpPlugin(EmailOtpConfig(disable_sign_up=True)),
@@ -45,7 +45,7 @@ def disable_signup_auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
 # --- Send / check ----------------------------------------------------------
 
 
-async def test_send_otp_for_sign_in(client: httpx.AsyncClient, auth: AuthKit) -> None:
+async def test_send_otp_for_sign_in(client: httpx.AsyncClient, auth: FastAuth) -> None:
     response = await client.post(
         "/auth/email-otp/send-verification-otp",
         json={"email": "fresh@example.com", "type": "sign-in"},
@@ -60,7 +60,7 @@ async def test_send_otp_for_sign_in(client: httpx.AsyncClient, auth: AuthKit) ->
 
 async def test_send_otp_anti_enumeration_for_email_verification(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     """Send-OTP for email-verification of an unknown email returns success
     without sending anything (no helpers.get_otp will find it).
@@ -75,7 +75,7 @@ async def test_send_otp_anti_enumeration_for_email_verification(
 
 async def test_check_otp_does_not_consume(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     await client.post(
@@ -103,7 +103,7 @@ async def test_check_otp_does_not_consume(
 
 async def test_sign_in_auto_registers_new_user(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     await client.post(
@@ -121,12 +121,12 @@ async def test_sign_in_auto_registers_new_user(
     assert body["user"]["email"] == "newbie@example.com"
     assert body["user"]["name"] == "Newbie"
     assert body["user"]["email_verified"] is True
-    assert "authkit.session_token" in response.headers.get("set-cookie", "")
+    assert "fastauth.session_token" in response.headers.get("set-cookie", "")
 
 
 async def test_sign_in_existing_user(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     user = helpers.create_user(email="returning@example.com", email_verified=True)
@@ -146,7 +146,7 @@ async def test_sign_in_existing_user(
 
 
 async def test_sign_in_disable_sign_up_rejects_unknown_user(
-    auth_factory: Callable[..., AuthKit],
+    auth_factory: Callable[..., FastAuth],
 ) -> None:
     auth = auth_factory(
         plugins=[
@@ -180,7 +180,7 @@ async def test_sign_in_disable_sign_up_rejects_unknown_user(
 
 async def test_sign_in_wrong_otp_rejected(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     await client.post(
         "/auth/email-otp/send-verification-otp",
@@ -196,7 +196,7 @@ async def test_sign_in_wrong_otp_rejected(
 
 async def test_otp_invalidated_after_allowed_attempts(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     await client.post(
@@ -222,7 +222,7 @@ async def test_otp_invalidated_after_allowed_attempts(
 
 async def test_otp_replay_protection(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     """A successfully-consumed OTP cannot be reused."""
     helpers = get_helpers(auth)
@@ -244,7 +244,7 @@ async def test_otp_replay_protection(
     assert second.status_code == 400
 
 
-async def test_resend_rotates_otp(client: httpx.AsyncClient, auth: AuthKit) -> None:
+async def test_resend_rotates_otp(client: httpx.AsyncClient, auth: FastAuth) -> None:
     """Sending a second OTP invalidates the first (rotate strategy)."""
     helpers = get_helpers(auth)
     await client.post(
@@ -277,7 +277,7 @@ async def test_resend_rotates_otp(client: httpx.AsyncClient, auth: AuthKit) -> N
 
 async def test_expired_otp_rejected(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
     adapter: MemoryAdapter,
 ) -> None:
     helpers = get_helpers(auth)
@@ -303,7 +303,7 @@ async def test_expired_otp_rejected(
 
 async def test_verify_email_with_otp(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     user = helpers.create_user(email="bob@example.com", email_verified=False)
@@ -328,15 +328,15 @@ async def test_verify_email_with_otp(
 
 async def test_password_reset_round_trip(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     user = helpers.create_user(email="reset@example.com", email_verified=True)
     await helpers.save_user(user)
     # Set an initial password via the credential provider so reset has
     # something to overwrite.
-    from authkit.domain.enums import ProviderId
-    from authkit.domain.models import Account
+    from fastauth.domain.enums import ProviderId
+    from fastauth.domain.models import Account
 
     await auth.context.adapter.create_account(
         Account(
@@ -373,7 +373,7 @@ async def test_password_reset_round_trip(
 
 async def test_password_reset_anti_enumeration(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     """Reset-OTP for an unknown email returns success without sending."""
     helpers = get_helpers(auth)
@@ -390,7 +390,7 @@ async def test_password_reset_anti_enumeration(
 
 async def test_change_email_round_trip(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     user = helpers.create_user(email="old@example.com", email_verified=True)
@@ -417,7 +417,7 @@ async def test_change_email_round_trip(
 
 
 async def test_change_email_endpoints_404_when_disabled(
-    auth_factory: Callable[..., AuthKit],
+    auth_factory: Callable[..., FastAuth],
 ) -> None:
     """Without ``change_email_enabled``, the two endpoints are not registered."""
     auth = auth_factory(
@@ -446,7 +446,7 @@ async def test_change_email_endpoints_404_when_disabled(
 
 async def test_change_email_requires_authentication(
     client: httpx.AsyncClient,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     response = await client.post(
         "/auth/email-otp/request-email-change",

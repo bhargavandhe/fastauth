@@ -7,12 +7,12 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from authkit.plugins.api_key import ApiKeyConfig, ApiKeyPlugin
-from authkit.runtime.auth import AuthKit
+from fastauth.plugins.api_key import ApiKeyConfig, ApiKeyPlugin
+from fastauth.runtime.auth import FastAuth
 
 
 @pytest.fixture
-def auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
+def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(plugins=[ApiKeyPlugin(ApiKeyConfig())])
 
 

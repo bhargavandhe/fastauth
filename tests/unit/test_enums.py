@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from authkit.domain import enums
+from fastauth.domain import enums
 
 
 def test_provider_id_values() -> None:

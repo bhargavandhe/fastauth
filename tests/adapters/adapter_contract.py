@@ -7,8 +7,8 @@ from typing import Protocol
 
 import pytest
 
-from authkit.domain.enums import AuditEventType, ProviderId, VerificationPurpose
-from authkit.domain.models import (
+from fastauth.domain.enums import AuditEventType, ProviderId, VerificationPurpose
+from fastauth.domain.models import (
     Account,
     ApiKey,
     AuditLog,
@@ -19,7 +19,7 @@ from authkit.domain.models import (
     User,
     Verification,
 )
-from authkit.storage.base import (
+from fastauth.storage.base import (
     ApiKeyStore,
     AuditLogStore,
     DatabaseAdapter,
@@ -36,7 +36,7 @@ class ContractAdapter(
     RateLimitStore,
     Protocol,
 ):
-    """All capabilities expected from authkit's first-party adapters."""
+    """All capabilities expected from fastauth's first-party adapters."""
 
 
 class AdapterContract:
@@ -59,7 +59,7 @@ class AdapterContract:
         assert await adapter.get_user_by_id(user.id) is None
 
     async def test_user_email_is_unique(self, adapter: ContractAdapter) -> None:
-        from authkit.exceptions import DuplicateError
+        from fastauth.exceptions import DuplicateError
 
         await adapter.create_user(User(email="bob@example.com"))
         with pytest.raises(DuplicateError):

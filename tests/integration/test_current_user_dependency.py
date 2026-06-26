@@ -1,6 +1,6 @@
-"""Integration tests for AuthKit.get_current_user / get_current_session dependencies.
+"""Integration tests for FastAuth.get_current_user / get_current_session dependencies.
 
-The dependencies live on the AuthKit instance so they can capture the bound
+The dependencies live on the FastAuth instance so they can capture the bound
 ``AuthContext`` (its adapter, session strategy, signed-cookie unpacker, etc.)
 without forcing the user to wire a factory at every route.
 
@@ -32,14 +32,14 @@ import httpx
 import pytest
 from fastapi import Depends, FastAPI
 
-from authkit.domain.models import User
-from authkit.runtime.auth import AuthKit
-from authkit.security.sessions import SessionContext
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.domain.models import User
+from fastauth.runtime.auth import FastAuth
+from fastauth.security.sessions import SessionContext
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
-async def authed_client(auth: AuthKit) -> AsyncIterator[httpx.AsyncClient]:
+async def authed_client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     """A FastAPI app with three protected routes + an httpx client."""
     app = FastAPI()
     app.include_router(auth.router)
@@ -127,7 +127,7 @@ async def test_current_session_exposes_session_context(
 
 
 async def test_current_user_accepts_bearer_token(
-    authed_client: httpx.AsyncClient, auth: AuthKit, adapter: InMemoryAdapter
+    authed_client: httpx.AsyncClient, auth: FastAuth, adapter: InMemoryAdapter
 ) -> None:
     """Dependency works with Authorization: Bearer in addition to cookies."""
     await authed_client.post(

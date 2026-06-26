@@ -1,6 +1,6 @@
 # Bearer authentication
 
-Every authkit endpoint accepts either a signed session cookie or a
+Every fastauth endpoint accepts either a signed session cookie or a
 `Authorization: Bearer <token>` header. The token format is identical in both
 cases — the cookie path simply wraps the plain token in an
 `itsdangerous` envelope for tamper resistance.
@@ -12,7 +12,7 @@ sign_up = await client.post(
     "/auth/sign-up/email",
     json={"email": "alice@example.com", "password": "correct-horse-staple"},
 )
-token = sign_up.cookies["authkit.session_token"]
+token = sign_up.cookies["fastauth.session_token"]
 plain = auth.context.signed_cookie.unpack(token)  # strip the signed envelope
 
 headers = {"authorization": f"Bearer {plain}"}
@@ -30,7 +30,7 @@ server-to-server callers simple while still protecting browser sessions.
 
 When `JwtPlugin` is installed, `POST /auth/token` returns a freshly-signed
 JWT carrying the same user claims. Verify it locally using the JWKS document
-at `GET /auth/jwks` — no round-trip to authkit is required.
+at `GET /auth/jwks` — no round-trip to fastauth is required.
 
 ```python
 import httpx

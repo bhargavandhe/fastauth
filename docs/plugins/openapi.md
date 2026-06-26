@@ -18,9 +18,9 @@ Scalar `theme`, an optional CSP `nonce`, the page `title`, and the
 ## Example
 
 ```python
-from authkit.plugins.openapi import OpenApiConfig, OpenApiPlugin
+from fastauth.plugins.openapi import OpenApiConfig, OpenApiPlugin
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[OpenApiPlugin(OpenApiConfig(path="/reference", theme="default"))],

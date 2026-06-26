@@ -1,6 +1,6 @@
-site_name: authkit
+site_name: fastauth
 site_description: A modular, Pydantic-native, async-only authentication library for FastAPI.
-repo_url: https://github.com/bhargavandhe2310/authkit
+repo_url: https://github.com/bhargavandhe2310/fastauth
 strict: true
 
 theme:

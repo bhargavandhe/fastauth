@@ -1,21 +1,21 @@
 # Quickstart
 
-authkit's config type is a plain `pydantic.BaseModel`. Every value is passed
+fastauth's config type is a plain `pydantic.BaseModel`. Every value is passed
 explicitly at instantiation time. **The framework never reads environment
 variables, `.env` files, or any other external source** — that's the
 consumer's responsibility. Pass values from your application settings object,
-secret manager, config file, or test fixture and `AuthKitConfig` will validate
+secret manager, config file, or test fixture and `FastAuthConfig` will validate
 them.
 
 ```python
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit import AuthKit, AuthKitConfig
+from fastauth import FastAuth, FastAuthConfig
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-config = AuthKitConfig(secret_key=SecretStr(app_secret))
-auth = AuthKit(config)
+config = FastAuthConfig(secret_key=SecretStr(app_secret))
+auth = FastAuth(config)
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
 auth.install(app)
@@ -23,26 +23,26 @@ auth.install(app)
 
 `auth.install(app)` attaches the router and installs CSRF/security-header
 middleware on the host FastAPI application. If you use `auth.as_asgi()` as a
-standalone app instead, authkit returns an app with the same routes and
+standalone app instead, fastauth returns an app with the same routes and
 middleware already installed.
 
 The default `DatabaseConfig.backend` is `memory`, so this first app is suitable
 for tests and local demos. Pick Mongo or Postgres explicitly for persistent
 deployments.
 
-For Postgres, install `authkit-fastapi[postgres,jwt]` and pass an async
+For Postgres, install `fastauth-fastapi[postgres,jwt]` and pass an async
 SQLAlchemy URL or engine explicitly:
 
 ```python
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit import AuthKit, AuthKitConfig
-from authkit.config import DatabaseConfig, PostgresDatabaseConfig
-from authkit.plugins.jwt import JwtPlugin
-from authkit.storage.postgres import PostgresAdapter
+from fastauth import FastAuth, FastAuthConfig
+from fastauth.config import DatabaseConfig, PostgresDatabaseConfig
+from fastauth.plugins.jwt import JwtPlugin
+from fastauth.storage.postgres import PostgresAdapter
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
     database=DatabaseConfig(
         backend="postgres",
@@ -52,7 +52,7 @@ config = AuthKitConfig(
     ),
 )
 adapter = PostgresAdapter.from_url(config.database.postgres.url)
-auth = AuthKit(config, adapter=adapter, plugins=[JwtPlugin()])
+auth = FastAuth(config, adapter=adapter, plugins=[JwtPlugin()])
 
 app = FastAPI(title="My App", lifespan=adapter.lifespan(auth))
 auth.install(app)
@@ -60,7 +60,7 @@ auth.install(app)
 
 ## Protecting routes with `CurrentUser` / `CurrentSession`
 
-The `AuthKit` instance exposes four FastAPI dependency callables:
+The `FastAuth` instance exposes four FastAPI dependency callables:
 
 | Dependency | Returns | On anonymous request |
 |---|---|---|
@@ -77,7 +77,7 @@ Both cookie and `Authorization: Bearer` transports are honoured automatically.
 # Style 1 — `Depends` as default value (always works, even with
 # `from __future__ import annotations`):
 from fastapi import Depends
-from authkit.domain.models import User
+from fastauth.domain.models import User
 
 @app.get("/me")
 async def me(user: User = Depends(auth.get_current_user)) -> User:
@@ -87,7 +87,7 @@ async def me(user: User = Depends(auth.get_current_user)) -> User:
 # module-level name so PEP 563 string-annotation resolution can find it):
 from typing import Annotated
 from fastapi import Depends
-from authkit.domain.models import User
+from fastauth.domain.models import User
 
 CurrentUser = Annotated[User, Depends(auth.get_current_user)]
 
@@ -105,10 +105,10 @@ module-level names.
 ## Run migrations and serve
 
 ```bash
-uv run authkit generate-secret  # prints a fresh 64-char secret
+uv run fastauth generate-secret  # prints a fresh 64-char secret
 
-uv run authkit migrate --mongo-url mongodb://localhost:27017 --database myapp
-uv run authkit migrate --postgres-url postgresql+asyncpg://user:pass@localhost/myapp
+uv run fastauth migrate --mongo-url mongodb://localhost:27017 --database myapp
+uv run fastauth migrate --postgres-url postgresql+asyncpg://user:pass@localhost/myapp
 uv run uvicorn examples.quickstart.app:app --reload
 ```
 

@@ -7,7 +7,7 @@ Bearer-only requests are bypassed too — a request that does not carry the
 session cookie cannot be a CSRF target by definition.
 
 ```python
-from authkit.web.csrf import CsrfMiddleware
+from fastauth.web.csrf import CsrfMiddleware
 
 app.add_middleware(
     CsrfMiddleware,
@@ -20,6 +20,6 @@ app.add_middleware(
 Trusted-origin patterns support a leading `*.` wildcard
 (`https://*.app.test`) and can include relative paths when
 `csrf.allow_relative_paths` is enabled (default). `auth.install(app)` and
-`AuthKit.as_asgi()` install the middleware automatically. If you need
-lower-level control, call `authkit.web.fastapi.install_csrf(app, auth.context)`
+`FastAuth.as_asgi()` install the middleware automatically. If you need
+lower-level control, call `fastauth.web.fastapi.install_csrf(app, auth.context)`
 directly.

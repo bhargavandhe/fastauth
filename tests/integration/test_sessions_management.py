@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-COOKIE_NAME = "authkit.session_token"
+COOKIE_NAME = "fastauth.session_token"
 
 
 async def sign_up_and_capture_cookie(

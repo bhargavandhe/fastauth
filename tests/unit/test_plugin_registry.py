@@ -6,11 +6,11 @@ import pytest
 from fastapi import Request
 from pydantic import SecretStr
 
-from authkit import AuthKit, AuthKitConfig
-from authkit.exceptions import ConfigError, InvalidCredentialsError
-from authkit.plugins.base import EndpointSpec, Plugin, PluginRegistry
-from authkit.storage.base import AuditLogStore
-from authkit.storage.memory import InMemoryAdapter
+from fastauth import FastAuth, FastAuthConfig
+from fastauth.exceptions import ConfigError, InvalidCredentialsError
+from fastauth.plugins.base import EndpointSpec, Plugin, PluginRegistry
+from fastauth.storage.base import AuditLogStore
+from fastauth.storage.memory import InMemoryAdapter
 
 
 class HelloPlugin(Plugin):
@@ -82,8 +82,8 @@ def test_plugin_base_requires_declared_capability() -> None:
 
 async def test_plugin_base_requires_session_from_request() -> None:
     plugin = HelloPlugin()
-    auth = AuthKit(
-        AuthKitConfig(secret_key=SecretStr("a" * 64)),
+    auth = FastAuth(
+        FastAuthConfig(secret_key=SecretStr("a" * 64)),
         adapter=InMemoryAdapter(),
     )
     plugin.bind(auth.context)

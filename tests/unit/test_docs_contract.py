@@ -25,7 +25,7 @@ def project_files(*roots: str) -> list[pathlib.Path]:
 def test_runtime_and_examples_do_not_read_process_environment() -> None:
     forbidden = ("os.environ", "os.getenv", "getenv(", "environ[")
     offenders: list[str] = []
-    for path in project_files("src/authkit", "examples"):
+    for path in project_files("src/fastauth", "examples"):
         if path.suffix not in {".py", ".md"}:
             continue
         text = path.read_text(encoding="utf-8")
@@ -36,7 +36,7 @@ def test_runtime_and_examples_do_not_read_process_environment() -> None:
 
 
 def test_user_facing_docs_do_not_teach_env_var_config() -> None:
-    forbidden = ("os.environ", "os.getenv", "export AUTHKIT_", "AUTHKIT_*")
+    forbidden = ("os.environ", "os.getenv", "export FASTAUTH_", "FASTAUTH_*")
     offenders: list[str] = []
     for path in project_files("README.md", "docs"):
         if "docs/superpowers" in path.as_posix() or path.suffix != ".md":
@@ -50,10 +50,10 @@ def test_user_facing_docs_do_not_teach_env_var_config() -> None:
 
 def test_historical_docs_do_not_reintroduce_stale_config_guidance() -> None:
     forbidden = (
-        "authkit init` — scaffolds an `auth.py` that reads from `os.environ`",
+        "fastauth init` — scaffolds an `auth.py` that reads from `os.environ`",
         "Configuration:** all environment-driven configuration goes through",
-        "AuthKitConfig()  # reads AUTHKIT_* from env",
-        "export AUTHKIT_",
+        "FastAuthConfig()  # reads FASTAUTH_* from env",
+        "export FASTAUTH_",
     )
     offenders: list[str] = []
     for path in project_files("CHANGELOG.md", "docs"):
@@ -69,8 +69,11 @@ def test_historical_docs_do_not_reintroduce_stale_config_guidance() -> None:
 def test_installation_docs_describe_explicit_config_construction() -> None:
     text = read_project_file("docs/installation.md")
 
-    assert "Configuration is loaded from environment variables prefixed with `AUTHKIT_`" not in text
-    assert "authkit never reads environment" in text
+    assert (
+        "Configuration is loaded from environment variables prefixed with `FASTAUTH_`"
+        not in text
+    )
+    assert "fastauth never reads environment" in text
     assert "variables directly" in text
 
 
@@ -101,7 +104,7 @@ def test_postgres_docs_describe_tracked_migrations() -> None:
     assert "tracked schema migrations" in deploying
 
 
-def test_installation_docs_match_authkit_init_output() -> None:
+def test_installation_docs_match_fastauth_init_output() -> None:
     text = read_project_file("docs/installation.md")
 
     assert "writes .env.example and auth.py" not in text
@@ -122,8 +125,8 @@ def test_release_metadata_is_project_specific() -> None:
     pyproject = read_project_file("pyproject.toml")
     mkdocs = read_project_file("mkdocs.yml")
 
-    assert "github.com/authkit/authkit" not in pyproject
-    assert "github.com/your-org/authkit" not in mkdocs
+    assert "github.com/fastauth/fastauth" not in pyproject
+    assert "github.com/your-org/fastauth" not in mkdocs
     assert '"postgres"' in pyproject
     assert '"sqlalchemy"' in pyproject
 

@@ -1,6 +1,6 @@
 # User Management
 
-authkit ships authenticated endpoints for common account settings screens.
+fastauth ships authenticated endpoints for common account settings screens.
 
 ## Update Profile
 
@@ -65,14 +65,14 @@ POST /auth/delete-account/confirm
 ```
 
 The confirmation token is sent to the current account email and is configured
-by `AuthKitConfig.delete_account`:
+by `FastAuthConfig.delete_account`:
 
 ```python
 from pydantic import SecretStr
-from authkit import AuthKitConfig
-from authkit.config import DeleteAccountConfig
+from fastauth import FastAuthConfig
+from fastauth.config import DeleteAccountConfig
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     secret_key=SecretStr("..."),
     delete_account=DeleteAccountConfig(
         token_ttl_minutes=15,

@@ -24,9 +24,9 @@ quota), `default_rate_limit_max`, `default_rate_limit_window_ms`, and
 ## Example
 
 ```python
-from authkit.plugins.api_key import ApiKeyConfig, ApiKeyPlugin
+from fastauth.plugins.api_key import ApiKeyConfig, ApiKeyPlugin
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[ApiKeyPlugin(ApiKeyConfig(default_prefix="ak_", default_remaining=10_000))],

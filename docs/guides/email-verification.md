@@ -1,6 +1,6 @@
 # Email verification
 
-authkit ships a verification flow that is anti-enumeration by design: the
+fastauth ships a verification flow that is anti-enumeration by design: the
 `POST /auth/send-verification-email` endpoint always returns
 `{"success": true}` regardless of whether the email is registered. The actual
 token is emitted via the `OtpGenerated` event so tests can capture it without
@@ -15,7 +15,7 @@ parsing email bodies.
     {"email": "alice@example.com"}
     ```
 
-2. authkit creates a `Verification` row, renders the `verification.html` /
+2. fastauth creates a `Verification` row, renders the `verification.html` /
    `verification.txt` Jinja templates, and dispatches them via the configured
    `EmailSender`. The plaintext token is bundled into the rendered link.
 
@@ -33,9 +33,9 @@ parsing email bodies.
 ## Configuration
 
 ```python
-from authkit.config import AuthKitConfig, EmailVerificationConfig
+from fastauth.config import FastAuthConfig, EmailVerificationConfig
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     # ...
     email_verification=EmailVerificationConfig(
         token_ttl_minutes=15,
@@ -54,7 +54,7 @@ class SesEmailSender:
     async def send(self, message: EmailMessage) -> None:
         ...
 
-auth = AuthKit(config, adapter=adapter, email_sender=SesEmailSender())
+auth = FastAuth(config, adapter=adapter, email_sender=SesEmailSender())
 ```
 
 ## Capturing tokens in tests

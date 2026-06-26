@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from authkit.config import PasswordConfig
-from authkit.security.passwords import Argon2idHasher
+from fastauth.config import PasswordConfig
+from fastauth.security.passwords import Argon2idHasher
 
 
 def test_hash_and_verify_round_trip() -> None:

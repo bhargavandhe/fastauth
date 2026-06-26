@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from authkit.domain.enums import AuditEventType, ProviderId, VerificationPurpose
-from authkit.domain.models import (
+from fastauth.domain.enums import AuditEventType, ProviderId, VerificationPurpose
+from fastauth.domain.models import (
     Account,
     ApiKey,
     AuditLog,

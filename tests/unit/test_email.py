@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pathlib
 
-from authkit.domain.models import EmailMessage
-from authkit.messaging.email import ConsoleEmailSender, TemplateRenderer
+from fastauth.domain.models import EmailMessage
+from fastauth.messaging.email import ConsoleEmailSender, TemplateRenderer
 
 
 async def test_console_sender_captures_messages() -> None:

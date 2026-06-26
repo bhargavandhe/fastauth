@@ -1,13 +1,13 @@
 [project]
-name = "authkit-quickstart"
+name = "fastauth-quickstart"
 version = "0.0.0"
-description = "Example FastAPI app exercising every authkit v1 feature."
+description = "Example FastAPI app exercising every fastauth v1 feature."
 requires-python = ">=3.11"
 dependencies = [
-  "authkit-fastapi[beanie,jwt,cli] @ file://../../",
+  "fastauth[beanie,jwt,cli] @ file://../../",
   "fastapi",
   "uvicorn",
 ]
 
 [tool.uv.sources]
-authkit-fastapi = { path = "../.." }
+fastauth = { path = "../.." }

@@ -4,7 +4,7 @@ import pathlib
 
 from typer.testing import CliRunner
 
-from authkit.cli.main import app
+from fastauth.cli.main import app
 
 
 def test_generate_secret_prints_64_chars() -> None:
@@ -20,11 +20,11 @@ def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     assert result.exit_code == 0
     auth_py = tmp_path / "auth.py"
     assert auth_py.exists()
-    # The scaffold demonstrates explicit AuthKitConfig construction and does
+    # The scaffold demonstrates explicit FastAuthConfig construction and does
     # NOT pull from any env-only loader.
     body = auth_py.read_text(encoding="utf-8")
-    assert "AuthKitConfig" in body
-    assert "AuthKitEnvConfig" not in body
+    assert "FastAuthConfig" in body
+    assert "FastAuthEnvConfig" not in body
     assert "InMemoryAdapter" in body
     assert "motor" not in body
 
@@ -78,7 +78,7 @@ def test_migrate_requires_exactly_one_backend_url() -> None:
             "--mongo-url",
             "mongodb://localhost:27017",
             "--postgres-url",
-            "postgresql+asyncpg://localhost/authkit",
+            "postgresql+asyncpg://localhost/fastauth",
         ],
     )
     assert result.exit_code == 1

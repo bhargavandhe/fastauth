@@ -16,7 +16,7 @@ password change.
     The endpoint always returns `{"success": true}` so attackers cannot probe
     which addresses are registered.
 
-2. authkit creates a single-use `Verification` row with purpose
+2. fastauth creates a single-use `Verification` row with purpose
    `PASSWORD_RESET`, renders the `reset.html` / `reset.txt` Jinja templates,
    and emits the link via the configured `EmailSender`.
 
@@ -27,16 +27,16 @@ password change.
     {"token": "...", "password": "new-correct-horse-staple"}
     ```
 
-4. On success authkit re-hashes the password, deletes the verification row,
+4. On success fastauth re-hashes the password, deletes the verification row,
    and calls `session_strategy.revoke_all(user_id)` — every other session is
    killed.
 
 ## Configuration
 
 ```python
-from authkit.config import AuthKitConfig, PasswordResetConfig
+from fastauth.config import FastAuthConfig, PasswordResetConfig
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     # ...
     password_reset=PasswordResetConfig(
         token_ttl_minutes=30,

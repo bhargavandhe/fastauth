@@ -7,15 +7,15 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
-from authkit.web.fastapi import install_csrf
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
+from fastauth.web.fastapi import install_csrf
 
 
-def csrf_config() -> AuthKitConfig:
-    return AuthKitConfig.model_validate(
+def csrf_config() -> FastAuthConfig:
+    return FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": True, "trusted_origins": ["http://trusted.test"]},
@@ -29,7 +29,7 @@ def csrf_config() -> AuthKitConfig:
 async def csrf_client() -> AsyncIterator[httpx.AsyncClient]:
     adapter = InMemoryAdapter()
     sender = ConsoleEmailSender()
-    auth = AuthKit(csrf_config(), adapter=adapter, email_sender=sender)
+    auth = FastAuth(csrf_config(), adapter=adapter, email_sender=sender)
     app = FastAPI()
     app.include_router(auth.router)
     install_csrf(app, auth.context)

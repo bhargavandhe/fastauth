@@ -6,7 +6,7 @@ subclasses. Plugins and application code subscribe by concrete event type
 listen to everything.
 
 ```python
-from authkit.domain.events import UserSignedUp
+from fastauth.domain.events import UserSignedUp
 
 async def welcome(event: UserSignedUp) -> None:
     print(f"new user {event.user_id} ({event.identifier})")

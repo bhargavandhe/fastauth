@@ -1,21 +1,21 @@
-# authkit
+# fastauth
 
 A modular, Pydantic-native, async-only authentication library for FastAPI.
 
 ```bash
-pip install authkit-fastapi
+pip install fastauth
 ```
 
 ```python
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit import AuthKit, AuthKitConfig
+from fastauth import FastAuth, FastAuthConfig
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 
-config = AuthKitConfig(secret_key=SecretStr(app_secret))
-auth = AuthKit(config)
+config = FastAuthConfig(secret_key=SecretStr(app_secret))
+auth = FastAuth(config)
 
 app = FastAPI(lifespan=auth.lifespan)
 auth.install(app)
@@ -31,10 +31,10 @@ That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
 revoke-others), `/auth/refresh`, and `/auth/health` wired into your FastAPI
 application. Rate-limiting, account-lockout, and refresh tokens are part of
 the router. CSRF and security headers are ASGI middleware installed by
-`auth.install(app)`. If you use `auth.as_asgi()` instead, authkit returns a
+`auth.install(app)`. If you use `auth.as_asgi()` instead, fastauth returns a
 standalone app with the same routes and middleware already installed.
 
-## Why authkit
+## Why fastauth
 
 Built deliberately for the **modern Python web stack** — FastAPI + Pydantic
 v2 + async-only + MongoDB or Postgres persistence:
@@ -48,7 +48,7 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **Strict-typed.** `pyright --strict` passes with **0 errors, 0 warnings**.
   `py.typed` marker ships with the wheel — your IDE and your CI get full
   type information.
-- **Source-agnostic config.** `AuthKitConfig` is a plain `BaseModel`. The
+- **Source-agnostic config.** `FastAuthConfig` is a plain `BaseModel`. The
   framework **never reads process-level configuration**. You build config
   from your application settings object, vault client, parameter store, or
   test fixture and pass it in explicitly.
@@ -118,29 +118,29 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **`CurrentUser` / `CurrentSession` FastAPI dependencies** with optional
   variants, both `Depends(...)` and `Annotated[...]` calling styles
   documented.
-- **`AuthKit(config)`** — uses the in-memory adapter by default when
+- **`FastAuth(config)`** — uses the in-memory adapter by default when
   `DatabaseConfig.backend == "memory"` for compact tests and first-run demos.
 - **`auth.install(app)`** — install routes, CSRF, and security headers on your
-  FastAPI app in one call. `AuthKit.as_asgi()` still returns a standalone app
-  when you want authkit mounted separately.
-- **Typer CLI** — `authkit init --backend memory|mongo|postgres`,
-  `authkit migrate`, `authkit generate-secret`.
+  FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
+  when you want fastauth mounted separately.
+- **Typer CLI** — `fastauth init --backend memory|mongo|postgres`,
+  `fastauth migrate`, `fastauth generate-secret`.
 - **mkdocs-material docs** + quickstart example app with its own test suite.
 
 ## Installation
 
 ```bash
 # Core (in-memory adapter only — useful for tests and local dev)
-pip install authkit-fastapi
+pip install fastauth
 
 # MongoDB-backed production
-pip install authkit-fastapi[beanie,jwt]
+pip install fastauth[beanie,jwt]
 
 # Postgres-backed production
-pip install authkit-fastapi[postgres,jwt]
+pip install fastauth[postgres,jwt]
 
 # All implemented optional extras
-pip install authkit-fastapi[beanie,postgres,jwt,cli,docs]
+pip install fastauth[beanie,postgres,jwt,cli,docs]
 ```
 
 Extras: `beanie` (MongoDB), `postgres` (SQLAlchemy async + asyncpg), `jwt`
@@ -153,7 +153,7 @@ Python 3.11+ required. FastAPI 0.115+, Pydantic 2.8+.
 
 ```python
 from fastapi import Depends
-from authkit.domain.models import User
+from fastauth.domain.models import User
 
 @app.get("/me")
 async def me(user: User = Depends(auth.get_current_user)) -> User:
@@ -165,7 +165,7 @@ Or with the `Annotated` style (FastAPI's idiom):
 ```python
 from typing import Annotated
 from fastapi import Depends
-from authkit.domain.models import User
+from fastauth.domain.models import User
 
 CurrentUser = Annotated[User, Depends(auth.get_current_user)]
 
@@ -174,23 +174,23 @@ async def me(user: CurrentUser) -> User:
     return user
 ```
 
-Cookie auth and `Authorization: Bearer …` both work — authkit handles either
+Cookie auth and `Authorization: Bearer …` both work — fastauth handles either
 transparently. Use `auth.get_optional_current_user` if anonymous requests
 are allowed.
 
 ## Configuration
 
-`AuthKitConfig` is a plain `pydantic.BaseModel`. Every field has a sensible
+`FastAuthConfig` is a plain `pydantic.BaseModel`. Every field has a sensible
 default; pass only what you want to override:
 
 ```python
-from authkit import AuthKitConfig
-from authkit.config import (
+from fastauth import FastAuthConfig
+from fastauth.config import (
     AppConfig, CookieConfig, CsrfConfig,
     LockoutConfig, RefreshTokenConfig, SecurityHeadersConfig,
 )
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     secret_key=SecretStr("…"),
     app=AppConfig(name="My App", base_url="https://myapp.com"),
     cookie=CookieConfig(secure=True, same_site="strict"),
@@ -227,7 +227,7 @@ Full docs site: `mkdocs serve` from a checkout.
 ## Project layout
 
 ```
-authkit/
+fastauth/
 ├── config.py / exceptions.py          # top-level
 ├── domain/        # pure data: enums, models, events
 ├── security/      # auth primitives: passwords, tokens, sessions, jwt,
@@ -236,7 +236,7 @@ authkit/
 ├── messaging/     # email + Jinja2 templates
 ├── flows/         # sign-up, sign-in, verification, refresh, …
 ├── plugins/       # api_key, jwt, audit_logs, openapi, test_utils
-├── runtime/       # AuthKit, AuthContext, AuthApi, EventBus, hooks
+├── runtime/       # FastAuth, AuthContext, AuthApi, EventBus, hooks
 ├── web/           # FastAPI integration + CSRF + security headers
 └── cli/           # Typer CLI
 ```

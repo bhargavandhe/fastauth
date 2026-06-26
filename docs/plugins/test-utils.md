@@ -4,15 +4,15 @@
 `TestHelpers` surface that test code retrieves from the plugin registry:
 
 ```python
-from authkit.plugins.test_utils import TestUtilsConfig, TestUtilsPlugin
+from fastauth.plugins.test_utils import TestUtilsConfig, TestUtilsPlugin
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[TestUtilsPlugin(TestUtilsConfig(capture_otp=True))],
 )
 
-helpers = auth.context.plugins.by_id["authkit-test-utils"].helpers
+helpers = auth.context.plugins.by_id["fastauth-test-utils"].helpers
 ```
 
 ## Helper surface

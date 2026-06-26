@@ -1,4 +1,4 @@
-"""Fixtures for integration tests: AuthKit factory + httpx.AsyncClient."""
+"""Fixtures for integration tests: FastAuth factory + httpx.AsyncClient."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
-def build_config() -> AuthKitConfig:
-    return AuthKitConfig.model_validate(
+def build_config() -> FastAuthConfig:
+    return FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -40,11 +40,11 @@ def adapter() -> InMemoryAdapter:
 def auth_factory(
     adapter: InMemoryAdapter,
     email_outbox: ConsoleEmailSender,
-) -> Callable[..., AuthKit]:
-    def factory(**overrides: object) -> AuthKit:
+) -> Callable[..., FastAuth]:
+    def factory(**overrides: object) -> FastAuth:
         config = build_config()
         plugins = overrides.pop("plugins", [])  # type: ignore[assignment]
-        return AuthKit(
+        return FastAuth(
             config,
             adapter=adapter,
             email_sender=email_outbox,
@@ -56,12 +56,12 @@ def auth_factory(
 
 
 @pytest.fixture
-def auth(auth_factory: Callable[..., AuthKit]) -> AuthKit:
+def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory()
 
 
 @pytest.fixture
-async def client(auth: AuthKit) -> AsyncIterator[httpx.AsyncClient]:
+async def client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(

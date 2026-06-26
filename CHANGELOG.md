@@ -6,7 +6,7 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ### Added
 
-- **`AuthKitConfig.wire_format: WireFormat`** (default
+- **`FastAuthConfig.wire_format: WireFormat`** (default
   `WireFormat.SNAKE`). When set to `WireFormat.CAMEL`, every public
   response body is emitted with `camelCase` keys (`email_verified` →
   `emailVerified`, `refresh_token` → `refreshToken`, including nested
@@ -36,17 +36,17 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ### Changed
 
-- `AuthKit(config)` now uses `InMemoryAdapter` automatically when
+- `FastAuth(config)` now uses `InMemoryAdapter` automatically when
   `DatabaseConfig.backend == "memory"` (the default). Persistent backends still
   require an explicit adapter so production wiring remains clear.
-- `authkit init` now accepts `--backend memory|mongo|postgres`; the default
+- `fastauth init` now accepts `--backend memory|mongo|postgres`; the default
   scaffold is dependency-light and no longer Mongo-specific.
 - `Plugin` now stores bound `AuthContext` by default and exposes
   `require_context()`, `require_capability(...)`, and
   `require_session(request)` helpers for common plugin-author boilerplate.
 - Postgres schema setup now runs through an ordered migration registry under a
   transaction-level advisory lock. The current migration set records version
-  `1` for the initial authkit schema.
+  `1` for the initial fastauth schema.
 - Removed the unimplemented `redis` optional dependency extra until Redis
   storage exists.
 - CI now runs lint/typecheck and tests on Python 3.11 and 3.12, and validates
@@ -55,7 +55,7 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
   session-management, verification, password-reset, change-password,
   change-email, email-OTP, API keys, JWT-token, audit logs, health)
   now inherit from a new `WireModel` base in
-  `authkit.domain.models`. The base carries
+  `fastauth.domain.models`. The base carries
   `alias_generator=to_camel` + `populate_by_name=True` so request
   bodies in either casing are accepted out of the box. This is purely
   additive on input — existing snake_case clients are unaffected.
@@ -79,7 +79,7 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [0.1.0] — 2026-06-24
 
-First public release. authkit is a modular, Pydantic-native, async-only
+First public release. fastauth is a modular, Pydantic-native, async-only
 authentication library for FastAPI. v0.1 ships credentials auth, sessions
 (database-backed or JWT), email verification, password reset, change-password,
 change-email, account lockout, CSRF, rate limiting, security headers, multi-
@@ -97,7 +97,7 @@ test utilities, and a CLI.
 - Closed-set string enums: `ProviderId`, `VerificationPurpose`, `AuditEventType`,
   `SessionStrategyKind`, `TokenType`, `HookPhase`, `RateLimitStorageKind`,
   `EmailMessageKind`, `JwtAlgorithm`.
-- `AuthKitConfig` with 15 sub-configs (`AppConfig`, `SessionConfig`,
+- `FastAuthConfig` with 15 sub-configs (`AppConfig`, `SessionConfig`,
   `CookieConfig`, `PasswordConfig`, `EmailConfig`, `EmailVerificationConfig`,
   `PasswordResetConfig`, `EmailChangeConfig`, `RateLimitConfig`, `CsrfConfig`,
   `LockoutConfig`, `RefreshTokenConfig`, `SecurityHeadersConfig`,
@@ -190,9 +190,9 @@ test utilities, and a CLI.
   policies; everything wires into the central router and event bus.
 
 #### Web & integrations
-- `AuthKit.as_asgi()` — standalone FastAPI app with router + middleware
+- `FastAuth.as_asgi()` — standalone FastAPI app with router + middleware
   pre-installed.
-- `AuthKit.router` — `APIRouter` for `app.include_router(...)` integration.
+- `FastAuth.router` — `APIRouter` for `app.include_router(...)` integration.
   `install_csrf(app, context)` and `install_security_headers(app, context)`
   helpers for that path.
 - `CsrfMiddleware` — `Origin`/`Referer` validation on state-changing methods;
@@ -203,23 +203,23 @@ test utilities, and a CLI.
   `Referrer-Policy: strict-origin-when-cross-origin`); opt-in
   `Permissions-Policy` and `Content-Security-Policy` fields. Honours
   app-set headers (first occurrence wins).
-- `AuthKitRoute(APIRoute)` — catches every `AuthKitError`, emits the matching
+- `FastAuthRoute(APIRoute)` — catches every `FastAuthError`, emits the matching
   HTTP status with `{code, message}` JSON. `RateLimitError` gets
   `X-Retry-After`; `AccountLockedError` gets `Retry-After`.
 - `CurrentUser`, `OptionalCurrentUser`, `CurrentSession`,
   `OptionalCurrentSession` — FastAPI `Depends(...)` shortcuts on the
-  `AuthKit` instance; both `Depends(auth.get_current_user)` and
+  `FastAuth` instance; both `Depends(auth.get_current_user)` and
   `Annotated[..., Depends(auth.get_current_user)]` calling styles documented.
 
 #### CLI
-- `authkit` Typer CLI with three commands:
-  - `authkit init` — scaffolds an `auth.py` that accepts explicit
-    `AuthKitConfig` and adapter dependencies.
-  - `authkit migrate --mongo-url <url>` — applies Beanie's index migrations.
-  - `authkit migrate --postgres-url <url>` — applies tracked Postgres schema
+- `fastauth` Typer CLI with three commands:
+  - `fastauth init` — scaffolds an `auth.py` that accepts explicit
+    `FastAuthConfig` and adapter dependencies.
+  - `fastauth migrate --mongo-url <url>` — applies Beanie's index migrations.
+  - `fastauth migrate --postgres-url <url>` — applies tracked Postgres schema
     migrations for the SQLAlchemy adapter and records the current schema
     version.
-  - `authkit generate-secret` — emits a cryptographically random 64-byte hex
+  - `fastauth generate-secret` — emits a cryptographically random 64-byte hex
     string for `secret_key`.
 
 #### Tooling, packaging, docs
@@ -239,19 +239,19 @@ test utilities, and a CLI.
 ### Changed
 
 - **Package layout reorganized** (`refactor!: reorganize package layout`).
-  `authkit.core.*` and `authkit.adapters.*` are gone; the new top-level
-  subsystems are `authkit.domain`, `authkit.security`, `authkit.storage`,
-  `authkit.messaging`, `authkit.runtime`, `authkit.web`, `authkit.flows`,
-  `authkit.plugins`, `authkit.cli` plus `authkit.config` and
-  `authkit.exceptions` at the package root. Public re-exports
-  (`from authkit import AuthKit, AuthKitConfig`) unchanged.
-- **`AuthKitConfig` is now a plain `BaseModel`** (`refactor(config)!:
-  AuthKitConfig is a plain BaseModel; env loading is opt-in`).
+  `fastauth.core.*` and `fastauth.adapters.*` are gone; the new top-level
+  subsystems are `fastauth.domain`, `fastauth.security`, `fastauth.storage`,
+  `fastauth.messaging`, `fastauth.runtime`, `fastauth.web`, `fastauth.flows`,
+  `fastauth.plugins`, `fastauth.cli` plus `fastauth.config` and
+  `fastauth.exceptions` at the package root. Public re-exports
+  (`from fastauth import FastAuth, FastAuthConfig`) unchanged.
+- **`FastAuthConfig` is now a plain `BaseModel`** (`refactor(config)!:
+  FastAuthConfig is a plain BaseModel; env loading is opt-in`).
   `pydantic-settings` is no longer a dependency and the framework reads
   no `os.environ`. Configuration is constructed explicitly; consumers
   source values from whatever they prefer (env, Vault, Parameter Store,
   ...). Subsequent commit `refactor(config)!: remove all env-variable
-  support from the framework` removed the `AuthKitEnvConfig` opt-in
+  support from the framework` removed the `FastAuthEnvConfig` opt-in
   subclass entirely; the CLI `print-config` command and the
   `.env.example` scaffold were also dropped.
 - **Beanie adapter stores PKs and FKs as native `bson.ObjectId`**
@@ -266,13 +266,13 @@ test utilities, and a CLI.
   opt-in.
 - **`JwtSessionStrategy` is now the default when `SessionConfig.strategy =
   JWT`.** Previously the JWT plugin had to be manually wired as the
-  session strategy; now `AuthKit.__init__` looks up the installed
+  session strategy; now `FastAuth.__init__` looks up the installed
   `JwtPlugin` and constructs the strategy from its `JwksRegistry`
   automatically. `JwtPlugin.bind` is now idempotent.
 
 ### Fixed
 
-- `JwksRegistry` recovers when `AUTHKIT_SECRET_KEY` is rotated without an
+- `JwksRegistry` recovers when `FASTAUTH_SECRET_KEY` is rotated without an
   accompanying `secret_key_rotation` entry: each KEK is derived from
   `secret_key + each rotation seed`, and decryption tries every known KEK
   before giving up. `ensure_key()` proactively rotates undecryptable
@@ -281,17 +281,17 @@ test utilities, and a CLI.
   `refill_interval_ms`, `expires_in_seconds`, `rate_limit_max`, and
   `rate_limit_window_ms` (previously the validators only rejected `<= 0`
   for some fields; now uniformly `Field(ge=1)`).
-- `test_defaults_match_documented_values` clears any leaked `AUTHKIT_*`
-  environment variables so an ambient `AUTHKIT_SECRET_KEY` in the
+- `test_defaults_match_documented_values` clears any leaked `FASTAUTH_*`
+  environment variables so an ambient `FASTAUTH_SECRET_KEY` in the
   developer's shell doesn't break the test.
 
 ### Removed
 
 - `pydantic-settings` dependency (along with `BaseSettings` usage).
-- `AuthKitEnvConfig` subclass and its env-loading machinery.
-- `authkit init` no longer writes a `.env.example`.
-- `authkit print-config` removed (read your config however you like —
+- `FastAuthEnvConfig` subclass and its env-loading machinery.
+- `fastauth init` no longer writes a `.env.example`.
+- `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe2310/authkit/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/bhargavandhe2310/authkit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/bhargavandhe2310/fastauth/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/bhargavandhe2310/fastauth/releases/tag/v0.1.0

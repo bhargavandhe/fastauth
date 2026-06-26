@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from authkit.storage.postgres import (
+from fastauth.storage.postgres import (
     CURRENT_SCHEMA_VERSION,
     POSTGRES_MIGRATIONS,
     PostgresAdapter,
@@ -17,7 +17,7 @@ from authkit.storage.postgres import (
 
 def test_postgres_adapter_uses_configurable_table_prefix() -> None:
     adapter = PostgresAdapter.from_url(
-        "postgresql+asyncpg://authkit:authkit@localhost/authkit",
+        "postgresql+asyncpg://fastauth:fastauth@localhost/fastauth",
         table_prefix="custom_",
     )
 
@@ -25,15 +25,15 @@ def test_postgres_adapter_uses_configurable_table_prefix() -> None:
     assert "custom_users" in table_names
     assert "custom_refresh_tokens" in table_names
     assert "custom_schema_migrations" in table_names
-    assert "authkit_users" not in table_names
+    assert "fastauth_users" not in table_names
 
 
 def test_postgres_schema_tracks_current_version_table() -> None:
     adapter = PostgresAdapter.from_url(
-        "postgresql+asyncpg://authkit:authkit@localhost/authkit",
+        "postgresql+asyncpg://fastauth:fastauth@localhost/fastauth",
     )
 
-    assert "authkit_schema_migrations" in adapter.schema.metadata.tables
+    assert "fastauth_schema_migrations" in adapter.schema.metadata.tables
     assert "version" in adapter.schema.schema_migrations.c
     assert "applied_at" in adapter.schema.schema_migrations.c
 
@@ -43,16 +43,16 @@ def test_postgres_migration_registry_is_ordered() -> None:
 
     assert versions == sorted(versions)
     assert versions == list(range(1, CURRENT_SCHEMA_VERSION + 1))
-    assert POSTGRES_MIGRATIONS[-1].description == "initial authkit schema"
+    assert POSTGRES_MIGRATIONS[-1].description == "initial fastauth schema"
 
 
 def test_postgres_pending_migrations_rejects_future_database_version() -> None:
-    with pytest.raises(RuntimeError, match="newer than this authkit version"):
+    with pytest.raises(RuntimeError, match="newer than this fastauth version"):
         pending_postgres_migrations(CURRENT_SCHEMA_VERSION + 1)
 
 
 async def test_postgres_lifespan_applies_migrations_then_auth_lifespan() -> None:
-    engine = create_async_engine("postgresql+asyncpg://authkit:authkit@localhost/authkit")
+    engine = create_async_engine("postgresql+asyncpg://fastauth:fastauth@localhost/fastauth")
     adapter = PostgresAdapter(engine)
     calls: list[str] = []
 
@@ -80,7 +80,7 @@ async def test_postgres_lifespan_applies_migrations_then_auth_lifespan() -> None
 
 
 async def test_postgres_checked_lifespan_asserts_schema_then_auth_lifespan() -> None:
-    engine = create_async_engine("postgresql+asyncpg://authkit:authkit@localhost/authkit")
+    engine = create_async_engine("postgresql+asyncpg://fastauth:fastauth@localhost/fastauth")
     adapter = PostgresAdapter(engine)
     calls: list[str] = []
 

@@ -14,18 +14,18 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
 async def lockout_client() -> AsyncIterator[httpx.AsyncClient]:
-    """A fresh AuthKit with a deliberately small lockout window so the test
+    """A fresh FastAuth with a deliberately small lockout window so the test
     runs in milliseconds. Default ``max_failures=3``, ``window_seconds=2``.
     """
-    config = AuthKitConfig.model_validate(
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -34,7 +34,7 @@ async def lockout_client() -> AsyncIterator[httpx.AsyncClient]:
             "lockout": {"enabled": True, "max_failures": 3, "window_seconds": 2},
         },
     )
-    auth = AuthKit(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
+    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(
@@ -120,7 +120,7 @@ async def test_lockout_resets_on_successful_sign_in(
 
 async def test_lockout_disabled_never_triggers() -> None:
     """``lockout.enabled=False`` keeps the historical sign-in behaviour."""
-    config = AuthKitConfig.model_validate(
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -129,7 +129,7 @@ async def test_lockout_disabled_never_triggers() -> None:
             "lockout": {"enabled": False},
         },
     )
-    auth = AuthKit(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
+    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(

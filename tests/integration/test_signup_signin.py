@@ -20,7 +20,7 @@ async def test_sign_up_creates_user_and_session(
     body = response.json()
     assert body["user"]["email"] == "alice@example.com"
     assert "session" in body
-    assert "authkit.session_token" in response.headers.get("set-cookie", "")
+    assert "fastauth.session_token" in response.headers.get("set-cookie", "")
 
 
 async def test_sign_up_rejects_duplicate_email(
@@ -137,7 +137,7 @@ async def test_sign_up_omits_token_by_default(
     body = response.json()
     assert body["token"] is None
     # Cookie is still set so the cookie-based flow keeps working.
-    assert "authkit.session_token" in response.headers.get("set-cookie", "")
+    assert "fastauth.session_token" in response.headers.get("set-cookie", "")
 
 
 async def test_sign_up_returns_token_when_requested(

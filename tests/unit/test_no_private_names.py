@@ -1,4 +1,4 @@
-"""Enforces the project-wide rule: no leading-underscore names anywhere in `src/authkit`."""
+"""Enforces the project-wide rule: no leading-underscore names anywhere in `src/fastauth`."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ ALLOWED_DUNDER = {
     "__doc__",
     "__call__",
 }
-SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "authkit"
+SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "fastauth"
 
 
 def collect_python_files() -> list[pathlib.Path]:

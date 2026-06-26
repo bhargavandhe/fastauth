@@ -1,5 +1,5 @@
 [project]
-name = "authkit-fastapi"
+name = "fastauth"
 version = "0.1.0"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
@@ -37,10 +37,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bhargavandhe2310/authkit"
-Documentation = "https://github.com/bhargavandhe2310/authkit#readme"
-Repository = "https://github.com/bhargavandhe2310/authkit"
-Issues = "https://github.com/bhargavandhe2310/authkit/issues"
+Homepage = "https://github.com/bhargavandhe2310/fastauth"
+Documentation = "https://github.com/bhargavandhe2310/fastauth#readme"
+Repository = "https://github.com/bhargavandhe2310/fastauth"
+Issues = "https://github.com/bhargavandhe2310/fastauth/issues"
 
 [project.optional-dependencies]
 beanie = ["beanie>=1.27,<2", "motor>=3.6"]
@@ -61,17 +61,17 @@ dev = [
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.26"]
 
 [project.scripts]
-authkit = "authkit.cli.main:app"
+fastauth = "fastauth.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/authkit"]
+packages = ["src/fastauth"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/authkit", "README.md", "LICENSE"]
+include = ["src/fastauth", "README.md", "LICENSE"]
 
 [tool.ruff]
 line-length = 100
@@ -99,8 +99,8 @@ reportUnknownMemberType = "warning"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --cov=authkit --cov-report=term-missing"
+addopts = "-ra --strict-markers --cov=fastauth --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["src/authkit"]
+source = ["src/fastauth"]

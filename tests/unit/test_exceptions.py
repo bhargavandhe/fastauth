@@ -1,11 +1,11 @@
 # tests/unit/test_exceptions.py
 from __future__ import annotations
 
-from authkit import exceptions
+from fastauth import exceptions
 
 
 def test_base_carries_code_and_message() -> None:
-    error = exceptions.AuthKitError(code="x", message="bad")
+    error = exceptions.FastAuthError(code="x", message="bad")
     assert error.code == "x"
     assert error.message == "bad"
     assert "bad" in str(error)
@@ -14,7 +14,7 @@ def test_base_carries_code_and_message() -> None:
 def test_invalid_credentials_inherits_authentication() -> None:
     error = exceptions.InvalidCredentialsError()
     assert isinstance(error, exceptions.AuthenticationError)
-    assert isinstance(error, exceptions.AuthKitError)
+    assert isinstance(error, exceptions.FastAuthError)
     assert error.code == "INVALID_CREDENTIALS"
 
 

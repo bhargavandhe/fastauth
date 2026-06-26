@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
-from authkit.config import RefreshTokenConfig
-from authkit.exceptions import RefreshTokenReuseError
-from authkit.security.refresh_tokens import RefreshTokenService
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import RefreshTokenConfig
+from fastauth.exceptions import RefreshTokenReuseError
+from fastauth.security.refresh_tokens import RefreshTokenService
+from fastauth.storage.memory import InMemoryAdapter
 
 
 class RaceyRefreshTokenAdapter(InMemoryAdapter):

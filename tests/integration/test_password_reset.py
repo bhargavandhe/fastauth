@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from authkit.messaging.email import ConsoleEmailSender
+from fastauth.messaging.email import ConsoleEmailSender
 
 SIGNUP = {"email": "alice@example.com", "password": "correct-horse-staple", "name": "Alice"}
 

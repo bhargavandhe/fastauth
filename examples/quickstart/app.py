@@ -1,8 +1,8 @@
-"""Example FastAPI app exercising every authkit v1 feature end-to-end.
+"""Example FastAPI app exercising every fastauth v1 feature end-to-end.
 
 The example keeps configuration explicit: callers construct an
-``AuthKitConfig`` and pass it into the app factory. No process environment is
-read by the example or by authkit.
+``FastAuthConfig`` and pass it into the app factory. No process environment is
+read by the example or by fastauth.
 """
 
 from __future__ import annotations
@@ -13,20 +13,20 @@ from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pydantic import SecretStr
 
-from authkit import AuthKit, AuthKitConfig
-from authkit.config import (
+from fastauth import FastAuth, FastAuthConfig
+from fastauth.config import (
     CookieConfig,
     CsrfConfig,
     DatabaseConfig,
     MongoDatabaseConfig,
     RateLimitConfig,
 )
-from authkit.domain.enums import DatabaseBackendKind
-from authkit.plugins.api_key import ApiKeyPlugin
-from authkit.plugins.audit_logs import AuditLogsPlugin
-from authkit.plugins.jwt import JwtPlugin
-from authkit.plugins.openapi import OpenApiPlugin
-from authkit.storage.beanie import BeanieAdapter
+from fastauth.domain.enums import DatabaseBackendKind
+from fastauth.plugins.api_key import ApiKeyPlugin
+from fastauth.plugins.audit_logs import AuditLogsPlugin
+from fastauth.plugins.jwt import JwtPlugin
+from fastauth.plugins.openapi import OpenApiPlugin
+from fastauth.storage.beanie import BeanieAdapter
 
 __all__ = [
     "app",
@@ -45,12 +45,12 @@ def build_config(
     *,
     secret_key: SecretStr,
     mongo_url: str = "mongodb://localhost:27017",
-    database_name: str = "authkit",
+    database_name: str = "fastauth",
     cookie_secure: bool = True,
     csrf_enabled: bool = True,
     rate_limit_enabled: bool = True,
-) -> AuthKitConfig:
-    return AuthKitConfig(
+) -> FastAuthConfig:
+    return FastAuthConfig(
         secret_key=secret_key,
         database=DatabaseConfig(
             backend=DatabaseBackendKind.MONGO,
@@ -65,9 +65,9 @@ def build_config(
     )
 
 
-def create_auth(config: AuthKitConfig, database: AsyncIOMotorDatabase[Any]) -> AuthKit:
+def create_auth(config: FastAuthConfig, database: AsyncIOMotorDatabase[Any]) -> FastAuth:
     adapter = BeanieAdapter(database)
-    return AuthKit(
+    return FastAuth(
         config,
         adapter=adapter,
         plugins=[
@@ -79,18 +79,18 @@ def create_auth(config: AuthKitConfig, database: AsyncIOMotorDatabase[Any]) -> A
     )
 
 
-def create_app(auth: AuthKit, database: AsyncIOMotorDatabase[Any]) -> FastAPI:
-    del database  # The BeanieAdapter is already bound into the AuthKit instance.
+def create_app(auth: FastAuth, database: AsyncIOMotorDatabase[Any]) -> FastAPI:
+    del database  # The BeanieAdapter is already bound into the FastAuth instance.
     adapter = auth.context.adapter
     if not isinstance(adapter, BeanieAdapter):
-        raise TypeError("quickstart create_app requires a BeanieAdapter-backed AuthKit")
-    app_instance = FastAPI(title="authkit quickstart", lifespan=adapter.lifespan(auth))
+        raise TypeError("quickstart create_app requires a BeanieAdapter-backed FastAuth")
+    app_instance = FastAPI(title="fastauth quickstart", lifespan=adapter.lifespan(auth))
     auth.install(app_instance)
 
     @app_instance.get("/")
     async def root() -> dict[str, str]:
         """Friendly landing page pointing visitors at the Scalar API reference."""
-        return {"message": "authkit quickstart - visit /auth/reference for the API docs"}
+        return {"message": "fastauth quickstart - visit /auth/reference for the API docs"}
 
     return app_instance
 

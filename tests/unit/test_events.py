@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from authkit.domain.events import UserSignedIn
-from authkit.runtime.event_bus import EventBus
+from fastauth.domain.events import UserSignedIn
+from fastauth.runtime.event_bus import EventBus
 
 
 async def test_subscribe_and_publish() -> None:

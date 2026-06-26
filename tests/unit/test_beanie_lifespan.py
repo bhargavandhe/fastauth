@@ -7,8 +7,8 @@ from typing import Any, cast
 import pytest
 from fastapi import FastAPI
 
-from authkit.runtime.auth import AuthKit
-from authkit.storage.beanie import BeanieAdapter
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.beanie import BeanieAdapter
 
 
 class FakeAuth:
@@ -48,10 +48,10 @@ async def test_beanie_adapter_lifespan_initializes_beanie_before_auth(
             calls.append("auth-stop")
 
     fake_auth.lifespan = fake_auth_lifespan  # type: ignore[method-assign]
-    monkeypatch.setattr("authkit.storage.beanie.adapter.init_beanie_documents", fake_init)
+    monkeypatch.setattr("fastauth.storage.beanie.adapter.init_beanie_documents", fake_init)
 
     adapter = BeanieAdapter(cast(Any, "db"))
-    app = FastAPI(lifespan=adapter.lifespan(cast(AuthKit, fake_auth)))
+    app = FastAPI(lifespan=adapter.lifespan(cast(FastAuth, fake_auth)))
 
     async with app.router.lifespan_context(app):
         assert calls == ["beanie", "auth-start"]

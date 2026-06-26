@@ -10,14 +10,14 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
-def build_config(**refresh_overrides: object) -> AuthKitConfig:
-    return AuthKitConfig.model_validate(
+def build_config(**refresh_overrides: object) -> FastAuthConfig:
+    return FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -34,8 +34,8 @@ def adapter() -> InMemoryAdapter:
 
 
 @pytest.fixture
-def auth(adapter: InMemoryAdapter) -> AuthKit:
-    return AuthKit(
+def auth(adapter: InMemoryAdapter) -> FastAuth:
+    return FastAuth(
         build_config(),
         adapter=adapter,
         email_sender=ConsoleEmailSender(),
@@ -43,7 +43,7 @@ def auth(adapter: InMemoryAdapter) -> AuthKit:
 
 
 @pytest.fixture
-async def client(auth: AuthKit) -> AsyncIterator[httpx.AsyncClient]:
+async def client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(
@@ -107,7 +107,7 @@ async def test_disabled_refresh_tokens_never_issued() -> None:
     """When config.refresh_token.enabled=False, even include_token=True
     yields refresh_token=None.
     """
-    config = AuthKitConfig.model_validate(
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -116,7 +116,7 @@ async def test_disabled_refresh_tokens_never_issued() -> None:
             "refresh_token": {"enabled": False},
         },
     )
-    auth = AuthKit(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
+    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(
@@ -213,7 +213,7 @@ async def test_refresh_expired_token_returns_400(
 
 async def test_refresh_endpoint_disabled_returns_400() -> None:
     """When refresh tokens are disabled, the endpoint exists but always rejects."""
-    config = AuthKitConfig.model_validate(
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -222,7 +222,7 @@ async def test_refresh_endpoint_disabled_returns_400() -> None:
             "refresh_token": {"enabled": False},
         },
     )
-    auth = AuthKit(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
+    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(
@@ -241,7 +241,7 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
     """When the chain is older than absolute_max_age_seconds, rotation is
     refused and the family is revoked so the user must sign in fresh.
     """
-    config = AuthKitConfig.model_validate(
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -251,7 +251,7 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
         },
     )
     adapter = InMemoryAdapter()
-    auth = AuthKit(config, adapter=adapter, email_sender=ConsoleEmailSender())
+    auth = FastAuth(config, adapter=adapter, email_sender=ConsoleEmailSender())
     app = FastAPI()
     app.include_router(auth.router)
     async with httpx.AsyncClient(
@@ -288,4 +288,4 @@ async def test_refresh_response_sets_session_cookie(client: httpx.AsyncClient) -
     )
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")
-    assert "authkit.session_token" in set_cookie
+    assert "fastauth.session_token" in set_cookie

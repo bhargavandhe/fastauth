@@ -1,7 +1,7 @@
 # Adapters
 
-A `DatabaseAdapter` is the storage seam between authkit's core auth flows and
-your database. The protocol lives at `authkit.storage.base.DatabaseAdapter`
+A `DatabaseAdapter` is the storage seam between fastauth's core auth flows and
+your database. The protocol lives at `fastauth.storage.base.DatabaseAdapter`
 and covers users, accounts, sessions, refresh tokens, and verifications.
 
 Optional capabilities live in separate protocols:
@@ -17,7 +17,7 @@ first-party capability.
 ```python
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
-from authkit.storage.beanie import BeanieAdapter
+from fastauth.storage.beanie import BeanieAdapter
 
 mongo_client = AsyncIOMotorClient("mongodb://localhost:27017", uuidRepresentation="standard")
 mongo_database = mongo_client["myapp"]
@@ -27,30 +27,30 @@ adapter = BeanieAdapter(mongo_database)
 app = FastAPI(lifespan=adapter.lifespan(auth))
 ```
 
-For Postgres, install `authkit-fastapi[postgres]` and pass a SQLAlchemy async
+For Postgres, install `fastauth-fastapi[postgres]` and pass a SQLAlchemy async
 engine or URL:
 
 ```python
 from fastapi import FastAPI
-from authkit.storage.postgres import PostgresAdapter
+from fastauth.storage.postgres import PostgresAdapter
 
 adapter = PostgresAdapter.from_url(
     "postgresql+asyncpg://user:pass@localhost/myapp",
-    table_prefix="authkit_",
+    table_prefix="fastauth_",
 )
 
-# Convenience path: apply tracked authkit migrations before startup.
+# Convenience path: apply tracked fastauth migrations before startup.
 app = FastAPI(lifespan=adapter.lifespan(auth))
 ```
 
-`authkit migrate --postgres-url postgresql+asyncpg://...` applies the same
-tracked schema migrations from the CLI and records the authkit schema version
+`fastauth migrate --postgres-url postgresql+asyncpg://...` applies the same
+tracked schema migrations from the CLI and records the fastauth schema version
 in `<prefix>schema_migrations`. For long-lived production deployments, run the
 CLI during deploy and start FastAPI with `adapter.checked_lifespan(auth)` or
 `adapter.lifespan(auth, apply_migrations=False)` so the app fails fast if the
 database is behind instead of mutating schema at process startup.
 
-The adapter uses AuthKit's string domain IDs as primary keys and stores plugin
+The adapter uses FastAuth's string domain IDs as primary keys and stores plugin
 data in native Postgres types such as `jsonb` and `bytea`.
 
 Adapters are async-only and operate on the Pydantic domain models directly —
@@ -74,9 +74,9 @@ Start with `BaseDatabaseAdapter` and override only the core methods needed by
 ```python
 from datetime import datetime
 
-from authkit.domain.enums import ProviderId, VerificationPurpose
-from authkit.domain.models import Account, RefreshToken, Session, User, Verification
-from authkit.storage.base import BaseDatabaseAdapter
+from fastauth.domain.enums import ProviderId, VerificationPurpose
+from fastauth.domain.models import Account, RefreshToken, Session, User, Verification
+from fastauth.storage.base import BaseDatabaseAdapter
 
 
 class MyAdapter(BaseDatabaseAdapter):
@@ -120,8 +120,8 @@ First-party adapters enforce this contract in the shared adapter tests.
 Add optional protocols only when your app enables the matching feature:
 
 ```python
-from authkit.domain.models import ApiKey
-from authkit.storage.base import ApiKeyStore
+from fastauth.domain.models import ApiKey
+from fastauth.storage.base import ApiKeyStore
 
 
 class MyAdapter(BaseDatabaseAdapter, ApiKeyStore):
@@ -135,5 +135,5 @@ class MyAdapter(BaseDatabaseAdapter, ApiKeyStore):
 ```
 
 The same pattern applies to `JwksKeyStore`, `AuditLogStore`, and
-`RateLimitStore`. If a required capability is missing, `AuthKit` or the plugin
+`RateLimitStore`. If a required capability is missing, `FastAuth` or the plugin
 raises `ConfigError` during startup instead of failing on the first request.

@@ -23,11 +23,11 @@ When enabled, the plugin contributes the following endpoints to
 ## Installation
 
 ```python
-from authkit import AuthKit, AuthKitConfig
-from authkit.flows.email_otp import EmailOtpConfig
-from authkit.plugins.email_otp import EmailOtpPlugin
+from fastauth import FastAuth, FastAuthConfig
+from fastauth.flows.email_otp import EmailOtpConfig
+from fastauth.plugins.email_otp import EmailOtpPlugin
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[
@@ -236,10 +236,10 @@ codes during integration tests.
 ## Capturing OTPs in tests
 
 ```python
-from authkit.plugins.email_otp import EmailOtpPlugin
-from authkit.plugins.test_utils import TestUtilsPlugin, TestUtilsConfig
+from fastauth.plugins.email_otp import EmailOtpPlugin
+from fastauth.plugins.test_utils import TestUtilsPlugin, TestUtilsConfig
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=InMemoryAdapter(),
     plugins=[
@@ -252,7 +252,7 @@ auth = AuthKit(
 await client.post("/auth/email-otp/send-verification-otp",
                  json={"email": "alice@example.com", "type": "sign-in"})
 # Read it back
-helpers = auth.context.plugins.by_id["authkit-test-utils"].helpers
+helpers = auth.context.plugins.by_id["fastauth-test-utils"].helpers
 otp = helpers.get_otp("alice@example.com")
 ```
 

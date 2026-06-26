@@ -9,7 +9,7 @@ import pytest
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from testcontainers.mongodb import MongoDbContainer  # pyright: ignore[reportMissingTypeStubs]
 
-from authkit.storage.beanie import init_beanie_documents
+from fastauth.storage.beanie import init_beanie_documents
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +37,7 @@ async def beanie_database(mongo_url: str) -> AsyncIterator[AsyncIOMotorDatabase[
         uuidRepresentation="standard",
         tz_aware=True,
     )
-    database_name = "authkit_test"
+    database_name = "fastauth_test"
     database = client[database_name]
     await init_beanie_documents(database)
     yield database

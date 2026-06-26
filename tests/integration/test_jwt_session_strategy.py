@@ -1,6 +1,6 @@
 """Integration tests for SessionConfig.strategy == JWT with JwtPlugin installed.
 
-When the user opts into JWT sessions, AuthKit constructs a JwtSessionStrategy
+When the user opts into JWT sessions, FastAuth constructs a JwtSessionStrategy
 that shares its JwksRegistry with the installed JwtPlugin. Sign-up issues a
 JWT; get-session validates the JWT and rebuilds the SessionContext;
 session_strategy.revoke is a no-op (JWTs are stateless until they expire).
@@ -16,16 +16,16 @@ from fastapi import FastAPI
 from joserfc import jwk, jwt
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.plugins.jwt import JwtPlugin, JwtPluginConfig
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
-async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, AuthKit]]:
-    config = AuthKitConfig.model_validate(
+async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, FastAuth]]:
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -35,7 +35,7 @@ async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, AuthKit
             "session": {"strategy": "jwt"},
         },
     )
-    auth = AuthKit(
+    auth = FastAuth(
         config,
         adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),
@@ -53,7 +53,7 @@ async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, AuthKit
 
 
 async def test_sign_up_issues_a_jwt_session_token(
-    jwt_session_client: tuple[httpx.AsyncClient, AuthKit],
+    jwt_session_client: tuple[httpx.AsyncClient, FastAuth],
 ) -> None:
     client, _ = jwt_session_client
     response = await client.post(
@@ -72,7 +72,7 @@ async def test_sign_up_issues_a_jwt_session_token(
 
 
 async def test_get_session_validates_the_jwt(
-    jwt_session_client: tuple[httpx.AsyncClient, AuthKit],
+    jwt_session_client: tuple[httpx.AsyncClient, FastAuth],
 ) -> None:
     client, _ = jwt_session_client
     sign_up = await client.post(
@@ -87,7 +87,7 @@ async def test_get_session_validates_the_jwt(
 
 
 async def test_token_is_verifiable_against_jwks(
-    jwt_session_client: tuple[httpx.AsyncClient, AuthKit],
+    jwt_session_client: tuple[httpx.AsyncClient, FastAuth],
 ) -> None:
     client, _ = jwt_session_client
     sign_up = await client.post(
@@ -112,7 +112,7 @@ async def test_token_is_verifiable_against_jwks(
 
 
 async def test_no_db_session_row_under_jwt_strategy(
-    jwt_session_client: tuple[httpx.AsyncClient, AuthKit],
+    jwt_session_client: tuple[httpx.AsyncClient, FastAuth],
 ) -> None:
     """Sanity check: the JwtSessionStrategy is stateless, so the adapter's
     session collection stays empty after sign-up."""
@@ -130,7 +130,7 @@ async def test_no_db_session_row_under_jwt_strategy(
 
 def test_jwt_strategy_without_jwt_plugin_raises() -> None:
     """Misconfiguration: strategy=JWT but JwtPlugin not installed."""
-    config = AuthKitConfig.model_validate(
+    config = FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -138,4 +138,4 @@ def test_jwt_strategy_without_jwt_plugin_raises() -> None:
         },
     )
     with pytest.raises(ValueError, match="requires JwtPlugin"):
-        AuthKit(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
+        FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())

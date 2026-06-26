@@ -7,7 +7,7 @@ must return any object satisfying the `KmsSigner` Protocol:
 
 ```python
 from typing import Any
-from authkit.security.jwt import KmsSigner
+from fastauth.security.jwt import KmsSigner
 
 class CloudKmsSigner:
     def __init__(self, registry: JwksRegistry, key_id: str) -> None:
@@ -22,19 +22,19 @@ class CloudKmsSigner:
 Wire the factory into the plugin:
 
 ```python
-from authkit.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[JwtPlugin(
         JwtPluginConfig(disable_private_key_encryption=True),
-        signer_factory=lambda registry: CloudKmsSigner(registry, key_id="projects/.../authkit"),
+        signer_factory=lambda registry: CloudKmsSigner(registry, key_id="projects/.../fastauth"),
     )],
 )
 ```
 
-Setting `disable_private_key_encryption=True` tells authkit not to AES-GCM
+Setting `disable_private_key_encryption=True` tells fastauth not to AES-GCM
 encrypt the stored private key — when KMS is responsible for signing, the
 plugin still tracks the public JWKS but the in-database private material can
 be a placeholder.

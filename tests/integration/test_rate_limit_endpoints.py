@@ -9,16 +9,16 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
 async def rl_client() -> AsyncIterator[httpx.AsyncClient]:
-    auth = AuthKit(
-        AuthKitConfig.model_validate(
+    auth = FastAuth(
+        FastAuthConfig.model_validate(
             {
                 "secret_key": SecretStr("a" * 64),
                 "csrf": {"enabled": False},

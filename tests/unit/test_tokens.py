@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import SecretStr
 
-from authkit.security.tokens import SignedCookieValue, TokenService
+from fastauth.security.tokens import SignedCookieValue, TokenService
 
 
 def test_token_service_generates_url_safe_pair() -> None:

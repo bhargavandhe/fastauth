@@ -6,10 +6,10 @@ single-process deployments) and `DatabaseRateLimitStorage` (multi-process,
 backed by the `rate_limits` collection). Selection is config-driven:
 
 ```python
-from authkit.config import AuthKitConfig, RateLimitConfig
-from authkit.domain.enums import RateLimitStorageKind
+from fastauth.config import FastAuthConfig, RateLimitConfig
+from fastauth.domain.enums import RateLimitStorageKind
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     # ...
     rate_limit=RateLimitConfig(
         storage=RateLimitStorageKind.DATABASE,

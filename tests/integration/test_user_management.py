@@ -7,10 +7,10 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from authkit.domain.enums import ProviderId
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.domain.enums import ProviderId
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 SIGNUP = {"email": "alice@example.com", "password": "correct-horse-staple", "name": "Alice"}
 
@@ -71,7 +71,7 @@ async def test_update_profile_replaces_metadata_and_preserves_omitted_fields(
 async def test_set_password_for_passwordless_user_allows_credential_sign_in(
     client: httpx.AsyncClient,
     adapter: InMemoryAdapter,
-    auth: AuthKit,
+    auth: FastAuth,
 ) -> None:
     body = await sign_up(client)
     user_id = str(body["user"]["id"])
@@ -142,7 +142,7 @@ async def test_delete_account_with_password_clears_session_and_auth_state(
     )
     assert response.status_code == 200, response.text
     assert response.json() == {"success": True}
-    assert "authkit.session_token" in response.headers.get("set-cookie", "")
+    assert "fastauth.session_token" in response.headers.get("set-cookie", "")
 
     assert await adapter.get_user_by_id(user_id) is None
     assert await adapter.get_account_for_user(user_id, ProviderId.CREDENTIAL) is None

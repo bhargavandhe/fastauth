@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from authkit.web.csrf import is_trusted_origin
+from fastauth.web.csrf import is_trusted_origin
 
 
 def test_relative_path_allowed_when_flag_set() -> None:

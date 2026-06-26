@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from authkit.domain.enums import HookPhase
-from authkit.domain.models import User
-from authkit.exceptions import HookAbortError
-from authkit.runtime.hooks import DatabaseHooks, HookContext
+from fastauth.domain.enums import HookPhase
+from fastauth.domain.models import User
+from fastauth.exceptions import HookAbortError
+from fastauth.runtime.hooks import DatabaseHooks, HookContext
 
 
 async def test_run_returns_payload_when_no_hooks_registered() -> None:

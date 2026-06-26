@@ -5,8 +5,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 SIGNUP = {"email": "alice@example.com", "password": "correct-horse-staple", "name": "Alice"}
 
@@ -74,7 +74,7 @@ async def test_change_password_requires_authentication(client: httpx.AsyncClient
 
 
 async def test_change_password_keeps_current_session_revokes_others(
-    client: httpx.AsyncClient, adapter: InMemoryAdapter, auth: AuthKit
+    client: httpx.AsyncClient, adapter: InMemoryAdapter, auth: FastAuth
 ) -> None:
     """Default ``revoke_other_sessions=True`` invalidates other sessions; the
     session that issued the change stays alive."""
@@ -104,7 +104,7 @@ async def test_change_password_keeps_current_session_revokes_others(
 
 
 async def test_change_password_keeps_all_sessions_when_opted_out(
-    client: httpx.AsyncClient, adapter: InMemoryAdapter, auth: AuthKit
+    client: httpx.AsyncClient, adapter: InMemoryAdapter, auth: FastAuth
 ) -> None:
     """``revoke_other_sessions=False`` leaves every other session alive."""
     await client.post("/auth/sign-up/email", json=SIGNUP)

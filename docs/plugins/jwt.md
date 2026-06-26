@@ -22,9 +22,9 @@ signing — see the [KMS signing guide](../guides/kms-signing.md).
 ## Example
 
 ```python
-from authkit.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[JwtPlugin(JwtPluginConfig(

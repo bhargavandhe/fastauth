@@ -1,6 +1,6 @@
 # Configuration
 
-`AuthKitConfig` is a plain `pydantic.BaseModel`. Every nested section is also
+`FastAuthConfig` is a plain `pydantic.BaseModel`. Every nested section is also
 a `BaseModel` with `extra="forbid"`, so a typo in any field name is caught at
 construction rather than at runtime. **The framework never reads environment
 variables**, `.env` files, AWS Secrets Manager, Vault, or any other external
@@ -8,15 +8,15 @@ source — every value comes from the constructor. Pydantic v2 validation runs
 eagerly on the entire tree at instantiation.
 
 Loading config from your source of choice is the consumer's job. The example
-below uses ordinary local variables to emphasize that authkit only sees the
+below uses ordinary local variables to emphasize that fastauth only sees the
 final values you pass to the constructor.
 
 ## Construction
 
 ```python
 from pydantic import SecretStr
-from authkit import AuthKitConfig
-from authkit.config import (
+from fastauth import FastAuthConfig
+from fastauth.config import (
     AppConfig,
     CookieConfig,
     DatabaseConfig,
@@ -29,7 +29,7 @@ from authkit.config import (
 app_secret = "replace-me-with-your-application-secret"
 mongo_url = "mongodb://db.example.com:27017"
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     secret_key=SecretStr(app_secret),
     app=AppConfig(base_url="https://app.example.com"),
     session=SessionConfig(max_age_seconds=604800),
@@ -42,13 +42,13 @@ config = AuthKitConfig(
 )
 print(config.database.mongo.url)
 
-postgres_config = AuthKitConfig(
+postgres_config = FastAuthConfig(
     secret_key=SecretStr(app_secret),
     database=DatabaseConfig(
         backend="postgres",
         postgres=PostgresDatabaseConfig(
             url="postgresql+asyncpg://user:pass@db.example.com/app",
-            table_prefix="authkit_",
+            table_prefix="fastauth_",
         ),
     ),
 )
@@ -56,11 +56,11 @@ print(postgres_config.database.postgres.url)
 ```
 
 If you use a vault or parameter store, read those values in your application
-configuration layer and pass the resulting strings into `AuthKitConfig`.
+configuration layer and pass the resulting strings into `FastAuthConfig`.
 
 ## Sections
 
-`AuthKitConfig` composes sixteen sub-configs:
+`FastAuthConfig` composes sixteen sub-configs:
 
 | Section | Purpose |
 |---|---|
@@ -89,12 +89,12 @@ persistent adapter.
 
 ## Wire format
 
-`AuthKitConfig.wire_format` (a `WireFormat` enum) toggles the JSON casing
+`FastAuthConfig.wire_format` (a `WireFormat` enum) toggles the JSON casing
 of every public request and response body. Two modes:
 
 - `WireFormat.SNAKE` — **default**. Output JSON keys are `snake_case`
   (`email_verified`, `refresh_token`, `user_id`, ...). The historical
-  authkit shape; existing clients see no change.
+  fastauth shape; existing clients see no change.
 - `WireFormat.CAMEL` — output JSON keys are `camelCase` (`emailVerified`,
   `refreshToken`, `userId`, ...). Useful for JS/TS frontends that prefer
   to keep their domain models in camelCase end-to-end.
@@ -105,11 +105,11 @@ correctly regardless of `wire_format`. Output casing is the only thing
 that differs.
 
 ```python
-from authkit import AuthKitConfig
-from authkit.domain.enums import WireFormat
+from fastauth import FastAuthConfig
+from fastauth.domain.enums import WireFormat
 from pydantic import SecretStr
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     secret_key=SecretStr("..."),
     wire_format=WireFormat.CAMEL,
 )
@@ -117,10 +117,10 @@ config = AuthKitConfig(
 
 ### Implementation notes
 
-- The choice is per-`AuthKit` instance. Two `AuthKit` instances with
+- The choice is per-`FastAuth` instance. Two `FastAuth` instances with
   different `wire_format` can coexist in the same Python process.
 - Camelization happens at response render time via a recursive
-  key-walker (`authkit.web.fastapi.CamelJSONResponse`), not via
+  key-walker (`fastauth.web.fastapi.CamelJSONResponse`), not via
   Pydantic alias generation on response models. This means embedded
   domain models like `User` and `Session` get camelCased correctly
   even though they don't carry an alias generator on the model class.
@@ -137,7 +137,7 @@ config = AuthKitConfig(
 
 ## Why no process config loader?
 
-Earlier versions shipped an `AuthKitEnvConfig` subclass that layered
+Earlier versions shipped an `FastAuthEnvConfig` subclass that layered
 `pydantic-settings` on top of the base model. That class has been removed.
 The reasoning:
 
@@ -153,11 +153,11 @@ The reasoning:
 The application boundary should look like any other dependency injection:
 
 ```python
-from authkit import AuthKitConfig
-from authkit.config import DatabaseConfig, MongoDatabaseConfig
+from fastauth import FastAuthConfig
+from fastauth.config import DatabaseConfig, MongoDatabaseConfig
 from pydantic import SecretStr
 
-config = AuthKitConfig(
+config = FastAuthConfig(
     secret_key=SecretStr(app_settings.auth_secret),
     database=DatabaseConfig(
         backend="mongo",

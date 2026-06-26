@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from authkit.storage.beanie import BeanieAdapter
+from fastauth.storage.beanie import BeanieAdapter
 from tests.adapters.adapter_contract import AdapterContract
 
 

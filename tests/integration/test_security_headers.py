@@ -9,15 +9,15 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
-from authkit.web.fastapi import install_security_headers
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
+from fastauth.web.fastapi import install_security_headers
 
 
-def build_config(**security_overrides: object) -> AuthKitConfig:
-    return AuthKitConfig.model_validate(
+def build_config(**security_overrides: object) -> FastAuthConfig:
+    return FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -30,7 +30,7 @@ def build_config(**security_overrides: object) -> AuthKitConfig:
 
 @pytest.fixture
 async def secure_client() -> AsyncIterator[httpx.AsyncClient]:
-    auth = AuthKit(
+    auth = FastAuth(
         build_config(),
         adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),
@@ -59,7 +59,7 @@ async def test_default_security_headers_are_present(
 
 
 async def test_disabled_middleware_emits_no_headers() -> None:
-    auth = AuthKit(
+    auth = FastAuth(
         build_config(enabled=False),
         adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),
@@ -76,7 +76,7 @@ async def test_disabled_middleware_emits_no_headers() -> None:
 
 
 async def test_csp_and_permissions_policy_can_be_configured() -> None:
-    auth = AuthKit(
+    auth = FastAuth(
         build_config(
             content_security_policy="default-src 'self'; frame-ancestors 'none'",
             permissions_policy="geolocation=(), camera=()",
@@ -100,7 +100,7 @@ async def test_csp_and_permissions_policy_can_be_configured() -> None:
 
 async def test_individual_headers_can_be_disabled() -> None:
     """Setting a header field to ``None`` omits that header only."""
-    auth = AuthKit(
+    auth = FastAuth(
         build_config(hsts=None, x_frame_options=None),
         adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),

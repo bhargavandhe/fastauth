@@ -1,13 +1,13 @@
 # Plugins
 
-A `Plugin` is the only sanctioned extension point in authkit. Subclass
-`authkit.plugins.base.Plugin`, set the `id` class variable, and override only
+A `Plugin` is the only sanctioned extension point in fastauth. Subclass
+`fastauth.plugins.base.Plugin`, set the `id` class variable, and override only
 the hooks you need:
 
 ```python
 from typing import ClassVar
 from collections.abc import Sequence
-from authkit.plugins.base import EndpointSpec, Plugin
+from fastauth.plugins.base import EndpointSpec, Plugin
 
 class HelloPlugin(Plugin):
     id: ClassVar[str] = "myapp-hello"
@@ -25,7 +25,7 @@ class HelloPlugin(Plugin):
     async def hello(self) -> dict[str, str]:
         return {"hello": "world"}
 
-auth = AuthKit(config, adapter=adapter, plugins=[HelloPlugin()])
+auth = FastAuth(config, adapter=adapter, plugins=[HelloPlugin()])
 ```
 
 `PluginRegistry` validates ids and aggregates `endpoints()`,
@@ -42,7 +42,7 @@ through `rate_limit_rules()`.
 
 ## Authoring template
 
-Use this shape for plugins that need authkit context, authentication, optional
+Use this shape for plugins that need fastauth context, authentication, optional
 storage capabilities, and route-specific rate limits:
 
 ```python
@@ -52,10 +52,10 @@ from typing import ClassVar
 from fastapi import Request
 from pydantic import BaseModel
 
-from authkit.domain.models import WireModel
-from authkit.plugins.base import EndpointSpec, Plugin, RateLimitRule
-from authkit.runtime.context import AuthContext
-from authkit.storage.base import AuditLogStore
+from fastauth.domain.models import WireModel
+from fastauth.plugins.base import EndpointSpec, Plugin, RateLimitRule
+from fastauth.runtime.context import AuthContext
+from fastauth.storage.base import AuditLogStore
 
 
 class MyPluginResponse(WireModel):

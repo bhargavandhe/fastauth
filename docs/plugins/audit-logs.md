@@ -21,9 +21,9 @@ the `/audit-logs/all` admin endpoint.
 ## Example
 
 ```python
-from authkit.plugins.audit_logs import AuditLogsConfig, AuditLogsPlugin
+from fastauth.plugins.audit_logs import AuditLogsConfig, AuditLogsPlugin
 
-auth = AuthKit(
+auth = FastAuth(
     config,
     adapter=adapter,
     plugins=[AuditLogsPlugin(AuditLogsConfig(admin_user_ids=["00000000-...-admin"]))],

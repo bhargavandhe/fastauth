@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from authkit.config import SessionConfig
-from authkit.domain.models import User
-from authkit.security.sessions import DatabaseSessionStrategy, SessionContext
-from authkit.security.tokens import TokenService
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import SessionConfig
+from fastauth.domain.models import User
+from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext
+from fastauth.security.tokens import TokenService
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture

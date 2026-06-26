@@ -1,4 +1,4 @@
-"""Integration tests for ``AuthKitConfig.wire_format``.
+"""Integration tests for ``FastAuthConfig.wire_format``.
 
 Two scenarios:
 
@@ -8,7 +8,7 @@ Two scenarios:
 
 Both modes accept either casing on input, thanks to
 ``populate_by_name=True`` + ``alias_generator=to_camel`` on
-:class:`authkit.domain.models.WireModel`.
+:class:`fastauth.domain.models.WireModel`.
 """
 
 from __future__ import annotations
@@ -20,15 +20,15 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.domain.enums import WireFormat
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.domain.enums import WireFormat
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
-def make_config(wire_format: WireFormat) -> AuthKitConfig:
-    return AuthKitConfig.model_validate(
+def make_config(wire_format: WireFormat) -> FastAuthConfig:
+    return FastAuthConfig.model_validate(
         {
             "secret_key": SecretStr("a" * 64),
             "csrf": {"enabled": False},
@@ -40,7 +40,7 @@ def make_config(wire_format: WireFormat) -> AuthKitConfig:
 
 
 async def build_client(wire_format: WireFormat) -> AsyncIterator[httpx.AsyncClient]:
-    auth = AuthKit(
+    auth = FastAuth(
         make_config(wire_format),
         adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),

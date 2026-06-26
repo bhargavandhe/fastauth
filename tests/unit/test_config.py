@@ -3,10 +3,9 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from authkit.config import (
+from fastauth.config import (
     AdvancedConfig,
     AppConfig,
-    AuthKitConfig,
     CookieConfig,
     CsrfConfig,
     DatabaseConfig,
@@ -14,6 +13,7 @@ from authkit.config import (
     EmailChangeConfig,
     EmailConfig,
     EmailVerificationConfig,
+    FastAuthConfig,
     LockoutConfig,
     MemoryDatabaseConfig,
     MongoDatabaseConfig,
@@ -25,31 +25,31 @@ from authkit.config import (
     SecurityHeadersConfig,
     SessionConfig,
 )
-from authkit.domain.enums import DatabaseBackendKind, SessionStrategyKind
+from fastauth.domain.enums import DatabaseBackendKind, SessionStrategyKind
 
 
-def test_authkitconfig_requires_secret_key() -> None:
+def test_fastauthconfig_requires_secret_key() -> None:
     """A missing ``secret_key`` raises because config must be explicit.
     """
     with pytest.raises(ValidationError):
-        AuthKitConfig()  # pyright: ignore[reportCallIssue]
+        FastAuthConfig()  # pyright: ignore[reportCallIssue]
 
 
-def test_authkitconfig_does_not_read_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fastauthconfig_does_not_read_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Process variables must not satisfy required config fields."""
     monkeypatch.setenv("SHOULD_BE_IGNORED_BY_AUTHKIT", "x" * 64)
     with pytest.raises(ValidationError):
-        AuthKitConfig()  # pyright: ignore[reportCallIssue]
+        FastAuthConfig()  # pyright: ignore[reportCallIssue]
 
 
-def test_authkitconfig_accepts_explicit_secret_key() -> None:
-    config = AuthKitConfig(secret_key=SecretStr("a" * 64))
+def test_fastauthconfig_accepts_explicit_secret_key() -> None:
+    config = FastAuthConfig(secret_key=SecretStr("a" * 64))
     assert isinstance(config.secret_key, SecretStr)
     assert "a" * 64 not in repr(config)
 
 
-def test_authkitconfig_accepts_nested_overrides_via_kwargs() -> None:
-    config = AuthKitConfig(
+def test_fastauthconfig_accepts_nested_overrides_via_kwargs() -> None:
+    config = FastAuthConfig(
         secret_key=SecretStr("b" * 64),
         session=SessionConfig(max_age_seconds=3600),
         database=DatabaseConfig(
@@ -79,20 +79,20 @@ def test_database_config_models_multiple_backends() -> None:
     assert config.postgres.table_prefix == "custom_"
 
 
-def test_authkitconfig_accepts_dict_via_model_validate() -> None:
-    config = AuthKitConfig.model_validate(
+def test_fastauthconfig_accepts_dict_via_model_validate() -> None:
+    config = FastAuthConfig.model_validate(
         {"secret_key": "c" * 64, "session": {"max_age_seconds": 7200}}
     )
     assert config.session.max_age_seconds == 7200
 
 
-def test_authkitconfig_defaults_match_documented_values() -> None:
-    config = AuthKitConfig(secret_key=SecretStr("d" * 64))
+def test_fastauthconfig_defaults_match_documented_values() -> None:
+    config = FastAuthConfig(secret_key=SecretStr("d" * 64))
     assert config.app.base_url == "http://localhost:8000"
     assert config.app.base_path == "/auth"
     assert config.session.strategy is SessionStrategyKind.DATABASE
     assert config.session.max_age_seconds == 60 * 60 * 24 * 7
-    assert config.cookie.name == "authkit.session_token"
+    assert config.cookie.name == "fastauth.session_token"
     assert config.cookie.same_site == "lax"
     assert config.cookie.secure is True
     assert config.password.argon2_time_cost == 3
@@ -129,11 +129,11 @@ def test_sub_configs_are_pydantic_models() -> None:
         assert hasattr(cls, "model_dump"), f"{cls.__name__} must be a Pydantic model"
 
 
-def test_no_authkitenvconfig_in_public_api() -> None:
+def test_no_fastauthenvconfig_in_public_api() -> None:
     """Regression: the env-loader subclass was removed in a previous refactor
     that fully decoupled the framework from the process environment.
     """
-    import authkit.config as config_mod
+    import fastauth.config as config_mod
 
-    assert not hasattr(config_mod, "AuthKitEnvConfig")
-    assert "AuthKitEnvConfig" not in config_mod.__all__
+    assert not hasattr(config_mod, "FastAuthEnvConfig")
+    assert "FastAuthEnvConfig" not in config_mod.__all__

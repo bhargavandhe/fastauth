@@ -6,15 +6,15 @@ import time
 
 import pytest
 
-from authkit.config import AdvancedConfig, RateLimitConfig
-from authkit.exceptions import RateLimitError
-from authkit.security.rate_limit import (
+from fastauth.config import AdvancedConfig, RateLimitConfig
+from fastauth.exceptions import RateLimitError
+from fastauth.security.rate_limit import (
     DatabaseRateLimitStorage,
     MemoryRateLimitStorage,
     RateLimiter,
     normalise_ip,
 )
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.storage.memory import InMemoryAdapter
 
 
 def test_normalise_ipv6_subnet_collapses() -> None:

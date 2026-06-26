@@ -1,4 +1,4 @@
-# authkit
+# fastauth
 
 A modular, Pydantic-native, async-only authentication library for FastAPI applications.
 

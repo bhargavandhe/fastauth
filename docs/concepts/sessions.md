@@ -7,7 +7,7 @@ operations on a session token. Endpoints obtain the current user by calling
 `context.session_strategy.read(token)`.
 
 ```python
-from authkit.security.sessions import DatabaseSessionStrategy
+from fastauth.security.sessions import DatabaseSessionStrategy
 
 session = await context.session_strategy.create(
     user,

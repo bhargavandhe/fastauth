@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/authkit-fastapi
+      url: https://pypi.org/p/fastauth-fastapi
     permissions:
       id-token: write
     steps:

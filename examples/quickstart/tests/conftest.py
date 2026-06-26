@@ -1,6 +1,6 @@
 """Fixtures for the quickstart example app's end-to-end test.
 
-The example app is configured by passing an ``AuthKitConfig`` directly into
+The example app is configured by passing an ``FastAuthConfig`` directly into
 its factory. This conftest creates a per-process Mongo database and passes the
 test config object explicitly.
 
@@ -33,7 +33,7 @@ def quickstart_runtime() -> Iterator[tuple[FastAPI, AsyncIOMotorDatabase[object]
         pytest.skip(f"Docker is required for quickstart tests: {exc}")
 
     mongo_url = container.get_connection_url()
-    database_name = f"authkit_quickstart_{os.getpid()}"
+    database_name = f"fastauth_quickstart_{os.getpid()}"
     config = build_config(
         secret_key=SecretStr("x" * 64),
         mongo_url=mongo_url,
@@ -66,7 +66,7 @@ async def client(
     """Yield a fresh ``httpx.AsyncClient`` bound to the example FastAPI app.
 
     Wipes every collection before the test runs so each call to this fixture
-    sees an empty database. The AuthKit lifespan (and therefore the JWKS
+    sees an empty database. The FastAuth lifespan (and therefore the JWKS
     key-provisioning hook) is driven manually because ``ASGITransport`` does
     not emit lifespan events.
     """

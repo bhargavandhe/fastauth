@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.storage.memory import InMemoryAdapter
 from tests.adapters.adapter_contract import AdapterContract
 
 

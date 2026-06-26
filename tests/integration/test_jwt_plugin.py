@@ -10,17 +10,17 @@ from fastapi import FastAPI
 from joserfc import jwk, jwt
 from pydantic import SecretStr
 
-from authkit.config import AuthKitConfig
-from authkit.messaging.email import ConsoleEmailSender
-from authkit.plugins.jwt import JwtPlugin, JwtPluginConfig
-from authkit.runtime.auth import AuthKit
-from authkit.storage.memory import InMemoryAdapter
+from fastauth.config import FastAuthConfig
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
 async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
-    auth = AuthKit(
-        AuthKitConfig.model_validate(
+    auth = FastAuth(
+        FastAuthConfig.model_validate(
             {
                 "secret_key": SecretStr("a" * 64),
                 "csrf": {"enabled": False},
@@ -42,7 +42,7 @@ async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
     app = FastAPI(lifespan=auth.lifespan)
     app.include_router(auth.router)
     # httpx's ASGITransport doesn't drive lifespan events, so run the
-    # AuthKit lifespan manually to ensure JwtPlugin's startup hook creates
+    # FastAuth lifespan manually to ensure JwtPlugin's startup hook creates
     # the JWKS key before any request hits the app.
     async with auth.lifespan(app):
         async with httpx.AsyncClient(
