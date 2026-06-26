@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -30,6 +31,7 @@ __all__ = [
     "Verification",
     "WireModel",
     "new_id",
+    "new_object_id_hex",
     "utc_now",
 ]
 
@@ -42,6 +44,11 @@ def new_id() -> str:
 def utc_now() -> datetime:
     """Return the current time as a timezone-aware UTC datetime."""
     return datetime.now(UTC)
+
+
+def new_object_id_hex() -> str:
+    """Return a fresh 24-character hex string suitable for Mongo ObjectIds."""
+    return secrets.token_hex(12)
 
 
 class FastAuthModel(BaseModel):

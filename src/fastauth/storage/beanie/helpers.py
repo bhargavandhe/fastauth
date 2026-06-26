@@ -14,12 +14,23 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from pydantic import BaseModel
 
-__all__ = ["normalise_datetimes", "to_object_id_or_none", "truncate_to_millis"]
+__all__ = [
+    "new_object_id",
+    "normalise_datetimes",
+    "require_object_id",
+    "to_object_id_or_none",
+    "truncate_to_millis",
+]
 
 
 def truncate_to_millis(value: datetime) -> datetime:
     """Round a datetime to the millisecond, matching BSON's storage resolution."""
     return value.replace(microsecond=(value.microsecond // 1000) * 1000)
+
+
+def new_object_id() -> ObjectId:
+    """Return a fresh BSON ObjectId."""
+    return ObjectId()
 
 
 def normalise_datetimes(model: BaseModel) -> None:
@@ -50,3 +61,11 @@ def to_object_id_or_none(value: str | None) -> ObjectId | None:
         return ObjectId(value)
     except (InvalidId, TypeError):
         return None
+
+
+def require_object_id(value: str | None) -> ObjectId:
+    """Return ``ObjectId(value)`` and raise if the value is missing or invalid."""
+    oid = to_object_id_or_none(value)
+    if oid is None:
+        raise ValueError("expected a Mongo ObjectId hex string")
+    return oid

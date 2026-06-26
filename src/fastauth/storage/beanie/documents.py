@@ -1,7 +1,7 @@
 """Beanie ``Document`` subclasses + Doc→domain conversion helpers.
 
 Each Doc subclass overrides the parent Pydantic model's ``id: str`` (and
-foreign-key ``user_id: str`` where applicable) with ``PydanticObjectId``,
+Mongo-owned relation ids where applicable) with ``PydanticObjectId``,
 aliased to ``_id`` for the primary key. Beanie/Motor then store these as
 real BSON ObjectIds. The ``to_*`` converters at the bottom of this module
 rebuild plain string-typed domain models on the way out.
@@ -94,6 +94,8 @@ class SessionDoc(Session, Document):  # pyright: ignore[reportIncompatibleVariab
 class RefreshTokenDoc(RefreshToken, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
     id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
     user_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
+    family_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
+    replaced_by: PydanticObjectId | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
 
     class Settings:
         name = "refresh_tokens"
@@ -154,6 +156,7 @@ class ApiKeyDoc(ApiKey, Document):  # pyright: ignore[reportIncompatibleVariable
 
 class JwksKeyDoc(JwksKey, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
     id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
+    kid: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
 
     class Settings:
         name = "jwks_keys"
@@ -227,6 +230,9 @@ def to_refresh_token(doc: RefreshTokenDoc) -> RefreshToken:
     if doc.id is not None:
         data["id"] = str(doc.id)
     data["user_id"] = str(doc.user_id)
+    data["family_id"] = str(doc.family_id)
+    if doc.replaced_by is not None:
+        data["replaced_by"] = str(doc.replaced_by)
     return RefreshToken.model_validate(data)
 
 
@@ -257,6 +263,7 @@ def to_jwks_key(doc: JwksKeyDoc) -> JwksKey:
     data = doc.model_dump()
     if doc.id is not None:
         data["id"] = str(doc.id)
+    data["kid"] = str(doc.kid)
     return JwksKey.model_validate(data)
 
 

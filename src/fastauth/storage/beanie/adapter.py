@@ -1,24 +1,27 @@
 """The MongoDB/Beanie implementation of :class:`DatabaseAdapter`.
 
-**Native MongoDB identity convention.** Every primary key (``_id``) and every
-foreign-key field (``*_id``) is a real ``bson.ObjectId`` in BSON. The Pydantic
-domain layer (:mod:`fastauth.domain.models`) keeps these as ``str`` for storage
+**Native MongoDB identity convention.** Every primary key (``_id``), every
+foreign-key field (``*_id``), and every Mongo-owned relation id used for
+rotation or key lookup is a real ``bson.ObjectId`` in BSON. The Pydantic domain
+layer (:mod:`fastauth.domain.models`) keeps these as ``str`` for storage
 agnosticism and stable wire format — this adapter does the string⇄ObjectId
 conversion at its boundary. See CONTRIBUTING.md rule #5.
 
-Foreign-key map (FKs stored as ObjectId in BSON):
+Mongo-owned ids stored as ObjectId in BSON:
 
 * ``Session.user_id``        → ``users._id``
 * ``RefreshToken.user_id``   → ``users._id``
+* ``RefreshToken.family_id`` → ``refresh_tokens._id`` family chain root
+* ``RefreshToken.replaced_by`` → ``refresh_tokens._id`` successor id
 * ``Account.user_id``        → ``users._id``
 * ``ApiKey.user_id``         → ``users._id``
 * ``AuditLog.user_id``       → ``users._id`` (nullable)
+* ``JwksKey.kid``            → ``jwks_keys._id``
 
 Non-FK identifier-shaped fields stay as strings because they are not Mongo
 references: ``Account.account_id`` (provider-side identifier),
 ``Verification.identifier`` (email/username), the various ``*_hash`` columns
-(content-derived hashes), ``JwksKey.kid`` (JOSE key id), ``RateLimit.key``
-(composite IP+path bucket).
+(content-derived hashes), ``RateLimit.key`` (composite IP+path bucket).
 """
 
 from __future__ import annotations
@@ -69,6 +72,7 @@ from fastauth.storage.beanie.documents import (
 )
 from fastauth.storage.beanie.helpers import (
     normalise_datetimes,
+    require_object_id,
     to_object_id_or_none,
     truncate_to_millis,
 )
@@ -236,6 +240,7 @@ class BeanieAdapter:
         normalise_datetimes(token)
         data = token.model_dump(exclude={"id"})
         data["user_id"] = to_object_id_or_none(token.user_id)
+        data["family_id"] = require_object_id(token.family_id)
         doc = RefreshTokenDoc(**data)
         await doc.insert()
         token.id = str(doc.id)
@@ -270,10 +275,11 @@ class BeanieAdapter:
         if oid is None:
             return None
         normalise_datetimes(new_token)
-        new_oid = PydanticObjectId()
-        new_token.id = str(new_oid)
         data = new_token.model_dump(exclude={"id"})
         data["user_id"] = to_object_id_or_none(new_token.user_id)
+        data["family_id"] = require_object_id(new_token.family_id)
+        new_oid = PydanticObjectId()
+        new_token.id = str(new_oid)
         doc = RefreshTokenDoc(**data)
         doc.id = new_oid
         await doc.insert()
@@ -282,7 +288,7 @@ class BeanieAdapter:
             {
                 "$set": {
                     "consumed_at": truncate_to_millis(consumed_at),
-                    "replaced_by": new_token.id,
+                    "replaced_by": new_oid,
                     "updated_at": truncate_to_millis(datetime.now(UTC)),
                 },
             },
@@ -306,7 +312,10 @@ class BeanieAdapter:
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
-        result = await RefreshTokenDoc.find({"family_id": family_id}).delete()
+        oid = to_object_id_or_none(family_id)
+        if oid is None:
+            return 0
+        result = await RefreshTokenDoc.find({"family_id": oid}).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     # ----- Account -----
@@ -489,6 +498,7 @@ class BeanieAdapter:
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
         normalise_datetimes(key)
         data = key.model_dump(exclude={"id"})
+        data["kid"] = require_object_id(key.kid)
         doc = JwksKeyDoc(**data)
         await doc.insert()
         if doc.id is not None:
