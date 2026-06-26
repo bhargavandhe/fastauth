@@ -2,7 +2,7 @@
 
 Each Doc subclass overrides the parent Pydantic model's ``id: str`` (and
 Mongo-owned relation ids where applicable) with ``PydanticObjectId``,
-aliased to ``_id`` for the primary key. Beanie/Motor then store these as
+aliased to ``_id`` for the primary key. Beanie/PyMongo then store these as
 real BSON ObjectIds. The ``to_*`` converters at the bottom of this module
 rebuild plain string-typed domain models on the way out.
 
@@ -24,9 +24,9 @@ from beanie import (  # pyright: ignore[reportUnknownVariableType]
     PydanticObjectId,
     init_beanie,  # pyright: ignore[reportUnknownVariableType]
 )
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import Field
 from pymongo import IndexModel
+from pymongo.asynchronous.database import AsyncDatabase
 
 from fastauth.domain.models import (
     Account,
@@ -202,7 +202,7 @@ DOCUMENT_MODELS: list[type[Document]] = [
 ]
 
 
-async def init_beanie_documents(database: AsyncIOMotorDatabase[Any]) -> None:
+async def init_beanie_documents(database: AsyncDatabase[Any]) -> None:
     await init_beanie(database=database, document_models=DOCUMENT_MODELS)
 
 

@@ -16,10 +16,10 @@ first-party capability.
 
 ```python
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from fastauth.storage.beanie import BeanieAdapter
 
-mongo_client = AsyncIOMotorClient("mongodb://localhost:27017", uuidRepresentation="standard")
+mongo_client = AsyncMongoClient("mongodb://localhost:27017", uuidRepresentation="standard")
 mongo_database = mongo_client["myapp"]
 adapter = BeanieAdapter(mongo_database)
 

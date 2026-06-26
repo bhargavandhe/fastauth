@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.asynchronous.database import AsyncDatabase
 
 from fastauth.domain.enums import AuditEventType, JwtAlgorithm, ProviderId, VerificationPurpose
 from fastauth.domain.models import (
@@ -26,7 +26,7 @@ from tests.adapters.adapter_contract import AdapterContract
 @pytest.mark.usefixtures("beanie_database")
 class TestBeanieAdapter(AdapterContract):
     @pytest.fixture
-    async def adapter(self, beanie_database: AsyncIOMotorDatabase[Any]) -> BeanieAdapter:
+    async def adapter(self, beanie_database: AsyncDatabase[Any]) -> BeanieAdapter:
         # Wipe collections between tests for isolation.
         for name in await beanie_database.list_collection_names():
             await beanie_database[name].delete_many({})
@@ -35,7 +35,7 @@ class TestBeanieAdapter(AdapterContract):
     async def test_mongo_owned_ids_are_objectids(
         self,
         adapter: BeanieAdapter,
-        beanie_database: AsyncIOMotorDatabase[Any],
+        beanie_database: AsyncDatabase[Any],
     ) -> None:
         user = await adapter.create_user(User(email="mongo-ids@example.com"))
         family_root_id = new_id()
@@ -91,7 +91,7 @@ class TestBeanieAdapter(AdapterContract):
     async def test_update_methods_preserve_mongo_objectids(
         self,
         adapter: BeanieAdapter,
-        beanie_database: AsyncIOMotorDatabase[Any],
+        beanie_database: AsyncDatabase[Any],
     ) -> None:
         user = await adapter.create_user(User(email="update-ids@example.com"))
 

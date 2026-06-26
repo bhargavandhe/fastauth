@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from beanie import PydanticObjectId
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
 from fastauth.domain.enums import AuditEventType, ProviderId, VerificationPurpose
@@ -92,7 +92,7 @@ class BeanieAdapter:
     :mod:`fastauth.domain.models` instances stay storage-agnostic strings.
     """
 
-    def __init__(self, database: AsyncIOMotorDatabase[Any]) -> None:
+    def __init__(self, database: AsyncDatabase[Any]) -> None:
         self.database = database
 
     def lifespan(self, auth: FastAuth) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:

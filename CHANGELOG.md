@@ -4,6 +4,15 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-06-27
+
+### Fixed
+
+- Fixed Beanie 2 compatibility by switching MongoDB setup, examples, adapter
+  tests, and CLI scaffolds from Motor to PyMongo's async client, which is the
+  database interface Beanie 2 expects.
+- Removed the obsolete `motor` dependency from the `beanie` extra.
+
 ## [0.2.0] — 2026-06-27
 
 ### Added
@@ -135,7 +144,7 @@ test utilities, and a CLI.
 - `DatabaseAdapter` Protocol with ~50 methods covering every domain model.
 - `InMemoryAdapter` for tests and ephemeral deployments (dict-backed,
   `asyncio.Lock`-guarded).
-- `BeanieAdapter` (MongoDB via Motor + Beanie). Native `bson.ObjectId` storage
+- `BeanieAdapter` (MongoDB via Beanie). Native `bson.ObjectId` storage
   for PKs and foreign keys; string⇄ObjectId conversion at the adapter
   boundary. TTL indexes on `sessions.expires_at`, `verifications.expires_at`,
   `refresh_tokens.expires_at`; unique-index protection on

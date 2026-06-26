@@ -9,7 +9,7 @@ pip install "fastauth-py[beanie,jwt,cli]"
 
 The available extras are:
 
-- `beanie` — MongoDB persistence via `beanie` + `motor`.
+- `beanie` — MongoDB persistence via `beanie` + PyMongo's async client.
 - `postgres` — Postgres persistence via SQLAlchemy asyncio + `asyncpg`.
 - `jwt` — JWT signing, JWKS rotation, and KMS hooks (`joserfc`, `cryptography`).
 - `cli` — the `fastauth` Typer CLI (`typer`, `rich`).

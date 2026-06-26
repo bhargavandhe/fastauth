@@ -11,21 +11,23 @@ the JwtPlugin relies on ``lifespan_startup`` to provision its JWKS key.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pydantic import SecretStr
+from pymongo import AsyncMongoClient
+from pymongo.asynchronous.database import AsyncDatabase
 from testcontainers.mongodb import MongoDbContainer  # pyright: ignore[reportMissingTypeStubs]
 
 from examples.quickstart.app import build_config, create_app, create_auth
 
 
 @pytest.fixture(scope="session")
-def quickstart_runtime() -> Iterator[tuple[FastAPI, AsyncIOMotorDatabase[object]]]:
+def quickstart_runtime() -> Iterator[tuple[FastAPI, AsyncDatabase[object]]]:
     try:
         container = MongoDbContainer("mongo:7")
         container.start()
@@ -42,12 +44,12 @@ def quickstart_runtime() -> Iterator[tuple[FastAPI, AsyncIOMotorDatabase[object]
         csrf_enabled=False,
         rate_limit_enabled=False,
     )
-    mongo_client: AsyncIOMotorClient[object] = AsyncIOMotorClient(
+    mongo_client: AsyncMongoClient[object] = AsyncMongoClient(
         config.database.mongo.url,
         uuidRepresentation="standard",
         tz_aware=True,
     )
-    mongo_database: AsyncIOMotorDatabase[object] = mongo_client[
+    mongo_database: AsyncDatabase[object] = mongo_client[
         config.database.mongo.database_name
     ]
     auth = create_auth(config, mongo_database)
@@ -55,13 +57,13 @@ def quickstart_runtime() -> Iterator[tuple[FastAPI, AsyncIOMotorDatabase[object]
     try:
         yield app, mongo_database
     finally:
-        mongo_client.close()
+        asyncio.run(mongo_client.close())
         container.stop()
 
 
 @pytest.fixture
 async def client(
-    quickstart_runtime: tuple[FastAPI, AsyncIOMotorDatabase[object]],
+    quickstart_runtime: tuple[FastAPI, AsyncDatabase[object]],
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Yield a fresh ``httpx.AsyncClient`` bound to the example FastAPI app.
 

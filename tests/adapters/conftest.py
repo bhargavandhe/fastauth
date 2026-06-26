@@ -6,7 +6,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pymongo import AsyncMongoClient
+from pymongo.asynchronous.database import AsyncDatabase
 from testcontainers.mongodb import MongoDbContainer  # pyright: ignore[reportMissingTypeStubs]
 
 from fastauth.storage.beanie import init_beanie_documents
@@ -31,8 +32,8 @@ def mongo_url() -> str:
 
 
 @pytest.fixture
-async def beanie_database(mongo_url: str) -> AsyncIterator[AsyncIOMotorDatabase[Any]]:
-    client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(
+async def beanie_database(mongo_url: str) -> AsyncIterator[AsyncDatabase[Any]]:
+    client: AsyncMongoClient[Any] = AsyncMongoClient(
         mongo_url,
         uuidRepresentation="standard",
         tz_aware=True,
@@ -42,4 +43,4 @@ async def beanie_database(mongo_url: str) -> AsyncIterator[AsyncIOMotorDatabase[
     await init_beanie_documents(database)
     yield database
     await client.drop_database(database_name)
-    client.close()
+    await client.close()

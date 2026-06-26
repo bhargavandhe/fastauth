@@ -1,6 +1,6 @@
 [project]
 name = "fastauth-py"
-version = "0.2.0"
+version = "0.2.1"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -43,7 +43,7 @@ Repository = "https://github.com/bhargavandhe/fastauth"
 Issues = "https://github.com/bhargavandhe/fastauth/issues"
 
 [project.optional-dependencies]
-beanie = ["beanie>=2,<3", "motor>=3.6"]
+beanie = ["beanie>=2,<3"]
 postgres = ["sqlalchemy[asyncio]>=2.0,<3", "asyncpg>=0.29"]
 jwt = ["joserfc>=1.0", "cryptography>=43.0"]
 cli = ["typer>=0.12", "rich>=13.7"]

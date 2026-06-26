@@ -10,8 +10,9 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pydantic import SecretStr
+from pymongo import AsyncMongoClient
+from pymongo.asynchronous.database import AsyncDatabase
 
 from fastauth import FastAuth, FastAuthConfig
 from fastauth.config import (
@@ -65,7 +66,7 @@ def build_config(
     )
 
 
-def create_auth(config: FastAuthConfig, database: AsyncIOMotorDatabase[Any]) -> FastAuth:
+def create_auth(config: FastAuthConfig, database: AsyncDatabase[Any]) -> FastAuth:
     adapter = BeanieAdapter(database)
     return FastAuth(
         config,
@@ -79,7 +80,7 @@ def create_auth(config: FastAuthConfig, database: AsyncIOMotorDatabase[Any]) -> 
     )
 
 
-def create_app(auth: FastAuth, database: AsyncIOMotorDatabase[Any]) -> FastAPI:
+def create_app(auth: FastAuth, database: AsyncDatabase[Any]) -> FastAPI:
     del database  # The BeanieAdapter is already bound into the FastAuth instance.
     adapter = auth.context.adapter
     if not isinstance(adapter, BeanieAdapter):
@@ -99,12 +100,12 @@ config = build_config(
     secret_key=SecretStr("replace-me-with-a-secret-from-your-application-config"),
 )
 
-mongo_client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(
+mongo_client: AsyncMongoClient[Any] = AsyncMongoClient(
     config.database.mongo.url,
     uuidRepresentation="standard",
     tz_aware=True,
 )
-mongo_database: AsyncIOMotorDatabase[Any] = mongo_client[config.database.mongo.database_name]
+mongo_database: AsyncDatabase[Any] = mongo_client[config.database.mongo.database_name]
 auth = create_auth(config, mongo_database)
 app = create_app(auth, mongo_database)
 lifespan = app.router.lifespan_context

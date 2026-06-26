@@ -45,14 +45,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pymongo import AsyncMongoClient
+from pymongo.asynchronous.database import AsyncDatabase
 
 from fastauth import FastAuth, FastAuthConfig
 from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
 
 
-def create_mongo_database(config: FastAuthConfig) -> AsyncIOMotorDatabase[Any]:
-    client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(
+def create_mongo_database(config: FastAuthConfig) -> AsyncDatabase[Any]:
+    client: AsyncMongoClient[Any] = AsyncMongoClient(
         config.database.mongo.url,
         uuidRepresentation="standard",
     )
@@ -61,12 +62,12 @@ def create_mongo_database(config: FastAuthConfig) -> AsyncIOMotorDatabase[Any]:
 
 def create_auth(
     config: FastAuthConfig,
-    database: AsyncIOMotorDatabase[Any],
+    database: AsyncDatabase[Any],
 ) -> FastAuth:
     return FastAuth(config, adapter=BeanieAdapter(database))
 
 
-async def init_auth_database(database: AsyncIOMotorDatabase[Any]) -> None:
+async def init_auth_database(database: AsyncDatabase[Any]) -> None:
     await init_beanie_documents(database)
 '''
 
@@ -165,18 +166,18 @@ def migrate_command(
 
     async def run() -> None:
         if mongo_url is not None:
-            from motor.motor_asyncio import AsyncIOMotorClient
+            from pymongo import AsyncMongoClient
 
             from fastauth.storage.beanie import init_beanie_documents
 
-            client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(
+            client: AsyncMongoClient[Any] = AsyncMongoClient(
                 mongo_url, uuidRepresentation="standard"
             )
             try:
                 await init_beanie_documents(client[database])
                 rich_print("[green]indexes ensured on every fastauth collection[/green]")
             finally:
-                client.close()
+                await client.close()
             return
 
         from fastauth.storage.postgres import PostgresAdapter

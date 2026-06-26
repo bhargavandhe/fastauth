@@ -11,7 +11,7 @@ Three submodules:
 The public API of this package is re-exported here. End users typically
 only need :class:`BeanieAdapter` and :func:`init_beanie_documents`; the
 document subclasses are useful when extending the schema (e.g. registering
-your own Document with the same Motor database).
+your own Document with the same PyMongo async database).
 """
 
 from __future__ import annotations
