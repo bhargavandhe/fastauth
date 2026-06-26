@@ -1,10 +1,7 @@
 site_name: authkit
 site_description: A modular, Pydantic-native, async-only authentication library for FastAPI.
-repo_url: https://github.com/your-org/authkit
+repo_url: https://github.com/bhargavandhe2310/authkit
 strict: true
-
-exclude_docs: |
-  superpowers/
 
 theme:
   name: material
@@ -50,6 +47,7 @@ nav:
   - Guides:
       - Email verification: guides/email-verification.md
       - Password reset: guides/password-reset.md
+      - User management: guides/user-management.md
       - Bearer auth: guides/bearer-auth.md
       - KMS signing: guides/kms-signing.md
       - Deploying: guides/deploying.md

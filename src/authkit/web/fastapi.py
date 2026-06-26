@@ -11,6 +11,7 @@ from fastapi.routing import APIRoute
 from pydantic.alias_generators import to_camel
 
 from authkit.domain.enums import WireFormat
+from authkit.domain.models import User
 from authkit.exceptions import (
     EXCEPTION_HTTP_STATUS,
     AccountLockedError,
@@ -37,6 +38,14 @@ from authkit.flows.refresh import RefreshTokenRequest
 from authkit.flows.sessions import (
     ListSessionsResponse,
     RevokeSessionsResponse,
+)
+from authkit.flows.user_management import (
+    DeleteAccountConfirmRequest,
+    DeleteAccountRequest,
+    SetPasswordRequest,
+    UpdateUserRequest,
+    VerifyPasswordRequest,
+    VerifyPasswordResponse,
 )
 from authkit.flows.verification import (
     SendVerificationEmailRequest,
@@ -446,6 +455,119 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
+
+    @router.patch(
+        "/user",
+        name="update_user",
+        response_model=User,
+        response_model_by_alias=False,
+    )
+    async def update_user_handler(  # pyright: ignore[reportUnusedFunction]
+        body: UpdateUserRequest,
+        request: Request,
+    ) -> User:
+        session_ctx = await require_session(request, context)
+        return await api.update_user(
+            session_ctx.user,
+            body,
+            ip=client_ip(request, context),
+            user_agent=request.headers.get("user-agent"),
+        )
+
+    @router.post(
+        "/set-password",
+        name="set_password",
+        response_model=EmptyResponse,
+        response_model_by_alias=False,
+    )
+    async def set_password_handler(  # pyright: ignore[reportUnusedFunction]
+        body: SetPasswordRequest,
+        request: Request,
+    ) -> EmptyResponse:
+        session_ctx = await require_session(request, context)
+        return await api.set_password(
+            session_ctx.user,
+            current_session_id=session_ctx.session.id,
+            request=body,
+            ip=client_ip(request, context),
+            user_agent=request.headers.get("user-agent"),
+        )
+
+    @router.post(
+        "/verify-password",
+        name="verify_password",
+        response_model=VerifyPasswordResponse,
+        response_model_by_alias=False,
+    )
+    async def verify_password_handler(  # pyright: ignore[reportUnusedFunction]
+        body: VerifyPasswordRequest,
+        request: Request,
+    ) -> VerifyPasswordResponse:
+        session_ctx = await require_session(request, context)
+        return await api.verify_password(
+            session_ctx.user,
+            body,
+            ip=client_ip(request, context),
+            user_agent=request.headers.get("user-agent"),
+        )
+
+    @router.post(
+        "/delete-account",
+        name="delete_account_with_password",
+        response_model=EmptyResponse,
+        response_model_by_alias=False,
+    )
+    async def delete_account_with_password_handler(  # pyright: ignore[reportUnusedFunction]
+        body: DeleteAccountRequest,
+        request: Request,
+        response: Response,
+    ) -> EmptyResponse:
+        session_ctx = await require_session(request, context)
+        result = await api.delete_account_with_password(
+            session_ctx.user,
+            body,
+            ip=client_ip(request, context),
+            user_agent=request.headers.get("user-agent"),
+        )
+        clear_session_cookie(response, context)
+        return result
+
+    @router.post(
+        "/delete-account/request",
+        name="request_delete_account",
+        response_model=EmptyResponse,
+        response_model_by_alias=False,
+    )
+    async def request_delete_account_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
+    ) -> EmptyResponse:
+        session_ctx = await require_session(request, context)
+        return await api.request_delete_account(
+            session_ctx.user,
+            ip=client_ip(request, context),
+            user_agent=request.headers.get("user-agent"),
+        )
+
+    @router.post(
+        "/delete-account/confirm",
+        name="confirm_delete_account",
+        response_model=EmptyResponse,
+        response_model_by_alias=False,
+    )
+    async def confirm_delete_account_handler(  # pyright: ignore[reportUnusedFunction]
+        body: DeleteAccountConfirmRequest,
+        request: Request,
+        response: Response,
+    ) -> EmptyResponse:
+        session_ctx = await require_session(request, context)
+        result = await api.confirm_delete_account(
+            session_ctx.user,
+            body,
+            ip=client_ip(request, context),
+            user_agent=request.headers.get("user-agent"),
+        )
+        clear_session_cookie(response, context)
+        return result
 
     @router.post(
         "/change-email/request",

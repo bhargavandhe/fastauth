@@ -10,12 +10,22 @@ from authkit.config import (
     CookieConfig,
     CsrfConfig,
     DatabaseConfig,
+    DeleteAccountConfig,
+    EmailChangeConfig,
     EmailConfig,
+    EmailVerificationConfig,
+    LockoutConfig,
+    MemoryDatabaseConfig,
+    MongoDatabaseConfig,
     PasswordConfig,
+    PasswordResetConfig,
+    PostgresDatabaseConfig,
     RateLimitConfig,
+    RefreshTokenConfig,
+    SecurityHeadersConfig,
     SessionConfig,
 )
-from authkit.domain.enums import SessionStrategyKind
+from authkit.domain.enums import DatabaseBackendKind, SessionStrategyKind
 
 
 def test_authkitconfig_requires_secret_key() -> None:
@@ -42,10 +52,31 @@ def test_authkitconfig_accepts_nested_overrides_via_kwargs() -> None:
     config = AuthKitConfig(
         secret_key=SecretStr("b" * 64),
         session=SessionConfig(max_age_seconds=3600),
-        database=DatabaseConfig(mongo_url="mongodb://example:27017"),
+        database=DatabaseConfig(
+            backend=DatabaseBackendKind.MONGO,
+            mongo=MongoDatabaseConfig(url="mongodb://example:27017"),
+        ),
     )
     assert config.session.max_age_seconds == 3600
-    assert config.database.mongo_url == "mongodb://example:27017"
+    assert config.database.backend is DatabaseBackendKind.MONGO
+    assert config.database.mongo.url == "mongodb://example:27017"
+
+
+def test_database_config_models_multiple_backends() -> None:
+    default_config = DatabaseConfig()
+    assert default_config.backend is DatabaseBackendKind.MEMORY
+
+    config = DatabaseConfig(
+        backend=DatabaseBackendKind.POSTGRES,
+        postgres=PostgresDatabaseConfig(
+            url="postgresql+asyncpg://user:pass@localhost/app",
+            table_prefix="custom_",
+        ),
+    )
+
+    assert config.backend is DatabaseBackendKind.POSTGRES
+    assert config.postgres.url == "postgresql+asyncpg://user:pass@localhost/app"
+    assert config.postgres.table_prefix == "custom_"
 
 
 def test_authkitconfig_accepts_dict_via_model_validate() -> None:
@@ -80,9 +111,19 @@ def test_sub_configs_are_pydantic_models() -> None:
         CookieConfig,
         PasswordConfig,
         EmailConfig,
+        EmailVerificationConfig,
+        PasswordResetConfig,
+        EmailChangeConfig,
+        DeleteAccountConfig,
         RateLimitConfig,
         CsrfConfig,
+        LockoutConfig,
+        RefreshTokenConfig,
+        SecurityHeadersConfig,
         DatabaseConfig,
+        MemoryDatabaseConfig,
+        MongoDatabaseConfig,
+        PostgresDatabaseConfig,
         AdvancedConfig,
     ):
         assert hasattr(cls, "model_dump"), f"{cls.__name__} must be a Pydantic model"

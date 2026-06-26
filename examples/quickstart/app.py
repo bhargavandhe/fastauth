@@ -18,8 +18,10 @@ from authkit.config import (
     CookieConfig,
     CsrfConfig,
     DatabaseConfig,
+    MongoDatabaseConfig,
     RateLimitConfig,
 )
+from authkit.domain.enums import DatabaseBackendKind
 from authkit.plugins.api_key import ApiKeyPlugin
 from authkit.plugins.audit_logs import AuditLogsPlugin
 from authkit.plugins.jwt import JwtPlugin
@@ -51,8 +53,11 @@ def build_config(
     return AuthKitConfig(
         secret_key=secret_key,
         database=DatabaseConfig(
-            mongo_url=mongo_url,
-            database_name=database_name,
+            backend=DatabaseBackendKind.MONGO,
+            mongo=MongoDatabaseConfig(
+                url=mongo_url,
+                database_name=database_name,
+            ),
         ),
         cookie=CookieConfig(secure=cookie_secure),
         csrf=CsrfConfig(enabled=csrf_enabled),
@@ -95,11 +100,11 @@ config = build_config(
 )
 
 mongo_client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(
-    config.database.mongo_url,
+    config.database.mongo.url,
     uuidRepresentation="standard",
     tz_aware=True,
 )
-mongo_database: AsyncIOMotorDatabase[Any] = mongo_client[config.database.database_name]
+mongo_database: AsyncIOMotorDatabase[Any] = mongo_client[config.database.mongo.database_name]
 auth = create_auth(config, mongo_database)
 app = create_app(auth, mongo_database)
 lifespan = app.router.lifespan_context

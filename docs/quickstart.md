@@ -9,40 +9,15 @@ them.
 
 ```python
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import SecretStr
 
 from authkit import AuthKit, AuthKitConfig
-from authkit.config import DatabaseConfig
-from authkit.plugins.api_key import ApiKeyPlugin
-from authkit.plugins.audit_logs import AuditLogsPlugin
-from authkit.plugins.jwt import JwtPlugin
-from authkit.plugins.openapi import OpenApiPlugin
-from authkit.storage.beanie import BeanieAdapter
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-mongo_url = "mongodb://localhost:27017"
-database_name = "myapp"
+config = AuthKitConfig(secret_key=SecretStr(app_secret))
+auth = AuthKit(config)
 
-config = AuthKitConfig(
-    secret_key=SecretStr(app_secret),
-    database=DatabaseConfig(
-        mongo_url=mongo_url,
-        database_name=database_name,
-    ),
-)
-
-mongo_client = AsyncIOMotorClient(config.database.mongo_url, uuidRepresentation="standard")
-mongo_database = mongo_client[config.database.database_name]
-adapter = BeanieAdapter(mongo_database)
-
-auth = AuthKit(
-    config,
-    adapter=adapter,
-    plugins=[ApiKeyPlugin(), JwtPlugin(), AuditLogsPlugin(), OpenApiPlugin()],
-)
-
-app = FastAPI(title="My App", lifespan=adapter.lifespan(auth))
+app = FastAPI(title="My App", lifespan=auth.lifespan)
 auth.install(app)
 ```
 
@@ -50,6 +25,10 @@ auth.install(app)
 middleware on the host FastAPI application. If you use `auth.as_asgi()` as a
 standalone app instead, authkit returns an app with the same routes and
 middleware already installed.
+
+The default `DatabaseConfig.backend` is `memory`, so this first app is suitable
+for tests and local demos. Pick Mongo or Postgres explicitly for persistent
+deployments.
 
 For Postgres, install `authkit-fastapi[postgres,jwt]` and pass an async
 SQLAlchemy URL or engine explicitly:
@@ -59,11 +38,20 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from authkit import AuthKit, AuthKitConfig
+from authkit.config import DatabaseConfig, PostgresDatabaseConfig
 from authkit.plugins.jwt import JwtPlugin
 from authkit.storage.postgres import PostgresAdapter
 
-config = AuthKitConfig(secret_key=SecretStr("replace-me-with-your-application-secret"))
-adapter = PostgresAdapter.from_url("postgresql+asyncpg://user:pass@localhost/myapp")
+config = AuthKitConfig(
+    secret_key=SecretStr("replace-me-with-your-application-secret"),
+    database=DatabaseConfig(
+        backend="postgres",
+        postgres=PostgresDatabaseConfig(
+            url="postgresql+asyncpg://user:pass@localhost/myapp",
+        ),
+    ),
+)
+adapter = PostgresAdapter.from_url(config.database.postgres.url)
 auth = AuthKit(config, adapter=adapter, plugins=[JwtPlugin()])
 
 app = FastAPI(title="My App", lifespan=adapter.lifespan(auth))
@@ -130,3 +118,19 @@ exists to support local development; production deployments will install
 their own ASGI server.
 
 Open `http://localhost:8000/auth/reference` for the Scalar API explorer.
+
+## Core user endpoints
+
+The default router includes authenticated user-management endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `PATCH` | `/auth/user` | Update `name`, `image`, or replace `metadata`. |
+| `POST` | `/auth/set-password` | Add a credential password to a passwordless account. |
+| `POST` | `/auth/verify-password` | Verify the current password; failed attempts count toward lockout. |
+| `POST` | `/auth/delete-account` | Delete the current account after password verification. |
+| `POST` | `/auth/delete-account/request` | Email an account-deletion confirmation token. |
+| `POST` | `/auth/delete-account/confirm` | Delete the current account with the emailed token. |
+
+Account deletion clears the auth session cookie and removes auth-owned user
+state from the adapter while preserving audit logs.

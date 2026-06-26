@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
 
 from authkit.config import AuthKitConfig
-from authkit.domain.enums import RateLimitStorageKind, SessionStrategyKind
+from authkit.domain.enums import DatabaseBackendKind, RateLimitStorageKind, SessionStrategyKind
 from authkit.domain.models import User
 from authkit.exceptions import ConfigError, InvalidCredentialsError
 from authkit.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
@@ -28,6 +28,7 @@ from authkit.security.refresh_tokens import RefreshTokenService
 from authkit.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
 from authkit.security.tokens import SignedCookieValue, TokenService
 from authkit.storage.base import DatabaseAdapter, JwksKeyStore, RateLimitStore
+from authkit.storage.memory import InMemoryAdapter
 from authkit.web.csrf import CsrfMiddleware
 from authkit.web.fastapi import build_router, extract_session_token
 from authkit.web.security_headers import SecurityHeadersMiddleware
@@ -45,13 +46,23 @@ class AuthKit:
         self,
         config: AuthKitConfig,
         *,
-        adapter: DatabaseAdapter,
+        adapter: DatabaseAdapter | None = None,
         plugins: list[Plugin] | None = None,
         email_sender: EmailSender | None = None,
         password_hasher: PasswordHasher | None = None,
         session_strategy: SessionStrategy | None = None,
         token_service: TokenService | None = None,
     ) -> None:
+        if adapter is None:
+            if config.database.backend is not DatabaseBackendKind.MEMORY:
+                raise ConfigError(
+                    message=(
+                        f"DatabaseConfig.backend == {config.database.backend.value!r} "
+                        "requires an explicit adapter"
+                    ),
+                )
+            adapter = InMemoryAdapter()
+
         password_hasher = password_hasher or Argon2idHasher(config.password)
         token_service = token_service or TokenService()
         email_sender = email_sender or ConsoleEmailSender()

@@ -1,0 +1,8 @@
+Confirm account deletion
+
+Use this link to confirm deletion of your account:
+{{ confirm_url }}
+
+This link expires in {{ expires_in_minutes }} minutes.
+
+If you did not request account deletion, ignore this email.

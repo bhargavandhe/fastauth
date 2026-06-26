@@ -1,7 +1,7 @@
 # Deploying
 
 A production authkit deployment has two moving parts: the FastAPI app itself
-and a MongoDB cluster. This guide walks through the recommended setup.
+and a persistence backend. This guide covers MongoDB and Postgres.
 
 ## Process model
 
@@ -25,7 +25,7 @@ config = AuthKitConfig(
 )
 ```
 
-## Database indexes
+## Database schema
 
 The Beanie adapter ships every collection's indexes via `init_beanie_documents`.
 Run the migration command once during deploy:
@@ -35,6 +35,27 @@ uv run authkit migrate \
   --mongo-url "mongodb://db.example.com:27017" \
   --database "myapp"
 ```
+
+The Postgres adapter ships tracked schema migrations. Run them during deploy,
+then start the app with a checked lifespan so a stale database fails fast:
+
+```bash
+uv run authkit migrate \
+  --postgres-url "postgresql+asyncpg://user:pass@db.example.com/myapp"
+```
+
+```python
+from fastapi import FastAPI
+from authkit.storage.postgres import PostgresAdapter
+
+adapter = PostgresAdapter.from_url("postgresql+asyncpg://user:pass@db.example.com/myapp")
+app = FastAPI(lifespan=adapter.checked_lifespan(auth))
+```
+
+For local development and small deployments, `adapter.lifespan(auth)` applies
+pending Postgres migrations before authkit starts. Prefer the explicit CLI
+migration path for production releases where schema changes should be part of
+the deploy pipeline.
 
 ## Secrets
 

@@ -12,7 +12,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.schema import Table
 
@@ -36,9 +36,16 @@ from authkit.storage.base import (
     JwksKeyStore,
     RateLimitStore,
 )
+from authkit.storage.postgres.migrations import (
+    CURRENT_SCHEMA_VERSION,
+    pending_postgres_migrations,
+)
 from authkit.storage.postgres.schema import build_postgres_schema
 
 __all__ = ["PostgresAdapter"]
+
+
+MIGRATION_ADVISORY_LOCK_ID = 464_901_337
 
 if TYPE_CHECKING:
     from authkit.runtime.auth import AuthKit
@@ -143,16 +150,91 @@ class PostgresAdapter(
             table_prefix=table_prefix,
         )
 
-    async def create_schema(self) -> None:
-        async with self.engine.begin() as connection:
-            await connection.run_sync(self.schema.metadata.create_all)
+    async def create_schema_migrations_table(self, connection: AsyncConnection) -> None:
+        await connection.run_sync(self.schema.schema_migrations.create, checkfirst=True)
 
-    def lifespan(self, auth: AuthKit) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
-        """Return a FastAPI lifespan that creates tables, then starts authkit."""
+    async def lock_migrations(self, connection: AsyncConnection) -> None:
+        await connection.execute(select(func.pg_advisory_xact_lock(MIGRATION_ADVISORY_LOCK_ID)))
+
+    async def schema_version_for_connection(self, connection: AsyncConnection) -> int:
+        result = await connection.execute(
+            select(
+                func.coalesce(
+                    func.max(self.schema.schema_migrations.c.version),
+                    0,
+                )
+            )
+        )
+        return int(result.scalar_one())
+
+    async def schema_version(self) -> int:
+        async with self.engine.begin() as connection:
+            await self.create_schema_migrations_table(connection)
+            return await self.schema_version_for_connection(connection)
+
+    async def apply_migrations(self) -> list[int]:
+        applied: list[int] = []
+        async with self.engine.begin() as connection:
+            await self.lock_migrations(connection)
+            await self.create_schema_migrations_table(connection)
+            current_version = await self.schema_version_for_connection(connection)
+            for migration in pending_postgres_migrations(current_version):
+                await migration.apply(connection, self.schema)
+                await connection.execute(
+                    postgres_insert(self.schema.schema_migrations)
+                    .values(version=migration.version, applied_at=current_utc_time())
+                    .on_conflict_do_nothing(
+                        index_elements=[self.schema.schema_migrations.c.version],
+                    )
+                )
+                applied.append(migration.version)
+        return applied
+
+    async def assert_schema_current(self) -> None:
+        version = await self.schema_version()
+        if version > CURRENT_SCHEMA_VERSION:
+            raise RuntimeError(
+                "Postgres authkit schema is newer than this authkit version; "
+                "upgrade authkit before startup."
+            )
+        if version < CURRENT_SCHEMA_VERSION:
+            raise RuntimeError(
+                "Postgres schema is behind authkit; run "
+                "`authkit migrate --postgres-url ...` before startup."
+            )
+
+    def migration_lifespan(
+        self,
+        auth: AuthKit,
+    ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+        return self.lifespan(auth, apply_migrations=True)
+
+    def checked_lifespan(
+        self,
+        auth: AuthKit,
+    ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+        return self.lifespan(auth, apply_migrations=False)
+
+    def lifespan(
+        self,
+        auth: AuthKit,
+        *,
+        apply_migrations: bool = True,
+    ) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+        """Return a FastAPI lifespan that handles schema state, then starts authkit.
+
+        ``apply_migrations=True`` is convenient for examples and small
+        deployments. Production deployments can pass ``False`` to fail fast
+        unless ``authkit migrate --postgres-url ...`` has already applied the
+        tracked schema version.
+        """
 
         @asynccontextmanager
         async def app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-            await self.create_schema()
+            if apply_migrations:
+                await self.apply_migrations()
+            else:
+                await self.assert_schema_current()
             async with auth.lifespan(app):
                 yield
 
@@ -255,6 +337,22 @@ class PostgresAdapter(
 
     async def delete_user(self, user_id: str) -> None:
         async with self.engine.begin() as connection:
+            result = await connection.execute(
+                select(
+                    self.schema.users.c.email,
+                    self.schema.users.c.pending_email_change,
+                ).where(self.schema.users.c.id == user_id),
+            )
+            row = result.mappings().first()
+            if row is not None:
+                identifiers = [row["email"]]
+                if row["pending_email_change"] is not None:
+                    identifiers.append(row["pending_email_change"])
+                await connection.execute(
+                    delete(self.schema.verifications).where(
+                        self.schema.verifications.c.identifier.in_(identifiers),
+                    ),
+                )
             await connection.execute(
                 delete(self.schema.users).where(self.schema.users.c.id == user_id),
             )

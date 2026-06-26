@@ -39,14 +39,19 @@ adapter = PostgresAdapter.from_url(
     table_prefix="authkit_",
 )
 
-# Use adapter.lifespan(auth) in FastAPI to create authkit tables at startup.
+# Convenience path: apply tracked authkit migrations before startup.
 app = FastAPI(lifespan=adapter.lifespan(auth))
 ```
 
-`authkit migrate --postgres-url postgresql+asyncpg://...` runs the same schema
-creation helper from the CLI. The adapter uses AuthKit's string domain IDs as
-primary keys and stores plugin data in native Postgres types such as `jsonb`
-and `bytea`.
+`authkit migrate --postgres-url postgresql+asyncpg://...` applies the same
+tracked schema migrations from the CLI and records the authkit schema version
+in `<prefix>schema_migrations`. For long-lived production deployments, run the
+CLI during deploy and start FastAPI with `adapter.checked_lifespan(auth)` or
+`adapter.lifespan(auth, apply_migrations=False)` so the app fails fast if the
+database is behind instead of mutating schema at process startup.
+
+The adapter uses AuthKit's string domain IDs as primary keys and stores plugin
+data in native Postgres types such as `jsonb` and `bytea`.
 
 Adapters are async-only and operate on the Pydantic domain models directly —
 there is no separate ORM layer. To plug in a new backend, implement
@@ -103,6 +108,12 @@ class MyAdapter(BaseDatabaseAdapter):
 `BaseDatabaseAdapter` deliberately does not define optional plugin methods.
 That keeps runtime capability checks meaningful: if `ApiKeyPlugin` is
 installed, the adapter must actually implement `ApiKeyStore`.
+
+`delete_user(user_id)` is intentionally a cascade for auth-owned user state:
+it must remove the user, credential/provider accounts, sessions, refresh
+tokens, API keys when supported, and verification rows keyed to the user's
+current or pending email address. It must not delete audit logs or JWKS keys.
+First-party adapters enforce this contract in the shared adapter tests.
 
 ## Optional capabilities
 

@@ -14,6 +14,7 @@ from authkit.domain.models import (
     AuditLog,
     JwksKey,
     RateLimit,
+    RefreshToken,
     Session,
     User,
     Verification,
@@ -116,6 +117,75 @@ class AdapterContract:
         await adapter.create_account(account)
         fetched = await adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
         assert fetched == account
+
+    async def test_delete_user_removes_auth_state_but_preserves_audit_logs(
+        self,
+        adapter: ContractAdapter,
+    ) -> None:
+        user = await adapter.create_user(User(email="delete@example.com"))
+        await adapter.create_account(
+            Account(
+                user_id=user.id,
+                provider_id=ProviderId.CREDENTIAL,
+                account_id=user.id,
+                password="argon2",
+            )
+        )
+        session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="delete-session",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        await adapter.create_refresh_token(
+            RefreshToken(
+                user_id=user.id,
+                token_hash="delete-refresh",
+                family_id="delete-family",
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        await adapter.create_api_key(
+            ApiKey(user_id=user.id, name="delete-key", key_hash="delete-key", key_prefix="ak_")
+        )
+        await adapter.create_verification(
+            Verification(
+                identifier=user.email,
+                value_hash="delete-verification",
+                purpose=VerificationPurpose.ACCOUNT_DELETION,
+                expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            )
+        )
+        await adapter.create_audit_log(
+            AuditLog(
+                event_type=AuditEventType.USER_DELETED,
+                identifier=user.email,
+                user_id=user.id,
+            )
+        )
+
+        await adapter.delete_user(user.id)
+
+        assert await adapter.get_user_by_id(user.id) is None
+        assert await adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL) is None
+        assert await adapter.get_session_by_token_hash(session.token_hash) is None
+        assert await adapter.get_refresh_token_by_hash("delete-refresh") is None
+        assert await adapter.get_active_verification(
+            user.email,
+            VerificationPurpose.ACCOUNT_DELETION,
+        ) is None
+        _api_keys, api_key_total = await adapter.list_api_keys_for_user(user.id)
+        assert api_key_total == 0
+        audit_logs, audit_total = await adapter.list_audit_logs(
+            user_id=user.id,
+            event_type=AuditEventType.USER_DELETED,
+            identifier=None,
+            limit=10,
+            offset=0,
+        )
+        assert audit_total == 1
+        assert audit_logs[0].identifier == user.email
 
     async def test_verification_round_trip(self, adapter: ContractAdapter) -> None:
         verification = Verification(

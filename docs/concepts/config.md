@@ -20,6 +20,8 @@ from authkit.config import (
     AppConfig,
     CookieConfig,
     DatabaseConfig,
+    MongoDatabaseConfig,
+    PostgresDatabaseConfig,
     RateLimitConfig,
     SessionConfig,
 )
@@ -33,9 +35,24 @@ config = AuthKitConfig(
     session=SessionConfig(max_age_seconds=604800),
     cookie=CookieConfig(same_site="strict"),
     rate_limit=RateLimitConfig(storage="database"),
-    database=DatabaseConfig(mongo_url=mongo_url),
+    database=DatabaseConfig(
+        backend="mongo",
+        mongo=MongoDatabaseConfig(url=mongo_url),
+    ),
 )
-print(config.database.mongo_url)
+print(config.database.mongo.url)
+
+postgres_config = AuthKitConfig(
+    secret_key=SecretStr(app_secret),
+    database=DatabaseConfig(
+        backend="postgres",
+        postgres=PostgresDatabaseConfig(
+            url="postgresql+asyncpg://user:pass@db.example.com/app",
+            table_prefix="authkit_",
+        ),
+    ),
+)
+print(postgres_config.database.postgres.url)
 ```
 
 If you use a vault or parameter store, read those values in your application
@@ -43,7 +60,7 @@ configuration layer and pass the resulting strings into `AuthKitConfig`.
 
 ## Sections
 
-`AuthKitConfig` composes fourteen sub-configs:
+`AuthKitConfig` composes sixteen sub-configs:
 
 | Section | Purpose |
 |---|---|
@@ -56,14 +73,19 @@ configuration layer and pass the resulting strings into `AuthKitConfig`.
 | `email_verification` | Token TTL, base verify URL, whether sign-in requires a verified email. |
 | `password_reset` | Token TTL, base reset URL. |
 | `email_change` | Token TTL, base confirm URL, email subject. |
+| `delete_account` | Token TTL, base confirm URL, account-deletion email subject. |
 | `rate_limit` | Window, max requests, storage backend (memory or DB). |
 | `csrf` | Trusted origins, relative-path policy, enable/disable. |
 | `lockout` | Account-lockout policy (`max_failures`, `window_seconds`). |
-| `database` | Mongo URL + database name. |
+| `database` | Backend selector plus nested memory, Mongo, and Postgres settings. |
 | `advanced` | IP header lookup order, IPv6 subnet bucket size, `__Secure-` cookie prefix flag. |
 
 Pass any subset of sections to override the defaults; omitted sections get
 the `BaseModel` `default_factory` values.
+
+`DatabaseConfig.backend` defaults to `memory`, which has no connection
+settings. Choose `mongo` or `postgres` explicitly when your application uses a
+persistent adapter.
 
 ## Wire format
 
@@ -132,14 +154,17 @@ The application boundary should look like any other dependency injection:
 
 ```python
 from authkit import AuthKitConfig
-from authkit.config import DatabaseConfig
+from authkit.config import DatabaseConfig, MongoDatabaseConfig
 from pydantic import SecretStr
 
 config = AuthKitConfig(
     secret_key=SecretStr(app_settings.auth_secret),
     database=DatabaseConfig(
-        mongo_url=app_settings.mongo_url,
-        database_name=app_settings.database_name,
+        backend="mongo",
+        mongo=MongoDatabaseConfig(
+            url=app_settings.mongo_url,
+            database_name=app_settings.database_name,
+        ),
     ),
 )
 ```

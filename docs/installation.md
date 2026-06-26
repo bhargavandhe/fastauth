@@ -28,13 +28,16 @@ For example, build config from values your application already owns:
 from pydantic import SecretStr
 
 from authkit import AuthKitConfig
-from authkit.config import DatabaseConfig
+from authkit.config import DatabaseConfig, MongoDatabaseConfig
 
 config = AuthKitConfig(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
     database=DatabaseConfig(
-        mongo_url="mongodb://localhost:27017",
-        database_name="myapp",
+        backend="mongo",
+        mongo=MongoDatabaseConfig(
+            url="mongodb://localhost:27017",
+            database_name="myapp",
+        ),
     ),
 )
 ```
@@ -50,10 +53,17 @@ uv run pyright                  # type-check (strict)
 uv run pytest                   # run the test suite
 ```
 
-Once your environment is wired up, generate the project scaffold via the CLI:
+Once your environment is wired up, generate the project scaffold via the CLI
+and apply backend setup explicitly:
 
 ```bash
-uv run authkit init             # writes auth.py
+uv run authkit init --backend memory    # writes auth.py
+uv run authkit init --backend mongo     # writes Mongo scaffold
+uv run authkit init --backend postgres  # writes Postgres scaffold
 uv run authkit migrate --mongo-url mongodb://localhost:27017 --database myapp
 uv run authkit migrate --postgres-url postgresql+asyncpg://user:pass@localhost/myapp
 ```
+
+The Mongo command initializes Beanie documents and indexes. The Postgres
+command applies tracked authkit schema migrations and records the current
+schema version in the database.

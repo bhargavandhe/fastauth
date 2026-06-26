@@ -158,8 +158,18 @@ class BeanieAdapter:
         if oid is None:
             return
         doc = await UserDoc.find_one(UserDoc.id == oid)
-        if doc:
-            await doc.delete()
+        if doc is None:
+            return
+        identifiers = {doc.email}
+        if doc.pending_email_change is not None:
+            identifiers.add(str(doc.pending_email_change))
+        await SessionDoc.find({"user_id": oid}).delete()
+        await RefreshTokenDoc.find({"user_id": oid}).delete()
+        await AccountDoc.find({"user_id": oid}).delete()
+        await ApiKeyDoc.find({"user_id": oid}).delete()
+        if identifiers:
+            await VerificationDoc.find({"identifier": {"$in": list(identifiers)}}).delete()
+        await doc.delete()
 
     # ----- Session -----
     async def create_session(self, session: Session) -> Session:

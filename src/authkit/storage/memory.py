@@ -74,7 +74,27 @@ class InMemoryAdapter:
 
     async def delete_user(self, user_id: str) -> None:
         async with self.lock:
-            self.users.pop(user_id, None)
+            user = self.users.pop(user_id, None)
+            identifiers: set[str] = set()
+            if user is not None:
+                identifiers.add(user.email)
+                if user.pending_email_change is not None:
+                    identifiers.add(user.pending_email_change)
+            for account_id, account in list(self.accounts.items()):
+                if account.user_id == user_id:
+                    del self.accounts[account_id]
+            for session_id, session in list(self.sessions.items()):
+                if session.user_id == user_id:
+                    del self.sessions[session_id]
+            for token_id, token in list(self.refresh_tokens.items()):
+                if token.user_id == user_id:
+                    del self.refresh_tokens[token_id]
+            for key_id, key in list(self.api_keys.items()):
+                if key.user_id == user_id:
+                    del self.api_keys[key_id]
+            for verification_id, verification in list(self.verifications.items()):
+                if verification.identifier in identifiers:
+                    del self.verifications[verification_id]
 
     # ----- Session -----
     async def create_session(self, session: Session) -> Session:

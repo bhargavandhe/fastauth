@@ -27,6 +27,7 @@ __all__ = ["PostgresSchema", "build_postgres_schema"]
 @dataclass(frozen=True)
 class PostgresSchema:
     metadata: MetaData
+    schema_migrations: Table
     users: Table
     sessions: Table
     refresh_tokens: Table
@@ -51,6 +52,13 @@ def timestamp_columns() -> list[Column[Any]]:
 
 def build_postgres_schema(table_prefix: str = "authkit_") -> PostgresSchema:
     metadata = MetaData()
+
+    schema_migrations = Table(
+        f"{table_prefix}schema_migrations",
+        metadata,
+        Column("version", Integer, primary_key=True),
+        Column("applied_at", DateTime(timezone=True), nullable=False),
+    )
 
     users = Table(
         f"{table_prefix}users",
@@ -223,6 +231,7 @@ def build_postgres_schema(table_prefix: str = "authkit_") -> PostgresSchema:
 
     return PostgresSchema(
         metadata=metadata,
+        schema_migrations=schema_migrations,
         users=users,
         sessions=sessions,
         refresh_tokens=refresh_tokens,

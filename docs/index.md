@@ -7,7 +7,8 @@ A modular, Pydantic-native, async-only authentication library for FastAPI applic
 - Email + username / password sign-up, sign-in, sign-out
 - Email verification with anti-enumeration
 - Password reset that revokes all existing sessions
-- Beanie / MongoDB persistence (SQL coming in v2)
+- User profile update, set-password, verify-password, and verified account deletion
+- Beanie / MongoDB and SQLAlchemy / Postgres persistence
 - Pluggable session strategies — DB-backed or JWT
 - Cookie + Bearer transports
 - CSRF / trusted-origin protection

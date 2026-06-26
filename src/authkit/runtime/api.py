@@ -66,6 +66,32 @@ from authkit.flows.sessions import (
 from authkit.flows.sessions import (
     revoke_session as revoke_session_flow,
 )
+from authkit.flows.user_management import (
+    DeleteAccountConfirmRequest,
+    DeleteAccountRequest,
+    SetPasswordRequest,
+    UpdateUserRequest,
+    VerifyPasswordRequest,
+    VerifyPasswordResponse,
+)
+from authkit.flows.user_management import (
+    confirm_delete_account as confirm_delete_account_flow,
+)
+from authkit.flows.user_management import (
+    delete_account_with_password as delete_account_with_password_flow,
+)
+from authkit.flows.user_management import (
+    request_delete_account as request_delete_account_flow,
+)
+from authkit.flows.user_management import (
+    set_password as set_password_flow,
+)
+from authkit.flows.user_management import (
+    update_user as update_user_flow,
+)
+from authkit.flows.user_management import (
+    verify_password as verify_password_flow,
+)
 from authkit.flows.verification import (
     SendVerificationEmailRequest,
     VerifyEmailRequest,
@@ -202,6 +228,102 @@ class AuthApi:
             user,
             current_session_id=current_session_id,
             request=request,
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def update_user(
+        self,
+        user: User,
+        request: UpdateUserRequest,
+        *,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> User:
+        return await update_user_flow(
+            self.context,
+            user,
+            request,
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def set_password(
+        self,
+        user: User,
+        *,
+        current_session_id: str,
+        request: SetPasswordRequest,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> EmptyResponse:
+        return await set_password_flow(
+            self.context,
+            user,
+            current_session_id=current_session_id,
+            request=request,
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def verify_password(
+        self,
+        user: User,
+        request: VerifyPasswordRequest,
+        *,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> VerifyPasswordResponse:
+        return await verify_password_flow(
+            self.context,
+            user,
+            request,
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def delete_account_with_password(
+        self,
+        user: User,
+        request: DeleteAccountRequest,
+        *,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> EmptyResponse:
+        return await delete_account_with_password_flow(
+            self.context,
+            user,
+            request,
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def request_delete_account(
+        self,
+        user: User,
+        *,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> EmptyResponse:
+        return await request_delete_account_flow(
+            self.context,
+            user,
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def confirm_delete_account(
+        self,
+        user: User,
+        request: DeleteAccountConfirmRequest,
+        *,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> EmptyResponse:
+        return await confirm_delete_account_flow(
+            self.context,
+            user,
+            request,
             ip=ip,
             user_agent=user_agent,
         )

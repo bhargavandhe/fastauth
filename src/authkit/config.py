@@ -14,7 +14,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from authkit.domain.enums import RateLimitStorageKind, SessionStrategyKind, WireFormat
+from authkit.domain.enums import (
+    DatabaseBackendKind,
+    RateLimitStorageKind,
+    SessionStrategyKind,
+    WireFormat,
+)
 
 __all__ = [
     "AdvancedConfig",
@@ -23,12 +28,16 @@ __all__ = [
     "CookieConfig",
     "CsrfConfig",
     "DatabaseConfig",
+    "DeleteAccountConfig",
     "EmailChangeConfig",
     "EmailConfig",
     "EmailVerificationConfig",
     "LockoutConfig",
+    "MemoryDatabaseConfig",
+    "MongoDatabaseConfig",
     "PasswordConfig",
     "PasswordResetConfig",
+    "PostgresDatabaseConfig",
     "RateLimitConfig",
     "RefreshTokenConfig",
     "SecurityHeadersConfig",
@@ -92,6 +101,12 @@ class EmailChangeConfig(ConfigSection):
     token_ttl_minutes: int = 15
     base_confirm_url: str = "http://localhost:8000/auth/change-email/confirm"
     subject: str = "Confirm your new email address"
+
+
+class DeleteAccountConfig(ConfigSection):
+    token_ttl_minutes: int = 15
+    base_confirm_url: str = "http://localhost:8000/auth/delete-account/confirm"
+    subject: str = "Confirm account deletion"
 
 
 class RateLimitConfig(ConfigSection):
@@ -175,9 +190,25 @@ class SecurityHeadersConfig(ConfigSection):
     content_security_policy: str | None = None
 
 
-class DatabaseConfig(ConfigSection):
-    mongo_url: str = "mongodb://localhost:27017"
+class MongoDatabaseConfig(ConfigSection):
+    url: str = "mongodb://localhost:27017"
     database_name: str = "authkit"
+
+
+class PostgresDatabaseConfig(ConfigSection):
+    url: str = "postgresql+asyncpg://localhost/authkit"
+    table_prefix: str = "authkit_"
+
+
+class MemoryDatabaseConfig(ConfigSection):
+    pass
+
+
+class DatabaseConfig(ConfigSection):
+    backend: DatabaseBackendKind = DatabaseBackendKind.MEMORY
+    memory: MemoryDatabaseConfig = Field(default_factory=MemoryDatabaseConfig)
+    mongo: MongoDatabaseConfig = Field(default_factory=MongoDatabaseConfig)
+    postgres: PostgresDatabaseConfig = Field(default_factory=PostgresDatabaseConfig)
 
 
 class AdvancedConfig(ConfigSection):
@@ -204,11 +235,14 @@ class AuthKitConfig(BaseModel):
 
         from pydantic import SecretStr
         from authkit import AuthKit, AuthKitConfig
-        from authkit.config import DatabaseConfig
+        from authkit.config import DatabaseConfig, MongoDatabaseConfig
 
         config = AuthKitConfig(
             secret_key=SecretStr("..."),
-            database=DatabaseConfig(mongo_url="mongodb://localhost:27017"),
+            database=DatabaseConfig(
+                backend="mongo",
+                mongo=MongoDatabaseConfig(url="mongodb://localhost:27017"),
+            ),
         )
         auth = AuthKit(config, adapter=...)
     """
@@ -225,6 +259,7 @@ class AuthKitConfig(BaseModel):
     email_verification: EmailVerificationConfig = Field(default_factory=EmailVerificationConfig)
     password_reset: PasswordResetConfig = Field(default_factory=PasswordResetConfig)
     email_change: EmailChangeConfig = Field(default_factory=EmailChangeConfig)
+    delete_account: DeleteAccountConfig = Field(default_factory=DeleteAccountConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     csrf: CsrfConfig = Field(default_factory=CsrfConfig)
     lockout: LockoutConfig = Field(default_factory=LockoutConfig)

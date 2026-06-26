@@ -43,11 +43,13 @@ def quickstart_runtime() -> Iterator[tuple[FastAPI, AsyncIOMotorDatabase[object]
         rate_limit_enabled=False,
     )
     mongo_client: AsyncIOMotorClient[object] = AsyncIOMotorClient(
-        config.database.mongo_url,
+        config.database.mongo.url,
         uuidRepresentation="standard",
         tz_aware=True,
     )
-    mongo_database: AsyncIOMotorDatabase[object] = mongo_client[config.database.database_name]
+    mongo_database: AsyncIOMotorDatabase[object] = mongo_client[
+        config.database.mongo.database_name
+    ]
     auth = create_auth(config, mongo_database)
     app = create_app(auth, mongo_database)
     try:

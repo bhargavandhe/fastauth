@@ -3,47 +3,35 @@
 A modular, Pydantic-native, async-only authentication library for FastAPI.
 
 ```bash
-pip install authkit-fastapi[beanie,jwt]
+pip install authkit-fastapi
 ```
 
 ```python
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import SecretStr
 
 from authkit import AuthKit, AuthKitConfig
-from authkit.config import DatabaseConfig
-from authkit.storage.beanie import BeanieAdapter
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-mongo_url = "mongodb://localhost:27017"
-database_name = "myapp"
 
-config = AuthKitConfig(
-    secret_key=SecretStr(app_secret),
-    database=DatabaseConfig(
-        mongo_url=mongo_url,
-        database_name=database_name,
-    ),
-)
+config = AuthKitConfig(secret_key=SecretStr(app_secret))
+auth = AuthKit(config)
 
-mongo = AsyncIOMotorClient(config.database.mongo_url, uuidRepresentation="standard")
-db = mongo[config.database.database_name]
-adapter = BeanieAdapter(db)
-auth = AuthKit(config, adapter=adapter)
-
-app = FastAPI(lifespan=adapter.lifespan(auth))
+app = FastAPI(lifespan=auth.lifespan)
 auth.install(app)
 ```
 
 That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
 `/auth/sign-out`, `/auth/get-session`, `/auth/verify-email`,
 `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`,
+`/auth/set-password`, `/auth/verify-password`, `/auth/user`,
+`/auth/delete-account`, `/auth/delete-account/request`,
+`/auth/delete-account/confirm`,
 `/auth/change-email/{request,confirm}`, `/auth/sessions` (list / revoke /
-revoke-others), `/auth/refresh`, and `/auth/health` wired into your
-FastAPI application. Rate-limiting, account-lockout, and refresh tokens are
-part of the router. CSRF and security headers are ASGI middleware installed
-by `auth.install(app)`. If you use `auth.as_asgi()` instead, authkit returns a
+revoke-others), `/auth/refresh`, and `/auth/health` wired into your FastAPI
+application. Rate-limiting, account-lockout, and refresh tokens are part of
+the router. CSRF and security headers are ASGI middleware installed by
+`auth.install(app)`. If you use `auth.as_asgi()` instead, authkit returns a
 standalone app with the same routes and middleware already installed.
 
 ## Why authkit
@@ -86,6 +74,8 @@ v2 + async-only + MongoDB or Postgres persistence:
 - Email verification with anti-enumeration
 - Password reset with anti-enumeration and session-wide revoke
 - Authenticated change-password (keeps current session, revokes others)
+- Authenticated profile update, set-password, verify-password, and
+  account deletion with password or email-token verification
 - Authenticated change-email with re-verification
 - Refresh tokens with **one-time-use rotation** and
   **family-revocation on reuse** (OAuth 2.1-style theft detection)
@@ -128,10 +118,13 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **`CurrentUser` / `CurrentSession` FastAPI dependencies** with optional
   variants, both `Depends(...)` and `Annotated[...]` calling styles
   documented.
+- **`AuthKit(config)`** — uses the in-memory adapter by default when
+  `DatabaseConfig.backend == "memory"` for compact tests and first-run demos.
 - **`auth.install(app)`** — install routes, CSRF, and security headers on your
   FastAPI app in one call. `AuthKit.as_asgi()` still returns a standalone app
   when you want authkit mounted separately.
-- **Typer CLI** — `authkit init`, `authkit migrate`, `authkit generate-secret`.
+- **Typer CLI** — `authkit init --backend memory|mongo|postgres`,
+  `authkit migrate`, `authkit generate-secret`.
 - **mkdocs-material docs** + quickstart example app with its own test suite.
 
 ## Installation
@@ -210,15 +203,16 @@ config = AuthKitConfig(
 )
 ```
 
-15 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
-`email_verification`, `password_reset`, `email_change`, `rate_limit`,
-`csrf`, `lockout`, `refresh_token`, `security_headers`, `database`, `advanced`.
+16 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
+`email_verification`, `password_reset`, `email_change`, `delete_account`,
+`rate_limit`, `csrf`, `lockout`, `refresh_token`, `security_headers`,
+`database`, `advanced`.
 
 See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.
 
 ## Documentation
 
-Full docs site (under construction): `mkdocs serve` from a checkout.
+Full docs site: `mkdocs serve` from a checkout.
 
 - [Quickstart](docs/quickstart.md)
 - [Config](docs/concepts/config.md) · [Sessions](docs/concepts/sessions.md) ·
@@ -227,6 +221,7 @@ Full docs site (under construction): `mkdocs serve` from a checkout.
   [Hooks](docs/concepts/hooks.md)
 - [Email verification guide](docs/guides/email-verification.md) ·
   [Password reset guide](docs/guides/password-reset.md) ·
+  [User management guide](docs/guides/user-management.md) ·
   [KMS signing guide](docs/guides/kms-signing.md)
 
 ## Project layout

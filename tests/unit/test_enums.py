@@ -11,6 +11,7 @@ def test_provider_id_values() -> None:
 def test_verification_purpose_values() -> None:
     assert enums.VerificationPurpose.EMAIL_VERIFICATION.value == "email-verification"
     assert enums.VerificationPurpose.PASSWORD_RESET.value == "password-reset"
+    assert enums.VerificationPurpose.ACCOUNT_DELETION.value == "account-deletion"
 
 
 def test_audit_event_type_covers_v1_events() -> None:
@@ -19,8 +20,10 @@ def test_audit_event_type_covers_v1_events() -> None:
         "user_signed_in",
         "user_signed_out",
         "user_email_verified",
+        "user_updated",
         "user_email_change_requested",
         "user_email_changed",
+        "user_delete_requested",
         "user_deleted",
         "session_created",
         "session_revoked",

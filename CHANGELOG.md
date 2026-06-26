@@ -36,6 +36,21 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ### Changed
 
+- `AuthKit(config)` now uses `InMemoryAdapter` automatically when
+  `DatabaseConfig.backend == "memory"` (the default). Persistent backends still
+  require an explicit adapter so production wiring remains clear.
+- `authkit init` now accepts `--backend memory|mongo|postgres`; the default
+  scaffold is dependency-light and no longer Mongo-specific.
+- `Plugin` now stores bound `AuthContext` by default and exposes
+  `require_context()`, `require_capability(...)`, and
+  `require_session(request)` helpers for common plugin-author boilerplate.
+- Postgres schema setup now runs through an ordered migration registry under a
+  transaction-level advisory lock. The current migration set records version
+  `1` for the initial authkit schema.
+- Removed the unimplemented `redis` optional dependency extra until Redis
+  storage exists.
+- CI now runs lint/typecheck and tests on Python 3.11 and 3.12, and validates
+  built distributions with `uv build` plus `twine check`.
 - All public request and response models (sign-up, sign-in, refresh,
   session-management, verification, password-reset, change-password,
   change-email, email-OTP, API keys, JWT-token, audit logs, health)
@@ -198,17 +213,21 @@ test utilities, and a CLI.
 
 #### CLI
 - `authkit` Typer CLI with three commands:
-  - `authkit init` — scaffolds an `auth.py` that reads from `os.environ`.
+  - `authkit init` — scaffolds an `auth.py` that accepts explicit
+    `AuthKitConfig` and adapter dependencies.
   - `authkit migrate --mongo-url <url>` — applies Beanie's index migrations.
+  - `authkit migrate --postgres-url <url>` — applies tracked Postgres schema
+    migrations for the SQLAlchemy adapter and records the current schema
+    version.
   - `authkit generate-secret` — emits a cryptographically random 64-byte hex
     string for `secret_key`.
 
 #### Tooling, packaging, docs
 - `uv` for dependency management. `ruff check` + `ruff format` + `pyright
   --strict` (zero errors, zero warnings) gate every commit.
-- Test suite: **258 tests** covering unit, adapter-contract, integration
-  (against real Mongo or testcontainer), CLI, example app.
-- mkdocs-material site (22 pages) built with `mkdocs --strict`. Plugin pages,
+- Test suite covering unit, adapter-contract, integration, CLI, docs
+  contracts, and the quickstart example app.
+- mkdocs-material site built with `mkdocs --strict`. Plugin pages,
   concept pages, guides for KMS signing, password reset, email verification.
 - Quickstart example app under `examples/quickstart/` with its own test
   suite (4 end-to-end scenarios against a real test client).
@@ -274,5 +293,5 @@ test utilities, and a CLI.
 - `authkit print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/authkit/authkit/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/authkit/authkit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/bhargavandhe2310/authkit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/bhargavandhe2310/authkit/releases/tag/v0.1.0

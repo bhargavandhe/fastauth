@@ -3,10 +3,16 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
+import pytest
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from authkit.storage.postgres import PostgresAdapter
+from authkit.storage.postgres import (
+    CURRENT_SCHEMA_VERSION,
+    POSTGRES_MIGRATIONS,
+    PostgresAdapter,
+    pending_postgres_migrations,
+)
 
 
 def test_postgres_adapter_uses_configurable_table_prefix() -> None:
@@ -18,18 +24,43 @@ def test_postgres_adapter_uses_configurable_table_prefix() -> None:
     table_names = set(adapter.schema.metadata.tables)
     assert "custom_users" in table_names
     assert "custom_refresh_tokens" in table_names
+    assert "custom_schema_migrations" in table_names
     assert "authkit_users" not in table_names
 
 
-async def test_postgres_lifespan_creates_schema_then_auth_lifespan() -> None:
+def test_postgres_schema_tracks_current_version_table() -> None:
+    adapter = PostgresAdapter.from_url(
+        "postgresql+asyncpg://authkit:authkit@localhost/authkit",
+    )
+
+    assert "authkit_schema_migrations" in adapter.schema.metadata.tables
+    assert "version" in adapter.schema.schema_migrations.c
+    assert "applied_at" in adapter.schema.schema_migrations.c
+
+
+def test_postgres_migration_registry_is_ordered() -> None:
+    versions = [migration.version for migration in POSTGRES_MIGRATIONS]
+
+    assert versions == sorted(versions)
+    assert versions == list(range(1, CURRENT_SCHEMA_VERSION + 1))
+    assert POSTGRES_MIGRATIONS[-1].description == "initial authkit schema"
+
+
+def test_postgres_pending_migrations_rejects_future_database_version() -> None:
+    with pytest.raises(RuntimeError, match="newer than this authkit version"):
+        pending_postgres_migrations(CURRENT_SCHEMA_VERSION + 1)
+
+
+async def test_postgres_lifespan_applies_migrations_then_auth_lifespan() -> None:
     engine = create_async_engine("postgresql+asyncpg://authkit:authkit@localhost/authkit")
     adapter = PostgresAdapter(engine)
     calls: list[str] = []
 
-    async def create_schema() -> None:
-        calls.append("schema")
+    async def apply_migrations() -> list[int]:
+        calls.append("migrations")
+        return [1]
 
-    adapter.create_schema = create_schema  # type: ignore[method-assign]
+    adapter.apply_migrations = apply_migrations  # type: ignore[method-assign]
 
     class Auth:
         def lifespan(self, app: FastAPI) -> AbstractAsyncContextManager[None]:
@@ -45,4 +76,31 @@ async def test_postgres_lifespan_creates_schema_then_auth_lifespan() -> None:
         calls.append("inside")
 
     await engine.dispose()
-    assert calls == ["schema", "auth", "inside"]
+    assert calls == ["migrations", "auth", "inside"]
+
+
+async def test_postgres_checked_lifespan_asserts_schema_then_auth_lifespan() -> None:
+    engine = create_async_engine("postgresql+asyncpg://authkit:authkit@localhost/authkit")
+    adapter = PostgresAdapter(engine)
+    calls: list[str] = []
+
+    async def assert_schema_current() -> None:
+        calls.append("checked")
+
+    adapter.assert_schema_current = assert_schema_current  # type: ignore[method-assign]
+
+    class Auth:
+        def lifespan(self, app: FastAPI) -> AbstractAsyncContextManager[None]:
+            @asynccontextmanager
+            async def lifespan_context(app: FastAPI) -> AsyncGenerator[None, None]:
+                calls.append("auth")
+                yield
+
+            return lifespan_context(app)
+
+    app = FastAPI()
+    async with adapter.checked_lifespan(Auth())(app):  # type: ignore[arg-type]
+        calls.append("inside")
+
+    await engine.dispose()
+    assert calls == ["checked", "auth", "inside"]

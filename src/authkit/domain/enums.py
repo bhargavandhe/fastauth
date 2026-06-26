@@ -6,6 +6,7 @@ from enum import StrEnum
 
 __all__ = [
     "AuditEventType",
+    "DatabaseBackendKind",
     "EmailMessageKind",
     "HookPhase",
     "JwtAlgorithm",
@@ -27,6 +28,7 @@ class VerificationPurpose(StrEnum):
     EMAIL_VERIFICATION = "email-verification"
     PASSWORD_RESET = "password-reset"  # noqa: S105
     EMAIL_CHANGE = "email-change"
+    ACCOUNT_DELETION = "account-deletion"
     EMAIL_OTP_SIGN_IN = "email-otp-sign-in"
     EMAIL_OTP_VERIFICATION = "email-otp-verification"
     EMAIL_OTP_PASSWORD_RESET = "email-otp-password-reset"  # noqa: S105
@@ -38,8 +40,10 @@ class AuditEventType(StrEnum):
     USER_SIGNED_IN = "user_signed_in"
     USER_SIGNED_OUT = "user_signed_out"
     USER_EMAIL_VERIFIED = "user_email_verified"
+    USER_UPDATED = "user_updated"
     USER_EMAIL_CHANGE_REQUESTED = "user_email_change_requested"
     USER_EMAIL_CHANGED = "user_email_changed"
+    USER_DELETE_REQUESTED = "user_delete_requested"
     USER_DELETED = "user_deleted"
     SESSION_CREATED = "session_created"
     SESSION_REVOKED = "session_revoked"
@@ -63,6 +67,12 @@ class AuditEventType(StrEnum):
 class SessionStrategyKind(StrEnum):
     DATABASE = "database"
     JWT = "jwt"
+
+
+class DatabaseBackendKind(StrEnum):
+    MEMORY = "memory"
+    MONGO = "mongo"
+    POSTGRES = "postgres"
 
 
 class WireFormat(StrEnum):
@@ -104,6 +114,7 @@ class RateLimitStorageKind(StrEnum):
 class EmailMessageKind(StrEnum):
     VERIFICATION = "verification"
     PASSWORD_RESET = "password-reset"  # noqa: S105
+    ACCOUNT_DELETION = "account-deletion"
 
 
 class JwtAlgorithm(StrEnum):

@@ -5,8 +5,19 @@ description = "A modular, Pydantic-native, async-only authentication library for
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [{ name = "authkit contributors" }]
-keywords = ["fastapi", "authentication", "auth", "pydantic", "beanie", "mongodb"]
+authors = [{ name = "Bhargav Andhe", email = "bhargavandhe2310@gmail.com" }]
+keywords = [
+  "fastapi",
+  "authentication",
+  "auth",
+  "pydantic",
+  "jwt",
+  "security",
+  "beanie",
+  "mongodb",
+  "postgres",
+  "sqlalchemy",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Framework :: FastAPI",
@@ -26,16 +37,15 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/authkit/authkit"
-Documentation = "https://github.com/authkit/authkit#readme"
-Repository = "https://github.com/authkit/authkit"
-Issues = "https://github.com/authkit/authkit/issues"
+Homepage = "https://github.com/bhargavandhe2310/authkit"
+Documentation = "https://github.com/bhargavandhe2310/authkit#readme"
+Repository = "https://github.com/bhargavandhe2310/authkit"
+Issues = "https://github.com/bhargavandhe2310/authkit/issues"
 
 [project.optional-dependencies]
 beanie = ["beanie>=1.27,<2", "motor>=3.6"]
 postgres = ["sqlalchemy[asyncio]>=2.0,<3", "asyncpg>=0.29"]
 jwt = ["joserfc>=1.0", "cryptography>=43.0"]
-redis = ["redis>=5.1"]
 cli = ["typer>=0.12", "rich>=13.7"]
 dev = [
   "ruff>=0.6",

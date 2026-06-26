@@ -25,6 +25,30 @@ def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     body = auth_py.read_text(encoding="utf-8")
     assert "AuthKitConfig" in body
     assert "AuthKitEnvConfig" not in body
+    assert "InMemoryAdapter" in body
+    assert "motor" not in body
+
+
+def test_init_can_write_postgres_scaffold(tmp_path: pathlib.Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["init", "--backend", "postgres", "--path", str(tmp_path)])
+    assert result.exit_code == 0
+
+    body = (tmp_path / "auth.py").read_text(encoding="utf-8")
+    assert "PostgresAdapter" in body
+    assert "config.database.postgres.url" in body
+    assert "checked_lifespan" in body
+
+
+def test_init_can_write_mongo_scaffold(tmp_path: pathlib.Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["init", "--backend", "mongo", "--path", str(tmp_path)])
+    assert result.exit_code == 0
+
+    body = (tmp_path / "auth.py").read_text(encoding="utf-8")
+    assert "BeanieAdapter" in body
+    assert "config.database.mongo.url" in body
+    assert "config.database.mongo.database_name" in body
 
 
 def test_init_no_longer_writes_dotenv_example(tmp_path: pathlib.Path) -> None:

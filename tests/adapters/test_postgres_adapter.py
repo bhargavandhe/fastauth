@@ -50,5 +50,5 @@ class TestPostgresAdapter(AdapterContract):
             postgres_engine,
             table_prefix=f"authkit_test_{uuid4().hex[:8]}_",
         )
-        await adapter.create_schema()
+        await adapter.apply_migrations()
         return adapter

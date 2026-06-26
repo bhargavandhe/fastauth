@@ -30,6 +30,7 @@ __all__ = [
     "SessionCreated",
     "SessionRevoked",
     "SessionsRevokedAll",
+    "UserDeleteRequested",
     "UserDeleted",
     "UserEmailChangeRequested",
     "UserEmailChanged",
@@ -37,6 +38,7 @@ __all__ = [
     "UserSignedIn",
     "UserSignedOut",
     "UserSignedUp",
+    "UserUpdated",
 ]
 
 
@@ -73,6 +75,12 @@ class UserEmailVerified(AuthEvent):
     identifier: str
 
 
+class UserUpdated(AuthEvent):
+    audit_event_type: AuditEventType = AuditEventType.USER_UPDATED
+    user_id: str
+    changed_fields: list[str]
+
+
 class UserEmailChangeRequested(AuthEvent):
     audit_event_type: AuditEventType = AuditEventType.USER_EMAIL_CHANGE_REQUESTED
     user_id: str
@@ -90,6 +98,12 @@ class UserEmailChanged(AuthEvent):
 class UserDeleted(AuthEvent):
     audit_event_type: AuditEventType = AuditEventType.USER_DELETED
     user_id: str
+
+
+class UserDeleteRequested(AuthEvent):
+    audit_event_type: AuditEventType = AuditEventType.USER_DELETE_REQUESTED
+    user_id: str
+    identifier: str
 
 
 class SessionCreated(AuthEvent):

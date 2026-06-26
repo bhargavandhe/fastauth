@@ -19,6 +19,7 @@ __all__ = [
     "InvalidCredentialsError",
     "JwksDecryptionError",
     "NotFoundError",
+    "PasswordAlreadySetError",
     "RateLimitError",
     "RefreshTokenReuseError",
     "SessionExpiredError",
@@ -66,6 +67,13 @@ class DuplicateError(AdapterError):
 
     def __init__(self, *, resource: str, field: str, code: str | None = None) -> None:
         super().__init__(code=code, message=f"{resource} with duplicate {field}")
+
+
+class PasswordAlreadySetError(AuthKitError):
+    default_code = "PASSWORD_ALREADY_SET"
+
+    def __init__(self) -> None:
+        super().__init__(message="password is already set")
 
 
 class AuthenticationError(AuthKitError):
@@ -168,6 +176,7 @@ EXCEPTION_HTTP_STATUS: dict[type[AuthKitError], int] = {
     AdapterError: HTTPStatus.INTERNAL_SERVER_ERROR,
     NotFoundError: HTTPStatus.NOT_FOUND,
     DuplicateError: HTTPStatus.CONFLICT,
+    PasswordAlreadySetError: HTTPStatus.CONFLICT,
     InvalidCredentialsError: HTTPStatus.UNAUTHORIZED,
     EmailNotVerifiedError: HTTPStatus.FORBIDDEN,
     SessionExpiredError: HTTPStatus.UNAUTHORIZED,
