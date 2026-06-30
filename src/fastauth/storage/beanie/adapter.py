@@ -50,8 +50,16 @@ from fastauth.domain.models import (
 )
 from fastauth.exceptions import DuplicateError, NotFoundError
 from fastauth.storage.beanie.documents import (
+    AccountDoc,
+    ApiKeyDoc,
+    AuditLogDoc,
     BeanieDocumentModels,
-    build_beanie_document_models,
+    JwksKeyDoc,
+    RateLimitDoc,
+    RefreshTokenDoc,
+    SessionDoc,
+    UserDoc,
+    VerificationDoc,
     init_beanie_documents,
     to_account,
     to_api_key,
@@ -95,9 +103,16 @@ class BeanieAdapter:
         self.database = database
         self.collection_prefix = collection_prefix
         self.collection_suffix = collection_suffix
-        self.documents: BeanieDocumentModels = build_beanie_document_models(
-            collection_prefix=collection_prefix,
-            collection_suffix=collection_suffix,
+        self.documents = BeanieDocumentModels(
+            user=UserDoc,
+            session=SessionDoc,
+            refresh_token=RefreshTokenDoc,
+            account=AccountDoc,
+            verification=VerificationDoc,
+            api_key=ApiKeyDoc,
+            jwks_key=JwksKeyDoc,
+            audit_log=AuditLogDoc,
+            rate_limit=RateLimitDoc,
         )
         self.user_doc: Any = self.documents.user
         self.session_doc: Any = self.documents.session

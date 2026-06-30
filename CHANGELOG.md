@@ -4,6 +4,18 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-07-01
+
+### Fixed
+
+- Fixed Beanie public document classes (`UserDoc`, `SessionDoc`, `AccountDoc`,
+  `RefreshTokenDoc`, `VerificationDoc`, `ApiKeyDoc`, `JwksKeyDoc`,
+  `AuditLogDoc`, and `RateLimitDoc`) when MongoDB collection prefix/suffix
+  customization is enabled. `init_beanie_documents()` now configures and
+  initializes the exported document classes directly, so Beanie query patterns
+  such as `UserDoc.find(UserDoc.id == oid)` keep working with custom
+  collection names.
+
 ## [0.3.0] — 2026-06-30
 
 ### Added

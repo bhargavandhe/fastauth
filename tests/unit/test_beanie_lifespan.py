@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 
 from fastauth.runtime.auth import FastAuth
-from fastauth.storage.beanie import BeanieAdapter
+from fastauth.storage.beanie import BeanieAdapter, documents
 
 
 class FakeAuth:
@@ -24,6 +24,20 @@ class FakeAuth:
             yield
         finally:
             self.stopped = True
+
+
+def test_beanie_adapter_uses_public_document_classes_without_configuring_names() -> None:
+    documents.build_beanie_document_models()
+
+    adapter = BeanieAdapter(
+        cast(Any, "db"),
+        collection_prefix="tenant_",
+        collection_suffix="_auth",
+    )
+
+    assert adapter.documents.user is documents.UserDoc
+    assert adapter.user_doc is documents.UserDoc
+    assert documents.UserDoc.Settings.name == "users"
 
 
 @pytest.mark.anyio
