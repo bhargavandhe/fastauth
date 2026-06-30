@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from fastauth.domain.enums import (
     DatabaseBackendKind,
@@ -193,11 +193,21 @@ class SecurityHeadersConfig(ConfigSection):
 class MongoDatabaseConfig(ConfigSection):
     url: str = "mongodb://localhost:27017"
     database_name: str = "fastauth"
+    collection_prefix: str = ""
+    collection_suffix: str = ""
+
+    @field_validator("collection_prefix", "collection_suffix")
+    @classmethod
+    def validate_collection_affix(cls, value: str) -> str:
+        if "\x00" in value or "$" in value or value.startswith("system."):
+            raise ValueError("MongoDB collection affixes must produce valid collection names")
+        return value
 
 
 class PostgresDatabaseConfig(ConfigSection):
     url: str = "postgresql+asyncpg://localhost/fastauth"
     table_prefix: str = "fastauth_"
+    table_suffix: str = ""
 
 
 class MemoryDatabaseConfig(ConfigSection):

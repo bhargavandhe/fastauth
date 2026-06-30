@@ -37,6 +37,8 @@ config = FastAuthConfig(
         mongo=MongoDatabaseConfig(
             url="mongodb://localhost:27017",
             database_name="myapp",
+            collection_prefix="tenant_",
+            collection_suffix="_auth",
         ),
     ),
 )
@@ -61,7 +63,9 @@ uv run fastauth init --backend memory    # writes auth.py
 uv run fastauth init --backend mongo     # writes Mongo scaffold
 uv run fastauth init --backend postgres  # writes Postgres scaffold
 uv run fastauth migrate --mongo-url mongodb://localhost:27017 --database myapp
+uv run fastauth migrate --mongo-url mongodb://localhost:27017 --database myapp --mongo-collection-prefix tenant_ --mongo-collection-suffix _auth
 uv run fastauth migrate --postgres-url postgresql+asyncpg://user:pass@localhost/myapp
+uv run fastauth migrate --postgres-url postgresql+asyncpg://user:pass@localhost/myapp --postgres-table-prefix tenant_ --postgres-table-suffix _auth
 ```
 
 The Mongo command initializes Beanie documents and indexes. The Postgres

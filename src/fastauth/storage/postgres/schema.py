@@ -50,18 +50,35 @@ def timestamp_columns() -> list[Column[Any]]:
     ]
 
 
-def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
+def postgres_table_name(base_name: str, table_prefix: str, table_suffix: str) -> str:
+    return f"{table_prefix}{base_name}{table_suffix}"
+
+
+def build_postgres_schema(
+    table_prefix: str = "fastauth_",
+    table_suffix: str = "",
+) -> PostgresSchema:
     metadata = MetaData()
+    schema_migrations_name = postgres_table_name("schema_migrations", table_prefix, table_suffix)
+    users_name = postgres_table_name("users", table_prefix, table_suffix)
+    sessions_name = postgres_table_name("sessions", table_prefix, table_suffix)
+    refresh_tokens_name = postgres_table_name("refresh_tokens", table_prefix, table_suffix)
+    accounts_name = postgres_table_name("accounts", table_prefix, table_suffix)
+    verifications_name = postgres_table_name("verifications", table_prefix, table_suffix)
+    api_keys_name = postgres_table_name("api_keys", table_prefix, table_suffix)
+    jwks_keys_name = postgres_table_name("jwks_keys", table_prefix, table_suffix)
+    audit_logs_name = postgres_table_name("audit_logs", table_prefix, table_suffix)
+    rate_limits_name = postgres_table_name("rate_limits", table_prefix, table_suffix)
 
     schema_migrations = Table(
-        f"{table_prefix}schema_migrations",
+        schema_migrations_name,
         metadata,
         Column("version", Integer, primary_key=True),
         Column("applied_at", DateTime(timezone=True), nullable=False),
     )
 
     users = Table(
-        f"{table_prefix}users",
+        users_name,
         metadata,
         id_column(),
         Column("email", String(320), nullable=False, unique=True),
@@ -72,11 +89,11 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
         Column("pending_email_change", String(320), nullable=True),
         Column("metadata", JSONB, nullable=False),
         *timestamp_columns(),
-        Index(f"{table_prefix}users_pending_email_change_idx", "pending_email_change"),
+        Index(f"{users_name}_pending_email_change_idx", "pending_email_change"),
     )
 
     sessions = Table(
-        f"{table_prefix}sessions",
+        sessions_name,
         metadata,
         id_column(),
         Column(
@@ -90,12 +107,12 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
         Column("ip_address", String(255), nullable=True),
         Column("user_agent", Text, nullable=True),
         *timestamp_columns(),
-        Index(f"{table_prefix}sessions_user_id_idx", "user_id"),
-        Index(f"{table_prefix}sessions_expires_at_idx", "expires_at"),
+        Index(f"{sessions_name}_user_id_idx", "user_id"),
+        Index(f"{sessions_name}_expires_at_idx", "expires_at"),
     )
 
     refresh_tokens = Table(
-        f"{table_prefix}refresh_tokens",
+        refresh_tokens_name,
         metadata,
         id_column(),
         Column(
@@ -112,13 +129,13 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
         Column("ip_address", String(255), nullable=True),
         Column("user_agent", Text, nullable=True),
         *timestamp_columns(),
-        Index(f"{table_prefix}refresh_tokens_user_id_idx", "user_id"),
-        Index(f"{table_prefix}refresh_tokens_family_id_idx", "family_id"),
-        Index(f"{table_prefix}refresh_tokens_expires_at_idx", "expires_at"),
+        Index(f"{refresh_tokens_name}_user_id_idx", "user_id"),
+        Index(f"{refresh_tokens_name}_family_id_idx", "family_id"),
+        Index(f"{refresh_tokens_name}_expires_at_idx", "expires_at"),
     )
 
     accounts = Table(
-        f"{table_prefix}accounts",
+        accounts_name,
         metadata,
         id_column(),
         Column(
@@ -137,12 +154,12 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
         Column("scope", Text, nullable=True),
         Column("id_token", Text, nullable=True),
         *timestamp_columns(),
-        UniqueConstraint("user_id", "provider_id", name=f"{table_prefix}accounts_user_provider_uq"),
-        Index(f"{table_prefix}accounts_user_id_idx", "user_id"),
+        UniqueConstraint("user_id", "provider_id", name=f"{accounts_name}_user_provider_uq"),
+        Index(f"{accounts_name}_user_id_idx", "user_id"),
     )
 
     verifications = Table(
-        f"{table_prefix}verifications",
+        verifications_name,
         metadata,
         id_column(),
         Column("identifier", String(320), nullable=False),
@@ -155,14 +172,14 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
             "identifier",
             "purpose",
             "value_hash",
-            name=f"{table_prefix}verifications_identifier_purpose_hash_uq",
+            name=f"{verifications_name}_identifier_purpose_hash_uq",
         ),
-        Index(f"{table_prefix}verifications_identifier_purpose_idx", "identifier", "purpose"),
-        Index(f"{table_prefix}verifications_expires_at_idx", "expires_at"),
+        Index(f"{verifications_name}_identifier_purpose_idx", "identifier", "purpose"),
+        Index(f"{verifications_name}_expires_at_idx", "expires_at"),
     )
 
     api_keys = Table(
-        f"{table_prefix}api_keys",
+        api_keys_name,
         metadata,
         id_column(),
         Column(
@@ -188,12 +205,12 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
         Column("metadata", JSONB, nullable=False),
         Column("permissions", JSONB, nullable=False),
         *timestamp_columns(),
-        Index(f"{table_prefix}api_keys_user_id_idx", "user_id"),
-        Index(f"{table_prefix}api_keys_expires_at_idx", "expires_at"),
+        Index(f"{api_keys_name}_user_id_idx", "user_id"),
+        Index(f"{api_keys_name}_expires_at_idx", "expires_at"),
     )
 
     jwks_keys = Table(
-        f"{table_prefix}jwks_keys",
+        jwks_keys_name,
         metadata,
         id_column(),
         Column("kid", String(255), nullable=False, unique=True),
@@ -206,7 +223,7 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
     )
 
     audit_logs = Table(
-        f"{table_prefix}audit_logs",
+        audit_logs_name,
         metadata,
         id_column(),
         Column("event_type", String(96), nullable=False),
@@ -216,12 +233,12 @@ def build_postgres_schema(table_prefix: str = "fastauth_") -> PostgresSchema:
         Column("user_agent", Text, nullable=True),
         Column("event_data", JSONB, nullable=False),
         Column("created_at", DateTime(timezone=True), nullable=False),
-        Index(f"{table_prefix}audit_logs_user_event_idx", "user_id", "event_type"),
-        Index(f"{table_prefix}audit_logs_created_at_idx", "created_at"),
+        Index(f"{audit_logs_name}_user_event_idx", "user_id", "event_type"),
+        Index(f"{audit_logs_name}_created_at_idx", "created_at"),
     )
 
     rate_limits = Table(
-        f"{table_prefix}rate_limits",
+        rate_limits_name,
         metadata,
         id_column(),
         Column("key", String(512), nullable=False, unique=True),

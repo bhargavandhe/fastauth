@@ -28,6 +28,20 @@ def test_postgres_schema_uses_configurable_table_prefix() -> None:
     assert "fastauth_users" not in table_names
 
 
+def test_postgres_schema_uses_configurable_table_prefix_and_suffix() -> None:
+    adapter = PostgresAdapter.from_url(
+        "postgresql+asyncpg://fastauth:fastauth@localhost/fastauth",
+        table_prefix="tenant_",
+        table_suffix="_auth",
+    )
+
+    table_names = set(adapter.schema.metadata.tables)
+    assert "tenant_users_auth" in table_names
+    assert "tenant_refresh_tokens_auth" in table_names
+    assert "tenant_schema_migrations_auth" in table_names
+    assert "tenant_users" not in table_names
+
+
 def test_postgres_schema_tracks_current_version_table() -> None:
     adapter = PostgresAdapter.from_url(
         "postgresql+asyncpg://fastauth:fastauth@localhost/fastauth",

@@ -124,6 +124,8 @@ v2 + async-only + MongoDB or Postgres persistence:
   documented.
 - **Explicit storage wiring** — pass `InMemoryAdapter()`, `BeanieAdapter`, or
   `PostgresAdapter` yourself. Fastauth never silently chooses persistence.
+  Mongo collection prefix/suffix and Postgres table prefix/suffix options are
+  explicit config values.
 - **`auth.install(app)`** — install routes, CSRF, and security headers on your
   FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
   when you want fastauth mounted separately.

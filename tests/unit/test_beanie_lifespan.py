@@ -32,8 +32,15 @@ async def test_beanie_adapter_lifespan_initializes_beanie_before_auth(
 ) -> None:
     calls: list[str] = []
 
-    async def fake_init(database: object) -> None:
+    async def fake_init(
+        database: object,
+        *,
+        collection_prefix: str = "",
+        collection_suffix: str = "",
+    ) -> None:
         assert database == "db"
+        assert collection_prefix == ""
+        assert collection_suffix == ""
         calls.append("beanie")
 
     fake_auth = FakeAuth()
@@ -57,3 +64,34 @@ async def test_beanie_adapter_lifespan_initializes_beanie_before_auth(
         assert calls == ["beanie", "auth-start"]
 
     assert calls == ["beanie", "auth-start", "auth-stop"]
+
+
+@pytest.mark.anyio
+async def test_beanie_adapter_lifespan_passes_custom_collection_affixes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_init(
+        database: object,
+        *,
+        collection_prefix: str = "",
+        collection_suffix: str = "",
+    ) -> None:
+        assert database == "db"
+        calls.append((collection_prefix, collection_suffix))
+
+    fake_auth = FakeAuth()
+    monkeypatch.setattr("fastauth.storage.beanie.adapter.init_beanie_documents", fake_init)
+
+    adapter = BeanieAdapter(
+        cast(Any, "db"),
+        collection_prefix="tenant_",
+        collection_suffix="_auth",
+    )
+    app = FastAPI(lifespan=adapter.lifespan(cast(FastAuth, fake_auth)))
+
+    async with app.router.lifespan_context(app):
+        assert calls == [("tenant_", "_auth")]
+
+    assert fake_auth.stopped is True

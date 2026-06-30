@@ -16,7 +16,10 @@ re-stringifies the ``PydanticObjectId`` fields we care about.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from dataclasses import dataclass
+from functools import lru_cache
+from hashlib import blake2s
+from typing import Any, ClassVar, cast
 
 import pymongo
 from beanie import (  # pyright: ignore[reportUnknownVariableType]
@@ -45,12 +48,14 @@ __all__ = [
     "AccountDoc",
     "ApiKeyDoc",
     "AuditLogDoc",
+    "BeanieDocumentModels",
     "JwksKeyDoc",
     "RateLimitDoc",
     "RefreshTokenDoc",
     "SessionDoc",
     "UserDoc",
     "VerificationDoc",
+    "build_beanie_document_models",
     "init_beanie_documents",
     "to_account",
     "to_api_key",
@@ -202,8 +207,223 @@ DOCUMENT_MODELS: list[type[Document]] = [
 ]
 
 
-async def init_beanie_documents(database: AsyncDatabase[Any]) -> None:
-    await init_beanie(database=database, document_models=DOCUMENT_MODELS)
+@dataclass(frozen=True, slots=True)
+class BeanieDocumentModels:
+    user: type[Document]
+    session: type[Document]
+    refresh_token: type[Document]
+    account: type[Document]
+    verification: type[Document]
+    api_key: type[Document]
+    jwks_key: type[Document]
+    audit_log: type[Document]
+    rate_limit: type[Document]
+
+    @property
+    def all(self) -> list[type[Document]]:
+        return [
+            self.user,
+            self.session,
+            self.refresh_token,
+            self.account,
+            self.verification,
+            self.api_key,
+            self.jwks_key,
+            self.audit_log,
+            self.rate_limit,
+        ]
+
+
+DEFAULT_DOCUMENT_MODELS = BeanieDocumentModels(
+    user=UserDoc,
+    session=SessionDoc,
+    refresh_token=RefreshTokenDoc,
+    account=AccountDoc,
+    verification=VerificationDoc,
+    api_key=ApiKeyDoc,
+    jwks_key=JwksKeyDoc,
+    audit_log=AuditLogDoc,
+    rate_limit=RateLimitDoc,
+)
+
+
+def build_collection_name(base_name: str, collection_prefix: str, collection_suffix: str) -> str:
+    name = f"{collection_prefix}{base_name}{collection_suffix}"
+    if not name or "\x00" in name or "$" in name or name.startswith("system."):
+        raise ValueError(f"Invalid MongoDB collection name: {name!r}")
+    return name
+
+
+def build_document_settings(name: str, indexes: list[IndexModel]) -> type:
+    return type(
+        "Settings",
+        (),
+        {
+            "__annotations__": {"indexes": ClassVar[list[IndexModel]]},
+            "name": name,
+            "indexes": indexes,
+        },
+    )
+
+
+def build_document_class(
+    *,
+    class_name: str,
+    domain_model: type[Any],
+    collection_name: str,
+    indexes: list[IndexModel],
+    annotations: dict[str, Any],
+) -> type[Document]:
+    namespace: dict[str, Any] = {
+        "__module__": __name__,
+        "__annotations__": {
+            **annotations,
+            "Settings": ClassVar[type],
+        },
+        "id": Field(default=None, alias="_id"),
+        "Settings": build_document_settings(collection_name, indexes),
+    }
+    if "replaced_by" in annotations:
+        namespace["replaced_by"] = None
+    if "user_id" in annotations and annotations["user_id"] == PydanticObjectId | None:
+        namespace["user_id"] = None
+    return cast(type[Document], type(class_name, (domain_model, Document), namespace))
+
+
+@lru_cache(maxsize=128)
+def build_beanie_document_models(
+    *,
+    collection_prefix: str = "",
+    collection_suffix: str = "",
+) -> BeanieDocumentModels:
+    if collection_prefix == "" and collection_suffix == "":
+        return DEFAULT_DOCUMENT_MODELS
+
+    digest = blake2s(f"{collection_prefix}\0{collection_suffix}".encode()).hexdigest()[:10]
+
+    return BeanieDocumentModels(
+        user=build_document_class(
+            class_name=f"UserDoc_{digest}",
+            domain_model=User,
+            collection_name=build_collection_name("users", collection_prefix, collection_suffix),
+            indexes=UserDoc.Settings.indexes,
+            annotations={"id": PydanticObjectId | None},
+        ),
+        session=build_document_class(
+            class_name=f"SessionDoc_{digest}",
+            domain_model=Session,
+            collection_name=build_collection_name(
+                "sessions",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=SessionDoc.Settings.indexes,
+            annotations={
+                "id": PydanticObjectId | None,
+                "user_id": PydanticObjectId,
+            },
+        ),
+        refresh_token=build_document_class(
+            class_name=f"RefreshTokenDoc_{digest}",
+            domain_model=RefreshToken,
+            collection_name=build_collection_name(
+                "refresh_tokens",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=RefreshTokenDoc.Settings.indexes,
+            annotations={
+                "id": PydanticObjectId | None,
+                "user_id": PydanticObjectId,
+                "family_id": PydanticObjectId,
+                "replaced_by": PydanticObjectId | None,
+            },
+        ),
+        account=build_document_class(
+            class_name=f"AccountDoc_{digest}",
+            domain_model=Account,
+            collection_name=build_collection_name(
+                "accounts",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=AccountDoc.Settings.indexes,
+            annotations={
+                "id": PydanticObjectId | None,
+                "user_id": PydanticObjectId,
+            },
+        ),
+        verification=build_document_class(
+            class_name=f"VerificationDoc_{digest}",
+            domain_model=Verification,
+            collection_name=build_collection_name(
+                "verifications",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=VerificationDoc.Settings.indexes,
+            annotations={"id": PydanticObjectId | None},
+        ),
+        api_key=build_document_class(
+            class_name=f"ApiKeyDoc_{digest}",
+            domain_model=ApiKey,
+            collection_name=build_collection_name("api_keys", collection_prefix, collection_suffix),
+            indexes=ApiKeyDoc.Settings.indexes,
+            annotations={
+                "id": PydanticObjectId | None,
+                "user_id": PydanticObjectId,
+            },
+        ),
+        jwks_key=build_document_class(
+            class_name=f"JwksKeyDoc_{digest}",
+            domain_model=JwksKey,
+            collection_name=build_collection_name(
+                "jwks_keys",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=JwksKeyDoc.Settings.indexes,
+            annotations={"id": PydanticObjectId | None},
+        ),
+        audit_log=build_document_class(
+            class_name=f"AuditLogDoc_{digest}",
+            domain_model=AuditLog,
+            collection_name=build_collection_name(
+                "audit_logs",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=AuditLogDoc.Settings.indexes,
+            annotations={
+                "id": PydanticObjectId | None,
+                "user_id": PydanticObjectId | None,
+            },
+        ),
+        rate_limit=build_document_class(
+            class_name=f"RateLimitDoc_{digest}",
+            domain_model=RateLimit,
+            collection_name=build_collection_name(
+                "rate_limits",
+                collection_prefix,
+                collection_suffix,
+            ),
+            indexes=RateLimitDoc.Settings.indexes,
+            annotations={"id": PydanticObjectId | None},
+        ),
+    )
+
+
+async def init_beanie_documents(
+    database: AsyncDatabase[Any],
+    *,
+    collection_prefix: str = "",
+    collection_suffix: str = "",
+) -> None:
+    document_models = build_beanie_document_models(
+        collection_prefix=collection_prefix,
+        collection_suffix=collection_suffix,
+    )
+    await init_beanie(database=database, document_models=document_models.all)
 
 
 # --- Doc → domain conversion ---

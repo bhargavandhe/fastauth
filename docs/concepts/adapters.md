@@ -33,6 +33,22 @@ boundary; the adapter converts them to and from `ObjectId` internally.
 Protocol identifiers such as JWKS `kid` remain strings because they are not
 Mongo references.
 
+To namespace fastauth collections inside a shared Mongo database, pass a
+prefix and/or suffix when constructing the adapter:
+
+```python
+adapter = BeanieAdapter(
+    mongo_database,
+    collection_prefix="tenant_",
+    collection_suffix="_auth",
+)
+```
+
+The final collection name is exactly `<prefix><base><suffix>`, so the example
+above writes `tenant_users_auth`, `tenant_sessions_auth`, and so on. This only
+selects the collections fastauth uses; it does not rename or migrate existing
+Mongo data.
+
 For Postgres, install `fastauth-py[postgres]` and pass a SQLAlchemy async
 engine or URL:
 
@@ -43,6 +59,7 @@ from fastauth.storage.postgres import PostgresAdapter
 adapter = PostgresAdapter.from_url(
     "postgresql+asyncpg://user:pass@localhost/myapp",
     table_prefix="fastauth_",
+    table_suffix="",
 )
 
 # Convenience path: apply tracked fastauth migrations before startup.
@@ -51,10 +68,12 @@ app = FastAPI(lifespan=adapter.lifespan(auth))
 
 `fastauth migrate --postgres-url postgresql+asyncpg://...` applies the same
 tracked schema migrations from the CLI and records the fastauth schema version
-in `<prefix>schema_migrations`. For long-lived production deployments, run the
-CLI during deploy and start FastAPI with `adapter.checked_lifespan(auth)` or
-`adapter.lifespan(auth, apply_migrations=False)` so the app fails fast if the
-database is behind instead of mutating schema at process startup.
+in `<prefix>schema_migrations<suffix>`. Postgres table names follow the same
+`<prefix><base><suffix>` rule as Mongo collections. For long-lived production
+deployments, run the CLI during deploy and start FastAPI with
+`adapter.checked_lifespan(auth)` or `adapter.lifespan(auth, apply_migrations=False)`
+so the app fails fast if the database is behind instead of mutating schema at
+process startup.
 
 The adapter uses FastAuth's string domain IDs as primary keys and stores plugin
 data in native Postgres types such as `jsonb` and `bytea`.

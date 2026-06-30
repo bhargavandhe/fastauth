@@ -67,7 +67,11 @@ def build_config(
 
 
 def create_auth(config: FastAuthConfig, database: AsyncDatabase[Any]) -> FastAuth:
-    adapter = BeanieAdapter(database)
+    adapter = BeanieAdapter(
+        database,
+        collection_prefix=config.database.mongo.collection_prefix,
+        collection_suffix=config.database.mongo.collection_suffix,
+    )
     return FastAuth(
         config,
         adapter=adapter,

@@ -71,12 +71,41 @@ def test_database_config_models_multiple_backends() -> None:
         postgres=PostgresDatabaseConfig(
             url="postgresql+asyncpg://user:pass@localhost/app",
             table_prefix="custom_",
+            table_suffix="_auth",
         ),
     )
 
     assert config.backend is DatabaseBackendKind.POSTGRES
     assert config.postgres.url == "postgresql+asyncpg://user:pass@localhost/app"
     assert config.postgres.table_prefix == "custom_"
+    assert config.postgres.table_suffix == "_auth"
+
+
+def test_mongo_database_config_models_collection_prefix_and_suffix() -> None:
+    config = MongoDatabaseConfig(
+        url="mongodb://example:27017",
+        database_name="app",
+        collection_prefix="tenant_",
+        collection_suffix="_auth",
+    )
+
+    assert config.collection_prefix == "tenant_"
+    assert config.collection_suffix == "_auth"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("collection_prefix", "$tenant_"),
+        ("collection_suffix", "_bad\x00suffix"),
+    ],
+)
+def test_mongo_database_config_rejects_invalid_collection_affixes(
+    field_name: str,
+    value: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        MongoDatabaseConfig(**{field_name: value})
 
 
 def test_fastauthconfig_accepts_dict_via_model_validate() -> None:

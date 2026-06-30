@@ -51,7 +51,11 @@ config = FastAuthConfig(
         ),
     ),
 )
-adapter = PostgresAdapter.from_url(config.database.postgres.url)
+adapter = PostgresAdapter.from_url(
+    config.database.postgres.url,
+    table_prefix=config.database.postgres.table_prefix,
+    table_suffix=config.database.postgres.table_suffix,
+)
 auth = FastAuth(config, adapter=adapter, plugins=[JwtPlugin()])
 
 app = FastAPI(title="My App", lifespan=adapter.lifespan(auth))

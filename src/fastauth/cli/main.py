@@ -64,11 +64,22 @@ def create_auth(
     config: FastAuthConfig,
     database: AsyncDatabase[Any],
 ) -> FastAuth:
-    return FastAuth(config, adapter=BeanieAdapter(database))
+    return FastAuth(
+        config,
+        adapter=BeanieAdapter(
+            database,
+            collection_prefix=config.database.mongo.collection_prefix,
+            collection_suffix=config.database.mongo.collection_suffix,
+        ),
+    )
 
 
-async def init_auth_database(database: AsyncDatabase[Any]) -> None:
-    await init_beanie_documents(database)
+async def init_auth_database(config: FastAuthConfig, database: AsyncDatabase[Any]) -> None:
+    await init_beanie_documents(
+        database,
+        collection_prefix=config.database.mongo.collection_prefix,
+        collection_suffix=config.database.mongo.collection_suffix,
+    )
 '''
 
 
@@ -76,7 +87,7 @@ POSTGRES_AUTH_SCAFFOLD = '''\
 """Postgres-backed fastauth instance for this application.
 
 Build ``FastAuthConfig`` in your application code. The Postgres URL and table
-prefix come from ``config.database.postgres``; fastauth never reads
+prefix/suffix come from ``config.database.postgres``; fastauth never reads
 process-level configuration.
 """
 from __future__ import annotations
@@ -91,6 +102,7 @@ def create_auth(config: FastAuthConfig) -> FastAuth:
     adapter = PostgresAdapter.from_url(
         config.database.postgres.url,
         table_prefix=config.database.postgres.table_prefix,
+        table_suffix=config.database.postgres.table_suffix,
     )
     return FastAuth(config, adapter=adapter)
 
@@ -148,10 +160,25 @@ def migrate_command(
         "-d",
         help="MongoDB database name",
     ),
+    mongo_collection_prefix: str = typer.Option(
+        "",
+        "--mongo-collection-prefix",
+        help="Prefix for MongoDB collection names",
+    ),
+    mongo_collection_suffix: str = typer.Option(
+        "",
+        "--mongo-collection-suffix",
+        help="Suffix for MongoDB collection names",
+    ),
     postgres_table_prefix: str = typer.Option(
         "fastauth_",
         "--postgres-table-prefix",
         help="Table prefix for Postgres schema creation",
+    ),
+    postgres_table_suffix: str = typer.Option(
+        "",
+        "--postgres-table-suffix",
+        help="Table suffix for Postgres schema creation",
     ),
 ) -> None:
     """Initialise database schema/indexes for fastauth storage adapters.
@@ -174,7 +201,11 @@ def migrate_command(
                 mongo_url, uuidRepresentation="standard"
             )
             try:
-                await init_beanie_documents(client[database])
+                await init_beanie_documents(
+                    client[database],
+                    collection_prefix=mongo_collection_prefix,
+                    collection_suffix=mongo_collection_suffix,
+                )
                 rich_print("[green]indexes ensured on every fastauth collection[/green]")
             finally:
                 await client.close()
@@ -183,7 +214,11 @@ def migrate_command(
         from fastauth.storage.postgres import PostgresAdapter
 
         assert postgres_url is not None
-        adapter = PostgresAdapter.from_url(postgres_url, table_prefix=postgres_table_prefix)
+        adapter = PostgresAdapter.from_url(
+            postgres_url,
+            table_prefix=postgres_table_prefix,
+            table_suffix=postgres_table_suffix,
+        )
         try:
             applied = await adapter.apply_migrations()
             version = await adapter.schema_version()

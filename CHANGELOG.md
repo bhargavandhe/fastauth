@@ -4,6 +4,17 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-30
+
+### Added
+
+- Added MongoDB collection prefix/suffix customization through
+  `MongoDatabaseConfig`, `BeanieAdapter`, `init_beanie_documents`, generated
+  Mongo scaffolds, and `fastauth migrate`.
+- Added Postgres table suffix customization alongside the existing table
+  prefix support, including config, adapter, schema builder, CLI migrate, and
+  generated scaffolds.
+
 ## [0.2.2] — 2026-06-27
 
 ### Fixed

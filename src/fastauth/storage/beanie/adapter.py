@@ -50,15 +50,8 @@ from fastauth.domain.models import (
 )
 from fastauth.exceptions import DuplicateError, NotFoundError
 from fastauth.storage.beanie.documents import (
-    AccountDoc,
-    ApiKeyDoc,
-    AuditLogDoc,
-    JwksKeyDoc,
-    RateLimitDoc,
-    RefreshTokenDoc,
-    SessionDoc,
-    UserDoc,
-    VerificationDoc,
+    BeanieDocumentModels,
+    build_beanie_document_models,
     init_beanie_documents,
     to_account,
     to_api_key,
@@ -92,8 +85,29 @@ class BeanieAdapter:
     :mod:`fastauth.domain.models` instances stay storage-agnostic strings.
     """
 
-    def __init__(self, database: AsyncDatabase[Any]) -> None:
+    def __init__(
+        self,
+        database: AsyncDatabase[Any],
+        *,
+        collection_prefix: str = "",
+        collection_suffix: str = "",
+    ) -> None:
         self.database = database
+        self.collection_prefix = collection_prefix
+        self.collection_suffix = collection_suffix
+        self.documents: BeanieDocumentModels = build_beanie_document_models(
+            collection_prefix=collection_prefix,
+            collection_suffix=collection_suffix,
+        )
+        self.user_doc: Any = self.documents.user
+        self.session_doc: Any = self.documents.session
+        self.refresh_token_doc: Any = self.documents.refresh_token
+        self.account_doc: Any = self.documents.account
+        self.verification_doc: Any = self.documents.verification
+        self.api_key_doc: Any = self.documents.api_key
+        self.jwks_key_doc: Any = self.documents.jwks_key
+        self.audit_log_doc: Any = self.documents.audit_log
+        self.rate_limit_doc: Any = self.documents.rate_limit
 
     def lifespan(self, auth: FastAuth) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
         """Return a FastAPI lifespan that initialises Beanie, then fastauth.
@@ -108,7 +122,11 @@ class BeanieAdapter:
 
         @asynccontextmanager
         async def app_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-            await init_beanie_documents(self.database)
+            await init_beanie_documents(
+                self.database,
+                collection_prefix=self.collection_prefix,
+                collection_suffix=self.collection_suffix,
+            )
             async with auth.lifespan(app):
                 yield
 
@@ -120,7 +138,7 @@ class BeanieAdapter:
         # Drop the domain-side ``id`` (UUID-hex from ``new_id()``) so Beanie generates
         # a fresh ObjectId. The new id is written back into the input model below.
         data = user.model_dump(exclude={"id"})
-        doc = UserDoc(**data)
+        doc = self.user_doc(**data)
         try:
             await doc.insert()
         except DuplicateKeyError as exc:
@@ -133,26 +151,26 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return None
-        doc = await UserDoc.find_one(UserDoc.id == oid)
+        doc = await self.user_doc.find_one(self.user_doc.id == oid)
         return to_user(doc) if doc else None
 
     async def get_user_by_email(self, email: str) -> User | None:
-        doc = await UserDoc.find_one({"email": email})
+        doc = await self.user_doc.find_one({"email": email})
         return to_user(doc) if doc else None
 
     async def get_user_by_username(self, username: str) -> User | None:
-        doc = await UserDoc.find_one({"username": username})
+        doc = await self.user_doc.find_one({"username": username})
         return to_user(doc) if doc else None
 
     async def find_user_by_pending_email_change(self, new_email: str) -> User | None:
-        doc = await UserDoc.find_one({"pending_email_change": new_email})
+        doc = await self.user_doc.find_one({"pending_email_change": new_email})
         return to_user(doc) if doc else None
 
     async def update_user(self, user: User) -> User:
         oid = to_object_id_or_none(user.id)
         if oid is None:
             raise NotFoundError(resource="user")
-        doc = await UserDoc.find_one(UserDoc.id == oid)
+        doc = await self.user_doc.find_one(self.user_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="user")
         user.updated_at = datetime.now(UTC)
@@ -165,49 +183,49 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return
-        doc = await UserDoc.find_one(UserDoc.id == oid)
+        doc = await self.user_doc.find_one(self.user_doc.id == oid)
         if doc is None:
             return
         identifiers = {doc.email}
         if doc.pending_email_change is not None:
             identifiers.add(str(doc.pending_email_change))
-        await SessionDoc.find({"user_id": oid}).delete()
-        await RefreshTokenDoc.find({"user_id": oid}).delete()
-        await AccountDoc.find({"user_id": oid}).delete()
-        await ApiKeyDoc.find({"user_id": oid}).delete()
+        await self.session_doc.find({"user_id": oid}).delete()
+        await self.refresh_token_doc.find({"user_id": oid}).delete()
+        await self.account_doc.find({"user_id": oid}).delete()
+        await self.api_key_doc.find({"user_id": oid}).delete()
         if identifiers:
-            await VerificationDoc.find({"identifier": {"$in": list(identifiers)}}).delete()
+            await self.verification_doc.find({"identifier": {"$in": list(identifiers)}}).delete()
         await doc.delete()
 
     # ----- Session -----
     async def create_session(self, session: Session) -> Session:
         normalise_datetimes(session)
         # ``user_id`` must be a valid ObjectId hex (set from a prior ``create_user``
-        # call). The Pydantic ``PydanticObjectId`` validator on ``SessionDoc.user_id``
+        # call). The Pydantic ``PydanticObjectId`` validator on ``self.session_doc.user_id``
         # raises with a clear error if not.
         data = session.model_dump(exclude={"id"})
-        doc = SessionDoc(**data)
+        doc = self.session_doc(**data)
         await doc.insert()
         if doc.id is not None:
             session.id = str(doc.id)
         return session
 
     async def get_session_by_token_hash(self, token_hash: str) -> Session | None:
-        doc = await SessionDoc.find_one({"token_hash": token_hash})
+        doc = await self.session_doc.find_one({"token_hash": token_hash})
         return to_session(doc) if doc else None
 
     async def list_sessions_for_user(self, user_id: str) -> list[Session]:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return []
-        docs = await SessionDoc.find({"user_id": oid}).to_list()
+        docs = await self.session_doc.find({"user_id": oid}).to_list()
         return [to_session(doc) for doc in docs]
 
     async def update_session(self, session: Session) -> Session:
         oid = to_object_id_or_none(session.id)
         if oid is None:
             raise NotFoundError(resource="session")
-        doc = await SessionDoc.find_one(SessionDoc.id == oid)
+        doc = await self.session_doc.find_one(self.session_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="session")
         session.updated_at = datetime.now(UTC)
@@ -220,7 +238,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(session_id)
         if oid is None:
             return
-        doc = await SessionDoc.find_one(SessionDoc.id == oid)
+        doc = await self.session_doc.find_one(self.session_doc.id == oid)
         if doc:
             await doc.delete()
 
@@ -238,7 +256,7 @@ class BeanieAdapter:
             except_oid = to_object_id_or_none(except_session_id)
             if except_oid is not None:
                 query["_id"] = {"$ne": except_oid}
-        result = await SessionDoc.find(query).delete()
+        result = await self.session_doc.find(query).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     # ----- RefreshToken -----
@@ -255,7 +273,7 @@ class BeanieAdapter:
         data["family_id"] = family_id
         if token.replaced_by is not None:
             data["replaced_by"] = require_object_id(token.replaced_by)
-        doc = RefreshTokenDoc(**data)
+        doc = self.refresh_token_doc(**data)
         doc.id = doc_id
         await doc.insert()
         token.id = str(doc.id)
@@ -265,14 +283,14 @@ class BeanieAdapter:
         return token
 
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
-        doc = await RefreshTokenDoc.find_one({"token_hash": token_hash})
+        doc = await self.refresh_token_doc.find_one({"token_hash": token_hash})
         return to_refresh_token(doc) if doc else None
 
     async def update_refresh_token(self, token: RefreshToken) -> RefreshToken:
         oid = to_object_id_or_none(token.id)
         if oid is None:
             raise NotFoundError(resource="refresh_token")
-        doc = await RefreshTokenDoc.find_one(RefreshTokenDoc.id == oid)
+        doc = await self.refresh_token_doc.find_one(self.refresh_token_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="refresh_token")
         token.updated_at = datetime.now(UTC)
@@ -297,10 +315,10 @@ class BeanieAdapter:
         data["family_id"] = require_object_id(new_token.family_id)
         new_oid = PydanticObjectId()
         new_token.id = str(new_oid)
-        doc = RefreshTokenDoc(**data)
+        doc = self.refresh_token_doc(**data)
         doc.id = new_oid
         await doc.insert()
-        result = await self.database[RefreshTokenDoc.Settings.name].update_one(
+        result = await self.database[self.refresh_token_doc.Settings.name].update_one(
             {"_id": oid, "consumed_at": None},
             {
                 "$set": {
@@ -319,27 +337,27 @@ class BeanieAdapter:
         oid = to_object_id_or_none(token_id)
         if oid is None:
             return
-        await RefreshTokenDoc.find_one(RefreshTokenDoc.id == oid).delete()
+        await self.refresh_token_doc.find_one(self.refresh_token_doc.id == oid).delete()
 
     async def delete_refresh_tokens_for_user(self, user_id: str) -> int:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return 0
-        result = await RefreshTokenDoc.find({"user_id": oid}).delete()
+        result = await self.refresh_token_doc.find({"user_id": oid}).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
         oid = to_object_id_or_none(family_id)
         if oid is None:
             return 0
-        result = await RefreshTokenDoc.find({"family_id": oid}).delete()
+        result = await self.refresh_token_doc.find({"family_id": oid}).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:
         normalise_datetimes(account)
         data = account.model_dump(exclude={"id"})
-        doc = AccountDoc(**data)
+        doc = self.account_doc(**data)
         await doc.insert()
         if doc.id is not None:
             account.id = str(doc.id)
@@ -353,7 +371,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return None
-        doc = await AccountDoc.find_one(
+        doc = await self.account_doc.find_one(
             {"user_id": oid, "provider_id": provider_id.value},
         )
         return to_account(doc) if doc else None
@@ -362,14 +380,14 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return []
-        docs = await AccountDoc.find({"user_id": oid}).to_list()
+        docs = await self.account_doc.find({"user_id": oid}).to_list()
         return [to_account(doc) for doc in docs]
 
     async def update_account(self, account: Account) -> Account:
         oid = to_object_id_or_none(account.id)
         if oid is None:
             raise NotFoundError(resource="account")
-        doc = await AccountDoc.find_one(AccountDoc.id == oid)
+        doc = await self.account_doc.find_one(self.account_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="account")
         account.updated_at = datetime.now(UTC)
@@ -382,7 +400,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(account_id)
         if oid is None:
             return
-        doc = await AccountDoc.find_one(AccountDoc.id == oid)
+        doc = await self.account_doc.find_one(self.account_doc.id == oid)
         if doc:
             await doc.delete()
 
@@ -390,7 +408,7 @@ class BeanieAdapter:
     async def create_verification(self, verification: Verification) -> Verification:
         normalise_datetimes(verification)
         data = verification.model_dump(exclude={"id"})
-        doc = VerificationDoc(**data)
+        doc = self.verification_doc(**data)
         await doc.insert()
         if doc.id is not None:
             verification.id = str(doc.id)
@@ -402,7 +420,7 @@ class BeanieAdapter:
         purpose: VerificationPurpose,
         value_hash: str,
     ) -> Verification | None:
-        doc = await VerificationDoc.find_one(
+        doc = await self.verification_doc.find_one(
             {
                 "identifier": identifier,
                 "purpose": purpose.value,
@@ -417,7 +435,7 @@ class BeanieAdapter:
         purpose: VerificationPurpose,
     ) -> Verification | None:
         doc = (
-            await VerificationDoc.find(
+            await self.verification_doc.find(
                 {"identifier": identifier, "purpose": purpose.value},
             )
             .sort("-created_at")
@@ -429,7 +447,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(verification.id)
         if oid is None:
             raise NotFoundError(resource="verification")
-        doc = await VerificationDoc.find_one(VerificationDoc.id == oid)
+        doc = await self.verification_doc.find_one(self.verification_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="verification")
         verification.updated_at = datetime.now(UTC)
@@ -442,7 +460,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(verification_id)
         if oid is None:
             return
-        doc = await VerificationDoc.find_one(VerificationDoc.id == oid)
+        doc = await self.verification_doc.find_one(self.verification_doc.id == oid)
         if doc:
             await doc.delete()
 
@@ -451,7 +469,7 @@ class BeanieAdapter:
         identifier: str,
         purpose: VerificationPurpose,
     ) -> int:
-        result = await VerificationDoc.find(
+        result = await self.verification_doc.find(
             {"identifier": identifier, "purpose": purpose.value},
         ).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
@@ -460,21 +478,21 @@ class BeanieAdapter:
     async def create_api_key(self, api_key: ApiKey) -> ApiKey:
         normalise_datetimes(api_key)
         data = api_key.model_dump(exclude={"id"})
-        doc = ApiKeyDoc(**data)
+        doc = self.api_key_doc(**data)
         await doc.insert()
         if doc.id is not None:
             api_key.id = str(doc.id)
         return api_key
 
     async def get_api_key_by_hash(self, key_hash: str) -> ApiKey | None:
-        doc = await ApiKeyDoc.find_one({"key_hash": key_hash})
+        doc = await self.api_key_doc.find_one({"key_hash": key_hash})
         return to_api_key(doc) if doc else None
 
     async def get_api_key_by_id(self, api_key_id: str) -> ApiKey | None:
         oid = to_object_id_or_none(api_key_id)
         if oid is None:
             return None
-        doc = await ApiKeyDoc.find_one(ApiKeyDoc.id == oid)
+        doc = await self.api_key_doc.find_one(self.api_key_doc.id == oid)
         return to_api_key(doc) if doc else None
 
     async def list_api_keys_for_user(
@@ -486,7 +504,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return [], 0
-        cursor = ApiKeyDoc.find({"user_id": oid})
+        cursor = self.api_key_doc.find({"user_id": oid})
         total = await cursor.count()
         docs = await cursor.skip(offset).limit(limit).to_list()
         return [to_api_key(doc) for doc in docs], total
@@ -495,7 +513,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(api_key.id)
         if oid is None:
             raise NotFoundError(resource="api_key")
-        doc = await ApiKeyDoc.find_one(ApiKeyDoc.id == oid)
+        doc = await self.api_key_doc.find_one(self.api_key_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="api_key")
         api_key.updated_at = datetime.now(UTC)
@@ -508,33 +526,33 @@ class BeanieAdapter:
         oid = to_object_id_or_none(api_key_id)
         if oid is None:
             return
-        doc = await ApiKeyDoc.find_one(ApiKeyDoc.id == oid)
+        doc = await self.api_key_doc.find_one(self.api_key_doc.id == oid)
         if doc:
             await doc.delete()
 
     async def delete_expired_api_keys(self) -> int:
-        result = await ApiKeyDoc.find({"expires_at": {"$lt": datetime.now(UTC)}}).delete()
+        result = await self.api_key_doc.find({"expires_at": {"$lt": datetime.now(UTC)}}).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     # ----- JwksKey -----
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
         normalise_datetimes(key)
         data = key.model_dump(exclude={"id"})
-        doc = JwksKeyDoc(**data)
+        doc = self.jwks_key_doc(**data)
         await doc.insert()
         if doc.id is not None:
             key.id = str(doc.id)
         return key
 
     async def list_jwks_keys(self) -> list[JwksKey]:
-        docs = await JwksKeyDoc.find_all().to_list()
+        docs = await self.jwks_key_doc.find_all().to_list()
         return [to_jwks_key(doc) for doc in docs]
 
     async def update_jwks_key(self, key: JwksKey) -> JwksKey:
         oid = to_object_id_or_none(key.id)
         if oid is None:
             raise NotFoundError(resource="jwks_key")
-        doc = await JwksKeyDoc.find_one(JwksKeyDoc.id == oid)
+        doc = await self.jwks_key_doc.find_one(self.jwks_key_doc.id == oid)
         if doc is None:
             raise NotFoundError(resource="jwks_key")
         normalise_datetimes(key)
@@ -546,7 +564,7 @@ class BeanieAdapter:
         oid = to_object_id_or_none(key_id)
         if oid is None:
             return
-        doc = await JwksKeyDoc.find_one(JwksKeyDoc.id == oid)
+        doc = await self.jwks_key_doc.find_one(self.jwks_key_doc.id == oid)
         if doc:
             await doc.delete()
 
@@ -554,7 +572,7 @@ class BeanieAdapter:
     async def create_audit_log(self, row: AuditLog) -> AuditLog:
         normalise_datetimes(row)
         data = row.model_dump(exclude={"id"})
-        doc = AuditLogDoc(**data)
+        doc = self.audit_log_doc(**data)
         await doc.insert()
         if doc.id is not None:
             row.id = str(doc.id)
@@ -579,20 +597,20 @@ class BeanieAdapter:
             query["event_type"] = event_type.value
         if identifier is not None:
             query["identifier"] = identifier
-        cursor = AuditLogDoc.find(query)
+        cursor = self.audit_log_doc.find(query)
         total = await cursor.count()
         docs = await cursor.sort("-created_at").skip(offset).limit(limit).to_list()
         return [to_audit_log(doc) for doc in docs], total
 
     # ----- RateLimit -----
     async def get_rate_limit(self, key: str) -> RateLimit | None:
-        doc = await RateLimitDoc.find_one({"key": key})
+        doc = await self.rate_limit_doc.find_one({"key": key})
         return to_rate_limit(doc) if doc else None
 
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
-        doc = await RateLimitDoc.find_one({"key": rate_limit.key})
+        doc = await self.rate_limit_doc.find_one({"key": rate_limit.key})
         if doc is None:
-            new_doc = RateLimitDoc(**rate_limit.model_dump(exclude={"id"}))
+            new_doc = self.rate_limit_doc(**rate_limit.model_dump(exclude={"id"}))
             await new_doc.insert()
             if new_doc.id is not None:
                 rate_limit.id = str(new_doc.id)
@@ -606,6 +624,6 @@ class BeanieAdapter:
         return rate_limit
 
     async def delete_rate_limit(self, key: str) -> None:
-        doc = await RateLimitDoc.find_one({"key": key})
+        doc = await self.rate_limit_doc.find_one({"key": key})
         if doc:
             await doc.delete()

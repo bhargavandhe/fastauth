@@ -133,9 +133,15 @@ class PostgresAdapter(
     environment variables; callers pass an ``AsyncEngine`` or explicit URL.
     """
 
-    def __init__(self, engine: AsyncEngine, *, table_prefix: str = "fastauth_") -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        table_prefix: str = "fastauth_",
+        table_suffix: str = "",
+    ) -> None:
         self.engine = engine
-        self.schema = build_postgres_schema(table_prefix)
+        self.schema = build_postgres_schema(table_prefix, table_suffix)
 
     @classmethod
     def from_url(
@@ -143,11 +149,13 @@ class PostgresAdapter(
         url: str,
         *,
         table_prefix: str = "fastauth_",
+        table_suffix: str = "",
         **engine_kwargs: object,
     ) -> PostgresAdapter:
         return cls(
             create_async_engine(url, **cast(dict[str, Any], engine_kwargs)),
             table_prefix=table_prefix,
+            table_suffix=table_suffix,
         )
 
     async def create_schema_migrations_table(self, connection: AsyncConnection) -> None:

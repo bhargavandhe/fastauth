@@ -37,10 +37,15 @@ config = FastAuthConfig(
     rate_limit=RateLimitConfig(storage="database"),
     database=DatabaseConfig(
         backend="mongo",
-        mongo=MongoDatabaseConfig(url=mongo_url),
+        mongo=MongoDatabaseConfig(
+            url=mongo_url,
+            collection_prefix="tenant_",
+            collection_suffix="_auth",
+        ),
     ),
 )
 print(config.database.mongo.url)
+print(config.database.mongo.collection_prefix)
 
 postgres_config = FastAuthConfig(
     secret_key=SecretStr(app_secret),
@@ -49,10 +54,12 @@ postgres_config = FastAuthConfig(
         postgres=PostgresDatabaseConfig(
             url="postgresql+asyncpg://user:pass@db.example.com/app",
             table_prefix="fastauth_",
+            table_suffix="_auth",
         ),
     ),
 )
 print(postgres_config.database.postgres.url)
+print(postgres_config.database.postgres.table_suffix)
 ```
 
 If you use a vault or parameter store, read those values in your application

@@ -48,7 +48,11 @@ uv run fastauth migrate \
 from fastapi import FastAPI
 from fastauth.storage.postgres import PostgresAdapter
 
-adapter = PostgresAdapter.from_url("postgresql+asyncpg://user:pass@db.example.com/myapp")
+adapter = PostgresAdapter.from_url(
+    "postgresql+asyncpg://user:pass@db.example.com/myapp",
+    table_prefix="fastauth_",
+    table_suffix="",
+)
 app = FastAPI(lifespan=adapter.checked_lifespan(auth))
 ```
 

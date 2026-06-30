@@ -19,7 +19,7 @@ from fastauth.domain.models import (
     Verification,
     new_id,
 )
-from fastauth.storage.beanie import BeanieAdapter
+from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
 from tests.adapters.adapter_contract import AdapterContract
 
 
@@ -31,6 +31,48 @@ class TestBeanieAdapter(AdapterContract):
         for name in await beanie_database.list_collection_names():
             await beanie_database[name].delete_many({})
         return BeanieAdapter(beanie_database)
+
+    async def test_custom_collection_affixes_select_custom_collections(
+        self,
+        beanie_database: AsyncDatabase[Any],
+    ) -> None:
+        await init_beanie_documents(
+            beanie_database,
+            collection_prefix="tenant_",
+            collection_suffix="_auth",
+        )
+        adapter = BeanieAdapter(
+            beanie_database,
+            collection_prefix="tenant_",
+            collection_suffix="_auth",
+        )
+
+        user = await adapter.create_user(User(email="custom-collections@example.com"))
+        session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="custom-session",
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+
+        default_user = await beanie_database["users"].find_one({"_id": ObjectId(user.id)})
+        custom_user = await beanie_database["tenant_users_auth"].find_one(
+            {"_id": ObjectId(user.id)}
+        )
+        default_session = await beanie_database["sessions"].find_one(
+            {"_id": ObjectId(session.id)}
+        )
+        custom_session = await beanie_database["tenant_sessions_auth"].find_one(
+            {"_id": ObjectId(session.id)}
+        )
+
+        assert default_user is None
+        assert custom_user is not None
+        assert default_session is None
+        assert custom_session is not None
+        assert await adapter.get_user_by_email("custom-collections@example.com") == user
+        assert await adapter.get_session_by_token_hash("custom-session") == session
 
     async def test_mongo_owned_ids_are_objectids(
         self,
