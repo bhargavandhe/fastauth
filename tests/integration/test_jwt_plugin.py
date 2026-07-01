@@ -92,3 +92,35 @@ async def test_set_auth_jwt_header_on_get_session(jwt_client: httpx.AsyncClient)
     response = await jwt_client.get("/auth/get-session")
     assert response.status_code == 200
     assert response.headers.get("set-auth-jwt", "").count(".") == 2
+
+
+async def test_set_auth_jwt_header_uses_json_serializable_default_audience() -> None:
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(InMemoryAdapter()),
+            csrf=CsrfOptions(enabled=False),
+            cookie=CookieOptions(secure=False),
+            rate_limit=RateLimitOptions(enabled=False),
+        ),
+        plugins=[email_password(), JwtPlugin()],
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+
+    async with auth.lifespan(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            signup = await client.post(
+                "/auth/sign-up/email",
+                json={"email": "carol@example.com", "password": "correct-horse-staple"},
+            )
+            assert signup.status_code == 200
+
+            response = await client.get("/auth/get-session")
+
+    assert response.status_code == 200
+    assert response.headers.get("set-auth-jwt", "").count(".") == 2

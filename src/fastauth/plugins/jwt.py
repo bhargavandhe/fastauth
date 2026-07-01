@@ -191,8 +191,8 @@ class JwtPlugin(Plugin):
         """Sign a JWT for ``user`` using the plugin's configured signer."""
         context, _registry, signer = self.assert_bound()
         now = datetime.now(UTC)
-        issuer = self.options.issuer or context.config.app.base_url
-        audience = self.options.audience or context.config.app.base_url
+        issuer = str(self.options.issuer or context.config.app.base_url)
+        audience = str(self.options.audience or context.config.app.base_url)
         payload: dict[str, Any] = {
             "iss": issuer,
             "aud": audience,

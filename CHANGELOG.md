@@ -4,6 +4,15 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-07-01
+
+### Fixed
+
+- Fixed JWT issuance when `JwtPlugin` uses the default app `base_url` for
+  issuer/audience. Pydantic `AnyHttpUrl` values are now converted to strings
+  before signing, so `/auth/get-session` and `/auth/token` remain JSON
+  serializable in the quickstart app.
+
 ## [0.3.2] — 2026-07-01
 
 ### Fixed
