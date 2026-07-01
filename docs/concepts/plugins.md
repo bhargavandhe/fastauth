@@ -7,7 +7,11 @@ the hooks you need:
 ```python
 from typing import ClassVar
 from collections.abc import Sequence
+from datetime import timedelta
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
 from fastauth.plugins.base import EndpointSpec, Plugin
+from fastauth.providers import email_password
 
 class HelloPlugin(Plugin):
     id: ClassVar[str] = "myapp-hello"
@@ -25,7 +29,13 @@ class HelloPlugin(Plugin):
     async def hello(self) -> dict[str, str]:
         return {"hello": "world"}
 
-auth = FastAuth(config, adapter=adapter, plugins=[HelloPlugin()])
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[email_password(), HelloPlugin()],
+    )
+)
 ```
 
 `PluginRegistry` validates ids and aggregates `endpoints()`,
@@ -84,7 +94,13 @@ class MyPlugin(Plugin):
         ]
 
     def rate_limit_rules(self) -> Sequence[RateLimitRule]:
-        return [RateLimitRule(path="/my-plugin/me", window_seconds=60, max_requests=30)]
+        return [
+            RateLimitRule(
+                path="/my-plugin/me",
+                window=timedelta(seconds=60),
+                max_requests=30,
+            )
+        ]
 
     async def me_handler(self, request: Request) -> MyPluginResponse:
         session = await self.require_session(request)

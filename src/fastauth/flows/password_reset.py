@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
-from pydantic import ConfigDict, EmailStr, Field
+from pydantic import ConfigDict, EmailStr, SecretStr
 
 from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
 from fastauth.domain.events import (
@@ -17,7 +17,7 @@ from fastauth.domain.events import (
 )
 from fastauth.domain.models import EmailMessage, Verification, WireModel
 from fastauth.exceptions import TokenExpiredError, TokenInvalidError
-from fastauth.flows.credentials import EmptyResponse
+from fastauth.flows.credentials import EmptyResponse, validate_password_policy
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -37,8 +37,8 @@ class ForgotPasswordRequest(WireModel):
 class ResetPasswordRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
-    token: str
-    new_password: str = Field(min_length=8)
+    token: SecretStr
+    new_password: SecretStr
 
 
 async def forgot_password(
@@ -110,7 +110,7 @@ async def reset_password(
     user_agent: str | None,
 ) -> EmptyResponse:
     """Verify the reset token, change the password, and revoke every active session."""
-    token_hash = context.token_service.hash_only(request.token)
+    token_hash = context.token_service.hash_only(request.token.get_secret_value())
     verification = await context.adapter.get_verification(
         request.email,
         VerificationPurpose.PASSWORD_RESET,
@@ -129,7 +129,9 @@ async def reset_password(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None:
         raise TokenInvalidError(message="credential account not found")
-    account.password = context.password_hasher.hash(request.new_password)
+    account.password = context.password_hasher.hash(
+        validate_password_policy(context, request.new_password),
+    )
     await context.adapter.update_account(account)
 
     revoked = await context.session_strategy.revoke_all(user.id)

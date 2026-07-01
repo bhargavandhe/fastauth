@@ -15,7 +15,6 @@ __all__ = [
     "SessionStrategyKind",
     "TokenType",
     "VerificationPurpose",
-    "WireFormat",
 ]
 
 
@@ -73,22 +72,6 @@ class DatabaseBackendKind(StrEnum):
     MEMORY = "memory"
     MONGO = "mongo"
     POSTGRES = "postgres"
-
-
-class WireFormat(StrEnum):
-    """JSON casing convention applied to public request / response bodies.
-
-    ``SNAKE`` (default) emits Pythonic ``snake_case`` field names — the
-    historical and back-compat behaviour. ``CAMEL`` emits ``camelCase``
-    (e.g. ``email_verified`` → ``emailVerified``, ``refresh_token`` →
-    ``refreshToken``).
-
-    Both casings are always **accepted** on input regardless of this
-    setting — toggling only affects output.
-    """
-
-    SNAKE = "snake"
-    CAMEL = "camel"
 
 
 class TokenType(StrEnum):

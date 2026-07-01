@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic.alias_generators import to_camel
 
-from fastauth.domain.enums import WireFormat
-from fastauth.domain.models import User
+from fastauth.api.commands import CookieCredentialDelivery
+from fastauth.api.responses import UserView, authentication_response, user_view
 from fastauth.exceptions import (
     EXCEPTION_HTTP_STATUS,
     AccountLockedError,
@@ -144,43 +143,6 @@ def http_status_for(exc: FastAuthError) -> int:
     return 500
 
 
-RAW_JSON_FIELD_NAMES = frozenset({"metadata", "permissions", "event_data", "eventData", "keys"})
-
-
-def camelize_keys(value: object) -> object:
-    """Recursively convert dict keys from ``snake_case`` to ``camelCase``.
-
-    Lists are walked element-wise; primitives pass through unchanged. Known
-    raw JSON containers keep their application/spec-defined inner keys.
-    Each model in the response tree was already ``model_dump``-ed by FastAPI,
-    so the input here is a plain dict tree.
-    """
-    if isinstance(value, dict):
-        dict_value = cast("dict[object, object]", value)
-        converted: dict[str, object] = {}
-        for key, inner in dict_value.items():
-            key_text = str(key)
-            converted[to_camel(key_text)] = (
-                inner if key_text in RAW_JSON_FIELD_NAMES else camelize_keys(inner)
-            )
-        return converted
-    if isinstance(value, list):
-        return [camelize_keys(item) for item in value]  # type: ignore[arg-type]
-    return value
-
-
-class CamelJSONResponse(JSONResponse):
-    """JSON response that converts dict keys to ``camelCase`` on render.
-
-    Used as the router-wide ``default_response_class`` when
-    ``FastAuthConfig.wire_format`` is :class:`WireFormat.CAMEL`. SNAKE
-    deployments use FastAPI's stock ``JSONResponse`` and skip the walk.
-    """
-
-    def render(self, content: object) -> bytes:
-        return super().render(camelize_keys(content))
-
-
 class FastAuthRoute(APIRoute):
     """Custom route class that converts ``FastAuthError`` into a JSON response.
 
@@ -225,30 +187,47 @@ def rate_limit_dependency(
 
 def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     """Build the fastauth ``APIRouter`` with health + credentials flow endpoints."""
-    use_camel = context.config.wire_format is WireFormat.CAMEL
-    response_class: type[JSONResponse] = CamelJSONResponse if use_camel else JSONResponse
+    from fastauth.plugins.email_password import EmailPasswordPlugin
+
     router = APIRouter(
         prefix=context.config.app.base_path,
         tags=["fastauth"],
         route_class=FastAuthRoute,
         dependencies=[Depends(rate_limit_dependency(context))],
-        default_response_class=response_class,
+        default_response_class=JSONResponse,
     )
 
     @router.get(
         "/health",
         name="fastauth_health",
         response_model=HealthResponse,
-        response_model_by_alias=False,
     )
     async def health_handler() -> HealthResponse:  # pyright: ignore[reportUnusedFunction]
         return await api.health()
+
+    email_password_enabled = any(
+        isinstance(plugin, EmailPasswordPlugin)
+        for plugin in context.plugins.plugins
+    )
+    if not email_password_enabled:
+        for spec in context.plugins.all_endpoints():
+            if spec.handler is None:
+                continue
+            router.add_api_route(
+                path=spec.path,
+                endpoint=spec.handler,
+                methods=[spec.method],
+                name=spec.name,
+                tags=list(spec.tags),
+                response_model=spec.response_model,
+                response_class=JSONResponse,
+            )
+        return router
 
     @router.post(
         "/sign-up/email",
         name="sign_up_email",
         response_model=SessionResponse,
-        response_model_by_alias=False,
     )
     async def sign_up_email_handler(  # pyright: ignore[reportUnusedFunction]
         body: SignUpEmailRequest,
@@ -260,19 +239,19 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
-        set_session_cookie(
-            response,
-            context,
-            session_context.token,
-            context.config.session.max_age_seconds,
-        )
+        if isinstance(body.delivery, CookieCredentialDelivery):
+            set_session_cookie(
+                response,
+                context,
+                session_context.token,
+                context.config.session.max_age_seconds,
+            )
         return result
 
     @router.post(
         "/sign-in/email",
         name="sign_in_email",
         response_model=SessionResponse,
-        response_model_by_alias=False,
     )
     async def sign_in_email_handler(  # pyright: ignore[reportUnusedFunction]
         body: SignInEmailRequest,
@@ -284,19 +263,19 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
-        set_session_cookie(
-            response,
-            context,
-            session_context.token,
-            context.config.session.max_age_seconds,
-        )
+        if isinstance(body.delivery, CookieCredentialDelivery):
+            set_session_cookie(
+                response,
+                context,
+                session_context.token,
+                context.config.session.max_age_seconds,
+            )
         return result
 
     @router.post(
         "/sign-in/username",
         name="sign_in_username",
         response_model=SessionResponse,
-        response_model_by_alias=False,
     )
     async def sign_in_username_handler(  # pyright: ignore[reportUnusedFunction]
         body: SignInUsernameRequest,
@@ -308,19 +287,19 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
-        set_session_cookie(
-            response,
-            context,
-            session_context.token,
-            context.config.session.max_age_seconds,
-        )
+        if isinstance(body.delivery, CookieCredentialDelivery):
+            set_session_cookie(
+                response,
+                context,
+                session_context.token,
+                context.config.session.max_age_seconds,
+            )
         return result
 
     @router.post(
         "/refresh",
         name="refresh_session",
         response_model=SessionResponse,
-        response_model_by_alias=False,
     )
     async def refresh_session_handler(  # pyright: ignore[reportUnusedFunction]
         body: RefreshTokenRequest,
@@ -332,17 +311,16 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
-        set_session_cookie(
-            response,
-            context,
-            session_context.token,
-            context.config.session.max_age_seconds,
-        )
+        if isinstance(body.delivery, CookieCredentialDelivery):
+            set_session_cookie(
+                response,
+                context,
+                session_context.token,
+                context.config.session.max_age_seconds,
+            )
         return result
 
-    @router.post(
-        "/sign-out", name="sign_out", response_model=EmptyResponse, response_model_by_alias=False
-    )
+    @router.post("/sign-out", name="sign_out", response_model=EmptyResponse)
     async def sign_out_handler(  # pyright: ignore[reportUnusedFunction]
         request: Request,
         response: Response,
@@ -352,24 +330,29 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         clear_session_cookie(response, context)
         return EmptyResponse(success=True)
 
-    @router.get("/get-session", name="get_session")
+    @router.get("/get-session", name="get_session", response_model=SessionResponse)
     async def get_session_handler(  # pyright: ignore[reportUnusedFunction]
         request: Request,
-    ) -> Response:
+        response: Response,
+    ) -> SessionResponse | Response:
         token = extract_session_token(request, context)
-        session_response = await api.get_session(token)
-        if session_response is None:
+        if token is None:
             return Response(status_code=204)
-        response = response_class(content=session_response.model_dump(mode="json"))
+        session_context = await context.session_strategy.read(token)
+        if session_context is None:
+            return Response(status_code=204)
+        session_response = authentication_response(
+            user=session_context.user,
+            session=session_context.session,
+        )
         for plugin in context.plugins.plugins:
-            await plugin.extend_session_response(session_response.user, response)
-        return response
+            await plugin.extend_session_response(session_context.user, response)
+        return session_response
 
     @router.post(
         "/send-verification-email",
         name="send_verification_email",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def send_verification_email_handler(  # pyright: ignore[reportUnusedFunction]
         body: SendVerificationEmailRequest,
@@ -385,7 +368,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/verify-email",
         name="verify_email",
         response_model=SessionResponse,
-        response_model_by_alias=False,
     )
     async def verify_email_handler(  # pyright: ignore[reportUnusedFunction]
         body: VerifyEmailRequest,
@@ -409,7 +391,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/forgot-password",
         name="forgot_password",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def forgot_password_handler(  # pyright: ignore[reportUnusedFunction]
         body: ForgotPasswordRequest,
@@ -425,7 +406,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/reset-password",
         name="reset_password",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def reset_password_handler(  # pyright: ignore[reportUnusedFunction]
         body: ResetPasswordRequest,
@@ -441,7 +421,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/change-password",
         name="change_password",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def change_password_handler(  # pyright: ignore[reportUnusedFunction]
         body: ChangePasswordRequest,
@@ -459,26 +438,25 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     @router.patch(
         "/user",
         name="update_user",
-        response_model=User,
-        response_model_by_alias=False,
+        response_model=UserView,
     )
     async def update_user_handler(  # pyright: ignore[reportUnusedFunction]
         body: UpdateUserRequest,
         request: Request,
-    ) -> User:
+    ) -> UserView:
         session_ctx = await require_session(request, context)
-        return await api.update_user(
+        updated = await api.update_user(
             session_ctx.user,
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
+        return user_view(updated)
 
     @router.post(
         "/set-password",
         name="set_password",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def set_password_handler(  # pyright: ignore[reportUnusedFunction]
         body: SetPasswordRequest,
@@ -497,7 +475,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/verify-password",
         name="verify_password",
         response_model=VerifyPasswordResponse,
-        response_model_by_alias=False,
     )
     async def verify_password_handler(  # pyright: ignore[reportUnusedFunction]
         body: VerifyPasswordRequest,
@@ -515,7 +492,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/delete-account",
         name="delete_account_with_password",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def delete_account_with_password_handler(  # pyright: ignore[reportUnusedFunction]
         body: DeleteAccountRequest,
@@ -536,7 +512,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/delete-account/request",
         name="request_delete_account",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def request_delete_account_handler(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -552,7 +527,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/delete-account/confirm",
         name="confirm_delete_account",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def confirm_delete_account_handler(  # pyright: ignore[reportUnusedFunction]
         body: DeleteAccountConfirmRequest,
@@ -573,7 +547,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/change-email/request",
         name="request_email_change",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def request_email_change_handler(  # pyright: ignore[reportUnusedFunction]
         body: RequestEmailChangeRequest,
@@ -591,7 +564,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/change-email/confirm",
         name="confirm_email_change",
         response_model=EmptyResponse,
-        response_model_by_alias=False,
     )
     async def confirm_email_change_handler(  # pyright: ignore[reportUnusedFunction]
         body: ConfirmEmailChangeRequest,
@@ -607,7 +579,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/sessions",
         name="list_sessions",
         response_model=ListSessionsResponse,
-        response_model_by_alias=False,
     )
     async def list_sessions_handler(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -622,7 +593,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/sessions/{session_id}",
         name="revoke_session",
         response_model=RevokeSessionsResponse,
-        response_model_by_alias=False,
     )
     async def revoke_session_handler(  # pyright: ignore[reportUnusedFunction]
         session_id: str,
@@ -635,7 +605,6 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         "/sessions",
         name="revoke_other_sessions",
         response_model=RevokeSessionsResponse,
-        response_model_by_alias=False,
     )
     async def revoke_other_sessions_handler(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -658,8 +627,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             name=spec.name,
             tags=list(spec.tags),
             response_model=spec.response_model,
-            response_model_by_alias=False,
-            response_class=response_class,
+            response_class=JSONResponse,
         )
     return router
 

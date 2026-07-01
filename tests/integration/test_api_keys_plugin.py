@@ -7,13 +7,13 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from fastauth.plugins.api_key import ApiKeyConfig, ApiKeyPlugin
+from fastauth.plugins.api_key import ApiKeyOptions, ApiKeyPlugin
 from fastauth.runtime.auth import FastAuth
 
 
 @pytest.fixture
 def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
-    return auth_factory(plugins=[ApiKeyPlugin(ApiKeyConfig())])
+    return auth_factory(plugins=[ApiKeyPlugin(ApiKeyOptions())])
 
 
 async def signed_in_client(client: httpx.AsyncClient) -> httpx.AsyncClient:
@@ -32,8 +32,8 @@ async def test_create_api_key_returns_plain_key(client: httpx.AsyncClient) -> No
     body = response.json()
     assert "key" in body
     assert body["key"].startswith("ak_")
-    assert body["api_key"]["name"] == "ci"
-    assert "key_hash" in body["api_key"]
+    assert body["apiKey"]["name"] == "ci"
+    assert "keyHash" not in body["apiKey"]
 
 
 async def test_verify_round_trip(client: httpx.AsyncClient) -> None:
@@ -85,7 +85,7 @@ async def test_remaining_decrements(client: httpx.AsyncClient) -> None:
     assert third.json()["error"]["code"] == "API_KEY_EXHAUSTED"
 
 
-async def test_create_with_expires_in_seconds_one_hour_is_valid(
+async def test_create_with_expires_in_one_hour_is_valid(
     client: httpx.AsyncClient,
 ) -> None:
     """Regression: a freshly-created key with a 1-hour TTL must verify as valid.
@@ -98,10 +98,10 @@ async def test_create_with_expires_in_seconds_one_hour_is_valid(
     created = (
         await client.post(
             "/auth/api-key/create",
-            json={"name": "ttl-1h", "expires_in_seconds": 3600},
+            json={"name": "ttl-1h", "expiresIn": "PT1H"},
         )
     ).json()
-    assert created["api_key"]["expires_at"] is not None
+    assert created["apiKey"]["expiresAt"] is not None
     response = await client.post("/auth/api-key/verify", json={"key": created["key"]})
     assert response.status_code == 200
     body = response.json()
@@ -112,14 +112,14 @@ async def test_create_with_expires_in_seconds_one_hour_is_valid(
 @pytest.mark.parametrize(
     "field,bad_value",
     [
-        ("expires_in_seconds", 0),
-        ("expires_in_seconds", -1),
+        ("expiresIn", 0),
+        ("expiresIn", -1),
         ("remaining", 0),
         ("remaining", -5),
-        ("refill_amount", 0),
-        ("refill_interval_ms", 0),
-        ("rate_limit_max", 0),
-        ("rate_limit_window_ms", 0),
+        ("refillAmount", 0),
+        ("refillInterval", 0),
+        ("rateLimitMax", 0),
+        ("rateLimitWindow", 0),
     ],
 )
 async def test_create_rejects_non_positive_quota_fields(
@@ -127,9 +127,9 @@ async def test_create_rejects_non_positive_quota_fields(
     field: str,
     bad_value: int,
 ) -> None:
-    """Quota/interval fields must be ``>= 1``; 0 and negatives are 422-rejected.
+    """Quota/interval fields must be positive; 0 and negatives are 422-rejected.
 
-    Without this validation, ``expires_in_seconds=-N`` would create an
+    Without this validation, ``expiresIn=-N`` would create an
     instantly-expired key and ``remaining=0`` (the Scalar UI default) would
     create a key that's exhausted on first verify.
     """

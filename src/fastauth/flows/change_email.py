@@ -25,7 +25,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
-from pydantic import ConfigDict, EmailStr
+from pydantic import ConfigDict, EmailStr, SecretStr
 
 from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
 from fastauth.domain.events import UserEmailChanged, UserEmailChangeRequested
@@ -53,7 +53,7 @@ class RequestEmailChangeRequest(WireModel):
 
     model_config = ConfigDict(extra="forbid")
     new_email: EmailStr
-    password: str
+    password: SecretStr
 
 
 class ConfirmEmailChangeRequest(WireModel):
@@ -61,7 +61,7 @@ class ConfirmEmailChangeRequest(WireModel):
 
     model_config = ConfigDict(extra="forbid")
     new_email: EmailStr
-    token: str
+    token: SecretStr
 
 
 async def request_email_change(
@@ -80,7 +80,7 @@ async def request_email_change(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None or account.password is None:
         raise NotFoundError(resource="credential_account")
-    if not context.password_hasher.verify(request.password, account.password):
+    if not context.password_hasher.verify(request.password.get_secret_value(), account.password):
         raise InvalidCredentialsError()
 
     # Check that no other user is using the address. Race is possible; we
@@ -151,7 +151,7 @@ async def confirm_email_change(
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
-    token_hash = context.token_service.hash_only(request.token)
+    token_hash = context.token_service.hash_only(request.token.get_secret_value())
     verification = await context.adapter.get_verification(
         request.new_email,
         VerificationPurpose.EMAIL_CHANGE,

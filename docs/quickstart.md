@@ -1,34 +1,40 @@
 # Quickstart
 
-fastauth's config type is a plain `pydantic.BaseModel`. Every value is passed
+fastauth's options type is a plain `pydantic.BaseModel`. Every value is passed
 explicitly at instantiation time. **The framework never reads environment
 variables, `.env` files, or any other external source** — that's the
 consumer's responsibility. Pass values from your application settings object,
-secret manager, config file, or test fixture and `FastAuthConfig` will validate
+secret manager, config file, or test fixture and `FastAuthOptions` will validate
 them.
 
 ```python
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.storage.memory import InMemoryAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.providers import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-config = FastAuthConfig(secret_key=SecretStr(app_secret))
-auth = FastAuth(config, adapter=InMemoryAdapter())
+auth = fastauth(
+    FastAuthOptions(
+        secret_key=SecretStr(app_secret),
+        database=memory(),
+        plugins=[email_password()],
+    )
+)
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
-auth.install(app)
+auth.mount(app)
 ```
 
-`auth.install(app)` attaches the router and installs CSRF/security-header
+`auth.mount(app)` attaches the router and installs CSRF/security-header
 middleware on the host FastAPI application. If you use `auth.as_asgi()` as a
 standalone app instead, fastauth returns an app with the same routes and
 middleware already installed.
 
-`InMemoryAdapter` is suitable for tests and local demos. Pick Mongo or Postgres
-explicitly for persistent deployments and pass the matching adapter yourself.
+`memory()` is suitable for tests and local demos. Pick `mongo(database)` or
+`postgres(url)` explicitly for persistent deployments.
 
 For Postgres, install `fastauth-py[postgres,jwt]` and pass an async
 SQLAlchemy URL or engine explicitly:
@@ -37,29 +43,19 @@ SQLAlchemy URL or engine explicitly:
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.config import DatabaseConfig, PostgresDatabaseConfig
-from fastauth.plugins.jwt import JwtPlugin
-from fastauth.storage.postgres import PostgresAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import postgres
+from fastauth.providers import email_password, jwt
 
-config = FastAuthConfig(
+options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
-    database=DatabaseConfig(
-        backend="postgres",
-        postgres=PostgresDatabaseConfig(
-            url="postgresql+asyncpg://user:pass@localhost/myapp",
-        ),
-    ),
+    database=postgres("postgresql+asyncpg://user:pass@localhost/myapp"),
+    plugins=[email_password(), jwt()],
 )
-adapter = PostgresAdapter.from_url(
-    config.database.postgres.url,
-    table_prefix=config.database.postgres.table_prefix,
-    table_suffix=config.database.postgres.table_suffix,
-)
-auth = FastAuth(config, adapter=adapter, plugins=[JwtPlugin()])
+auth = fastauth(options)
 
-app = FastAPI(title="My App", lifespan=adapter.lifespan(auth))
-auth.install(app)
+app = FastAPI(title="My App", lifespan=auth.lifespan)
+auth.mount(app)
 ```
 
 ## Protecting routes with `CurrentUser` / `CurrentSession`

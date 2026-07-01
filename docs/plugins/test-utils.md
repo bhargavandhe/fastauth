@@ -4,12 +4,17 @@
 `TestHelpers` surface that test code retrieves from the plugin registry:
 
 ```python
-from fastauth.plugins.test_utils import TestUtilsConfig, TestUtilsPlugin
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.test_utils import TestUtilsConfig
+from fastauth.providers import email_password, test_utils
 
-auth = FastAuth(
-    config,
-    adapter=adapter,
-    plugins=[TestUtilsPlugin(TestUtilsConfig(capture_otp=True))],
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[email_password(), test_utils(TestUtilsConfig(capture_otp=True))],
+    )
 )
 
 helpers = auth.context.plugins.by_id["fastauth-test-utils"].helpers

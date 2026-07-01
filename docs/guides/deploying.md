@@ -13,15 +13,16 @@ uv run uvicorn myapp.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 When you scale beyond a single worker, switch the rate limiter to its
 database backend so quotas stay consistent across workers. However your app
-loads settings, pass this value into `FastAuthConfig`:
+loads settings, pass this value into `FastAuthOptions`:
 
 ```python
-from fastauth.config import FastAuthConfig, RateLimitConfig
+from fastauth import FastAuthOptions
 from fastauth.domain.enums import RateLimitStorageKind
+from fastauth.options import RateLimitOptions
 
-config = FastAuthConfig(
+options = FastAuthOptions(
     # ...
-    rate_limit=RateLimitConfig(storage=RateLimitStorageKind.DATABASE),
+    rate_limit=RateLimitOptions(storage=RateLimitStorageKind.DATABASE),
 )
 ```
 
@@ -45,21 +46,27 @@ uv run fastauth migrate \
 ```
 
 ```python
-from fastapi import FastAPI
-from fastauth.storage.postgres import PostgresAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import postgres
+from fastauth.providers import email_password
 
-adapter = PostgresAdapter.from_url(
-    "postgresql+asyncpg://user:pass@db.example.com/myapp",
-    table_prefix="fastauth_",
-    table_suffix="",
+options = FastAuthOptions(
+    secret_key="replace-me-with-your-application-secret",
+    database=postgres(
+        "postgresql+asyncpg://user:pass@db.example.com/myapp",
+        table_prefix="fastauth_",
+        table_suffix="",
+        apply_migrations=False,
+    ),
+    plugins=[email_password()],
 )
-app = FastAPI(lifespan=adapter.checked_lifespan(auth))
+auth = fastauth(options)
 ```
 
-For local development and small deployments, `adapter.lifespan(auth)` applies
-pending Postgres migrations before fastauth starts. Prefer the explicit CLI
-migration path for production releases where schema changes should be part of
-the deploy pipeline.
+For local development and small deployments, omit `apply_migrations=False` to
+apply pending Postgres migrations before fastauth starts. Prefer the explicit
+CLI migration path for production releases where schema changes should be part
+of the deploy pipeline.
 
 ## Secrets
 
@@ -67,16 +74,16 @@ the deploy pipeline.
   private-key encryption. Rotate by adding the new secret first and listing
   the old one under `secret_key_rotation` for the unwind window.
 - Use a secret manager (AWS Secrets Manager, GCP Secret Manager, Vault) and
-  pass the resulting value into `FastAuthConfig`; avoid committing secrets.
+  pass the resulting value into `FastAuthOptions`; avoid committing secrets.
 
 ## Cookie attributes
 
 In production set:
 
 ```python
-from fastauth.config import CookieConfig
+from fastauth.options import CookieOptions
 
-cookie = CookieConfig(
+cookie = CookieOptions(
     secure=True,
     same_site="lax",
     domain="app.example.com",
@@ -88,9 +95,9 @@ cookie = CookieConfig(
 List every browser origin that may call fastauth:
 
 ```python
-from fastauth.config import CsrfConfig
+from fastauth.options import CsrfOptions
 
-csrf = CsrfConfig(
+csrf = CsrfOptions(
     trusted_origins=["https://app.example.com", "https://*.app.example.com"],
 )
 ```

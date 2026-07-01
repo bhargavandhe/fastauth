@@ -18,12 +18,20 @@ Scalar `theme`, an optional CSP `nonce`, the page `title`, and the
 ## Example
 
 ```python
-from fastauth.plugins.openapi import OpenApiConfig, OpenApiPlugin
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.openapi import OpenApiConfig
+from fastauth.providers import email_password, openapi
 
-auth = FastAuth(
-    config,
-    adapter=adapter,
-    plugins=[OpenApiPlugin(OpenApiConfig(path="/reference", theme="default"))],
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[
+            email_password(),
+            openapi(OpenApiConfig(path="/reference", theme="default")),
+        ],
+    )
 )
 ```
 

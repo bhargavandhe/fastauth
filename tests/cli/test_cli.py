@@ -21,12 +21,14 @@ def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     assert result.exit_code == 0
     auth_py = tmp_path / "auth.py"
     assert auth_py.exists()
-    # The scaffold demonstrates explicit FastAuthConfig construction and does
+    # The scaffold demonstrates explicit FastAuthOptions construction and does
     # NOT pull from any env-only loader.
     body = auth_py.read_text(encoding="utf-8")
-    assert "FastAuthConfig" in body
+    assert "FastAuthOptions" in body
+    assert "fastauth(create_options(secret_key))" in body
     assert "FastAuthEnvConfig" not in body
-    assert "InMemoryAdapter" in body
+    assert "memory()" in body
+    assert "email_password()" in body
     assert "motor" not in body
 
 
@@ -36,11 +38,11 @@ def test_init_can_write_postgres_scaffold(tmp_path: pathlib.Path) -> None:
     assert result.exit_code == 0
 
     body = (tmp_path / "auth.py").read_text(encoding="utf-8")
-    assert "PostgresAdapter" in body
-    assert "config.database.postgres.url" in body
-    assert "table_prefix=config.database.postgres.table_prefix" in body
-    assert "table_suffix=config.database.postgres.table_suffix" in body
-    assert "checked_lifespan" in body
+    assert "postgres(" in body
+    assert "postgres_url" in body
+    assert "table_prefix=table_prefix" in body
+    assert "table_suffix=table_suffix" in body
+    assert "auth.mount(app)" in body
 
 
 def test_init_can_write_mongo_scaffold(tmp_path: pathlib.Path) -> None:
@@ -49,11 +51,10 @@ def test_init_can_write_mongo_scaffold(tmp_path: pathlib.Path) -> None:
     assert result.exit_code == 0
 
     body = (tmp_path / "auth.py").read_text(encoding="utf-8")
-    assert "BeanieAdapter" in body
-    assert "config.database.mongo.url" in body
-    assert "config.database.mongo.database_name" in body
-    assert "collection_prefix=config.database.mongo.collection_prefix" in body
-    assert "collection_suffix=config.database.mongo.collection_suffix" in body
+    assert "mongo(" in body
+    assert "create_mongo_database(mongo_url: str, database_name: str)" in body
+    assert "collection_prefix=collection_prefix" in body
+    assert "collection_suffix=collection_suffix" in body
 
 
 def test_init_no_longer_writes_dotenv_example(tmp_path: pathlib.Path) -> None:

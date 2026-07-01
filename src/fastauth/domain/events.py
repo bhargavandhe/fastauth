@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from fastauth.domain.enums import AuditEventType
 from fastauth.domain.models import new_id
@@ -49,7 +48,7 @@ class AuthEvent(BaseModel):
     audit_event_type: AuditEventType
     ip_address: str | None = None
     user_agent: str | None = None
-    extra: dict[str, Any] = Field(default_factory=dict)
+    extra: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class UserSignedUp(AuthEvent):

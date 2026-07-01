@@ -1,7 +1,7 @@
 """Format-conversion helpers shared between the Beanie adapter and its docs.
 
 These functions are pure utilities — they don't reference any of the
-:class:`beanie.Document` subclasses defined in :mod:`.documents`. Keeping
+:class:`beanie.Document` classes defined in :mod:`.documents`. Keeping
 them here lets `documents` and `adapter` both import without forming a
 cycle.
 """
@@ -9,6 +9,7 @@ cycle.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import get_args
 
 from beanie import Document, PydanticObjectId
 from bson import ObjectId
@@ -54,7 +55,31 @@ def apply_model_updates(doc: Document, model: BaseModel) -> None:
     data = model.model_dump(exclude={"id"})
     for field_name, value in data.items():
         if field_name in type(doc).model_fields:
-            setattr(doc, field_name, value)
+            setattr(doc, field_name, coerce_document_value(doc, field_name, value))
+
+
+def coerce_document_value(doc: Document, field_name: str, value: object) -> object:
+    if value is None or not field_stores_object_id(doc, field_name):
+        return value
+    if isinstance(value, ObjectId):
+        return value
+    if not isinstance(value, str):
+        raise ValueError("expected a Mongo ObjectId hex string")
+    return require_object_id(value)
+
+
+def field_stores_object_id(doc: Document, field_name: str) -> bool:
+    current_value = getattr(doc, field_name, None)
+    if isinstance(current_value, ObjectId):
+        return True
+    field = type(doc).model_fields[field_name]
+    return annotation_contains(field.annotation, PydanticObjectId)
+
+
+def annotation_contains(annotation: object, target: type[object]) -> bool:
+    if annotation is target:
+        return True
+    return any(annotation_contains(arg, target) for arg in get_args(annotation))
 
 
 def to_object_id_or_none(value: str | None) -> ObjectId | None:

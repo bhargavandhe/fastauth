@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, JsonValue
 from pydantic.alias_generators import to_camel
 
 from fastauth.domain.enums import (
@@ -47,12 +46,8 @@ def utc_now() -> datetime:
 class FastAuthModel(BaseModel):
     """Common base for every fastauth domain model.
 
-    Domain models do **not** carry the wire-format alias generator —
-    persistence layers (notably the Beanie Doc subclasses) call
-    ``model_dump(by_alias=True)`` and any alias generator on this base
-    would corrupt the on-disk schema. Wire-format conversion happens at
-    the response-rendering boundary instead, see
-    :class:`fastauth.web.fastapi.CamelJSONResponse`.
+    Domain models do **not** carry the HTTP alias generator. Public response
+    DTOs own wire serialization so persistence and HTTP can evolve separately.
     """
 
     model_config = ConfigDict(
@@ -66,19 +61,15 @@ class WireModel(BaseModel):
     """Base for public request / response models.
 
     Carries ``alias_generator=to_camel`` + ``populate_by_name=True`` so
-    request bodies in either ``snake_case`` or ``camelCase`` parse
-    correctly regardless of ``FastAuthConfig.wire_format``. Output
-    casing is independently controlled at the route layer by selecting
-    a response class (default JSON for snake; ``CamelJSONResponse`` for
-    camel) — so the alias generator here only affects **input** parsing,
-    never serialization. This avoids any interaction with persistence
-    layers that call ``model_dump`` on inherited fields.
+    request bodies in either ``snake_case`` or ``camelCase`` parse correctly.
+    Output serialization uses Pydantic aliases directly.
     """
 
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
         alias_generator=to_camel,
+        serialize_by_alias=True,
     )
 
 
@@ -90,7 +81,7 @@ class User(FastAuthModel):
     image: str | None = None
     email_verified: bool = False
     pending_email_change: EmailStr | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -194,7 +185,7 @@ class ApiKey(FastAuthModel):
     last_refill_at: datetime | None = None
     last_request_at: datetime | None = None
     request_count: int = 0
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
     permissions: dict[str, list[str]] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -225,7 +216,7 @@ class AuditLog(FastAuthModel):
     user_id: str | None = None
     ip_address: str | None = None
     user_agent: str | None = None
-    event_data: dict[str, Any] = Field(default_factory=dict)
+    event_data: dict[str, JsonValue] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
 
 

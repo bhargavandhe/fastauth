@@ -1,9 +1,9 @@
 """Fixtures for the quickstart example app's end-to-end test.
 
-The example app is configured by passing an ``FastAuthConfig`` directly into
-its factory. This conftest starts a session-scoped Mongo container, then creates
-a fresh PyMongo async client inside each async test fixture so the client binds
-to the same event loop as FastAPI and httpx.
+The example app is configured by passing ``FastAuthOptions`` into its factory.
+This conftest starts a session-scoped Mongo container, then creates a fresh
+PyMongo async client inside each async test fixture so the client binds to the
+same event loop as FastAPI and httpx.
 
 The conftest also drives the FastAPI lifespan manually around each request,
 because ``httpx.ASGITransport`` does not emit lifespan events on its own and
@@ -21,7 +21,7 @@ from pydantic import SecretStr
 from pymongo import AsyncMongoClient
 from testcontainers.mongodb import MongoDbContainer  # pyright: ignore[reportMissingTypeStubs]
 
-from examples.quickstart.app import build_config, create_app, create_auth
+from examples.quickstart.app import build_options, create_app, create_auth
 
 
 @pytest.fixture(scope="session")
@@ -45,22 +45,21 @@ async def client(mongo_url: str) -> AsyncIterator[httpx.AsyncClient]:
     the same event loop used by ``httpx.AsyncClient`` and FastAPI lifespan.
     """
     database_name = f"fastauth_quickstart_{os.getpid()}"
-    config = build_config(
+    mongo_client: AsyncMongoClient[object] = AsyncMongoClient(
+        mongo_url,
+        uuidRepresentation="standard",
+        tz_aware=True,
+    )
+    mongo_database = mongo_client[database_name]
+    options = build_options(
         secret_key=SecretStr("x" * 64),
-        mongo_url=mongo_url,
-        database_name=database_name,
+        database=mongo_database,
         cookie_secure=False,
         csrf_enabled=False,
         rate_limit_enabled=False,
     )
-    mongo_client: AsyncMongoClient[object] = AsyncMongoClient(
-        config.database.mongo.url,
-        uuidRepresentation="standard",
-        tz_aware=True,
-    )
-    mongo_database = mongo_client[config.database.mongo.database_name]
-    auth = create_auth(config, mongo_database)
-    app = create_app(auth, mongo_database)
+    auth = create_auth(options)
+    app = create_app(auth)
     try:
         await mongo_client.drop_database(database_name)
         async with app.router.lifespan_context(app):

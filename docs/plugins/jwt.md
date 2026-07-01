@@ -10,27 +10,38 @@ when installed, injects a `set-auth-jwt` response header on
   (default expiry 15 minutes).
 - `GET /auth/jwks` — public JWKS document used to verify those tokens.
 
-## Config
+## Options
 
-`JwtPluginConfig` covers algorithm choice (`alg`, default `EdDSA`),
-`expires_in_seconds`, `issuer`, `audience`, `rotation_interval_seconds`,
-`grace_period_seconds`, `disable_setting_jwt_header`,
+`JwtOptions` covers algorithm choice (`alg`, default `EdDSA`),
+`expires_in`, `issuer`, `audience`, `rotation_interval`,
+`grace_period`, `disable_setting_jwt_header`,
 `disable_private_key_encryption`, `jwks_path`, and `token_path`. The plugin
 also accepts a custom `payload_builder` and a `signer_factory` for KMS-backed
-signing — see the [KMS signing guide](../guides/kms-signing.md).
+signing. Duration options are `datetime.timedelta` values — see the
+[KMS signing guide](../guides/kms-signing.md).
 
 ## Example
 
 ```python
-from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
+from datetime import timedelta
 
-auth = FastAuth(
-    config,
-    adapter=adapter,
-    plugins=[JwtPlugin(JwtPluginConfig(
-        issuer="https://app.example.com",
-        audience="https://api.example.com",
-        rotation_interval_seconds=60 * 60 * 24 * 30,
-    ))],
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.jwt import JwtOptions
+from fastauth.providers import email_password, jwt
+
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[
+            email_password(),
+            jwt(JwtOptions(
+                issuer="https://app.example.com",
+                audience="https://api.example.com",
+                rotation_interval=timedelta(days=30),
+            )),
+        ],
+    )
 )
 ```

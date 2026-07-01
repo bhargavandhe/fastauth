@@ -39,7 +39,8 @@ async def test_sign_up_rejects_short_password(client: httpx.AsyncClient) -> None
         "/auth/sign-up/email",
         json={"email": "x@example.com", "password": "short"},
     )
-    assert response.status_code == 422
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
 async def test_sign_in_email_round_trip(
@@ -135,7 +136,7 @@ async def test_sign_up_omits_token_by_default(
     response = await client.post("/auth/sign-up/email", json=signup_payload)
     assert response.status_code == 200
     body = response.json()
-    assert body["token"] is None
+    assert body["credentials"] is None
     # Cookie is still set so the cookie-based flow keeps working.
     assert "fastauth.session_token" in response.headers.get("set-cookie", "")
 
@@ -144,16 +145,17 @@ async def test_sign_up_returns_token_when_requested(
     client: httpx.AsyncClient,
     signup_payload: dict[str, str],
 ) -> None:
-    """SPAs and mobile apps opt in via include_token=true and get a Bearer-usable token."""
-    payload = {**signup_payload, "include_token": True}
+    """SPAs and mobile apps opt into bearer delivery and get a Bearer-usable token."""
+    payload = {**signup_payload, "delivery": {"kind": "bearer"}}
     response = await client.post("/auth/sign-up/email", json=payload)
     assert response.status_code == 200
     body = response.json()
-    assert isinstance(body["token"], str)
-    assert len(body["token"]) >= 32
+    token = body["credentials"]["token"]
+    assert isinstance(token, str)
+    assert len(token) >= 32
     # The plain token works as a Bearer for subsequent requests.
     client.cookies.clear()
-    me = await client.get("/auth/get-session", headers={"authorization": f"Bearer {body['token']}"})
+    me = await client.get("/auth/get-session", headers={"authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["user"]["email"] == signup_payload["email"]
 
@@ -169,11 +171,11 @@ async def test_sign_in_email_returns_token_when_requested(
         json={
             "email": signup_payload["email"],
             "password": signup_payload["password"],
-            "include_token": True,
+            "delivery": {"kind": "bearer"},
         },
     )
     assert response.status_code == 200
-    assert isinstance(response.json()["token"], str)
+    assert isinstance(response.json()["credentials"]["token"], str)
 
 
 async def test_sign_in_username_returns_token_when_requested(
@@ -186,7 +188,11 @@ async def test_sign_in_username_returns_token_when_requested(
     client.cookies.clear()
     response = await client.post(
         "/auth/sign-in/username",
-        json={"username": "u123", "password": "correct-horse-staple", "include_token": True},
+        json={
+            "username": "u123",
+            "password": "correct-horse-staple",
+            "delivery": {"kind": "bearer"},
+        },
     )
     assert response.status_code == 200
-    assert isinstance(response.json()["token"], str)
+    assert isinstance(response.json()["credentials"]["token"], str)

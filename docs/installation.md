@@ -18,29 +18,31 @@ The available extras are:
 
 ## Configuration source
 
-`FastAuthConfig` is a plain Pydantic model. fastauth never reads environment
+`FastAuthOptions` is a plain Pydantic model. fastauth never reads environment
 variables directly; your application reads configuration from its own source
-and passes values into `FastAuthConfig`.
+and passes values into `FastAuthOptions`.
 
 For example, build config from values your application already owns:
 
 ```python
 from pydantic import SecretStr
+from pymongo import AsyncMongoClient
 
-from fastauth import FastAuthConfig
-from fastauth.config import DatabaseConfig, MongoDatabaseConfig
+from fastauth import FastAuthOptions
+from fastauth.database import mongo
+from fastauth.providers import email_password
 
-config = FastAuthConfig(
+mongo_client = AsyncMongoClient("mongodb://localhost:27017", uuidRepresentation="standard")
+mongo_database = mongo_client["myapp"]
+
+options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
-    database=DatabaseConfig(
-        backend="mongo",
-        mongo=MongoDatabaseConfig(
-            url="mongodb://localhost:27017",
-            database_name="myapp",
-            collection_prefix="tenant_",
-            collection_suffix="_auth",
-        ),
+    database=mongo(
+        mongo_database,
+        collection_prefix="tenant_",
+        collection_suffix="_auth",
     ),
+    plugins=[email_password()],
 )
 ```
 

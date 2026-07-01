@@ -10,16 +10,22 @@ pip install fastauth-py
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.storage.memory import InMemoryAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.providers import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 
-config = FastAuthConfig(secret_key=SecretStr(app_secret))
-auth = FastAuth(config, adapter=InMemoryAdapter())
+auth = fastauth(
+    FastAuthOptions(
+        secret_key=SecretStr(app_secret),
+        database=memory(),
+        plugins=[email_password()],
+    )
+)
 
 app = FastAPI(lifespan=auth.lifespan)
-auth.install(app)
+auth.mount(app)
 ```
 
 That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
@@ -32,7 +38,7 @@ That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
 revoke-others), `/auth/refresh`, and `/auth/health` wired into your FastAPI
 application. Rate-limiting, account-lockout, and refresh tokens are part of
 the router. CSRF and security headers are ASGI middleware installed by
-`auth.install(app)`. If you use `auth.as_asgi()` instead, fastauth returns a
+`auth.mount(app)`. If you use `auth.as_asgi()` instead, fastauth returns a
 standalone app with the same routes and middleware already installed.
 
 ## Why fastauth
@@ -49,13 +55,13 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **Strict-typed.** `pyright --strict` passes with **0 errors, 0 warnings**.
   `py.typed` marker ships with the wheel — your IDE and your CI get full
   type information.
-- **Source-agnostic config.** `FastAuthConfig` is a plain `BaseModel`. The
+- **Source-agnostic options.** `FastAuthOptions` is a plain `BaseModel`. The
   framework **never reads process-level configuration**. You build config
   from your application settings object, vault client, parameter store, or
   test fixture and pass it in explicitly.
-- **Plugins as first-class extension points.** Six built-in plugins
-  (`ApiKeyPlugin`, `JwtPlugin`, `EmailOtpPlugin`, `AuditLogsPlugin`,
-  `OpenApiPlugin`, `TestUtilsPlugin`) — each contributes endpoints,
+- **Plugins as first-class extension points.** Seven built-in providers
+  (`email_password()`, `api_key()`, `jwt()`, `email_otp()`, `audit_logs()`,
+  `openapi()`, `test_utils()`) — each contributes endpoints,
   event handlers, lifecycle hooks, and rate-limit policies through a
   tight `Plugin` ABC. Write your own for OAuth providers, webhooks,
   custom MFA — whatever your app needs.
@@ -105,28 +111,29 @@ v2 + async-only + MongoDB or Postgres persistence:
   `Referrer-Policy` on by default; opt-in `Permissions-Policy` and CSP.
 
 ### Plugins (each optional)
-- **ApiKeyPlugin** — create/verify/list/update/delete API keys with optional
+- **email_password()** — sign-up, sign-in, password reset, email verification,
+  account management, refresh tokens, and session management.
+- **api_key()** — create/verify/list/update/delete API keys with optional
   refilling quotas and per-key rate limits.
-- **JwtPlugin** — `/auth/token` to mint a JWT from a session, `/auth/jwks`
+- **jwt()** — `/auth/token` to mint a JWT from a session, `/auth/jwks`
   for the public key set.
-- **EmailOtpPlugin** — passwordless sign-in, email verification, password
+- **email_otp()** — passwordless sign-in, email verification, password
   reset, and (optional) email change via 6-digit OTPs delivered to email.
   Hashed storage, per-OTP attempt cap, lockout-coupled.
-- **AuditLogsPlugin** — auto-captures every `AuthEvent` into a paginated
+- **audit_logs()** — auto-captures every `AuthEvent` into a paginated
   audit-log collection.
-- **OpenApiPlugin** — Scalar UI at `/auth/reference`, OpenAPI 3.1 schema
+- **openapi()** — Scalar UI at `/auth/reference`, OpenAPI 3.1 schema
   at `/auth/openapi.json`.
-- **TestUtilsPlugin** — factories, login helpers, OTP capture for tests.
+- **test_utils()** — factories, login helpers, OTP capture for tests.
 
 ### Developer experience
 - **`CurrentUser` / `CurrentSession` FastAPI dependencies** with optional
   variants, both `Depends(...)` and `Annotated[...]` calling styles
   documented.
-- **Explicit storage wiring** — pass `InMemoryAdapter()`, `BeanieAdapter`, or
-  `PostgresAdapter` yourself. Fastauth never silently chooses persistence.
-  Mongo collection prefix/suffix and Postgres table prefix/suffix options are
-  explicit config values.
-- **`auth.install(app)`** — install routes, CSRF, and security headers on your
+- **Explicit storage wiring** — choose `memory()`, `mongo(database)`,
+  `postgres(url)`, or `custom(adapter)`. Fastauth never reads storage settings
+  from the process environment.
+- **`auth.mount(app)`** — install routes, CSRF, and security headers on your
   FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
   when you want fastauth mounted separately.
 - **Typer CLI** — `fastauth init --backend memory|mongo|postgres`,
@@ -186,24 +193,31 @@ are allowed.
 
 ## Configuration
 
-`FastAuthConfig` is a plain `pydantic.BaseModel`. Every field has a sensible
+`FastAuthOptions` is a plain `pydantic.BaseModel`. Every field has a sensible
 default; pass only what you want to override:
 
 ```python
-from fastauth import FastAuthConfig
-from fastauth.config import (
-    AppConfig, CookieConfig, CsrfConfig,
-    LockoutConfig, RefreshTokenConfig, SecurityHeadersConfig,
-)
+from pydantic import SecretStr
+from datetime import timedelta
 
-config = FastAuthConfig(
+from fastauth import FastAuthOptions
+from fastauth.database import memory
+from fastauth.options import (
+    AppOptions, CookieOptions, CsrfOptions,
+    LockoutOptions, RefreshTokenOptions, SecurityHeadersOptions,
+)
+from fastauth.providers import email_password
+
+options = FastAuthOptions(
     secret_key=SecretStr("…"),
-    app=AppConfig(name="My App", base_url="https://myapp.com"),
-    cookie=CookieConfig(secure=True, same_site="strict"),
-    csrf=CsrfConfig(trusted_origins=["https://myapp.com"]),
-    lockout=LockoutConfig(max_failures=10, window_seconds=300),
-    refresh_token=RefreshTokenConfig(max_age_seconds=14 * 24 * 3600),
-    security_headers=SecurityHeadersConfig(
+    database=memory(),
+    plugins=[email_password()],
+    app=AppOptions(name="My App", base_url="https://myapp.com"),
+    cookie=CookieOptions(secure=True, same_site="strict"),
+    csrf=CsrfOptions(trusted_origins=("https://myapp.com",)),
+    lockout=LockoutOptions(max_failures=10, window=timedelta(minutes=5)),
+    refresh_token=RefreshTokenOptions(max_age=timedelta(days=14)),
+    security_headers=SecurityHeadersOptions(
         content_security_policy="default-src 'self'",
     ),
 )
@@ -212,7 +226,7 @@ config = FastAuthConfig(
 16 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
 `email_verification`, `password_reset`, `email_change`, `delete_account`,
 `rate_limit`, `csrf`, `lockout`, `refresh_token`, `security_headers`,
-`database`, `advanced`.
+`advanced`, plus the top-level `database` backend and `plugins` list.
 
 See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.
 

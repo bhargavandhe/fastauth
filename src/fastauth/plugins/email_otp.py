@@ -8,8 +8,8 @@ Surface mirrors better-auth's email-OTP plugin:
 * ``POST /email-otp/verify-email``
 * ``POST /email-otp/request-password-reset``
 * ``POST /email-otp/reset-password``
-* ``POST /email-otp/request-email-change``  (when ``change_email_enabled``)
-* ``POST /email-otp/change-email``           (when ``change_email_enabled``)
+* ``POST /email-otp/request-email-change``  (when email-change is enabled)
+* ``POST /email-otp/change-email``           (when email-change is enabled)
 
 The actual flow logic lives in :mod:`fastauth.flows.email_otp` so the
 plugin file stays focused on HTTP wiring + config + audit subscriptions.
@@ -18,16 +18,17 @@ plugin file stays focused on HTTP wiring + config + audit subscriptions.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
 from typing import ClassVar
 
 from fastapi import Request, Response
 
+from fastauth.api.commands import CookieCredentialDelivery
 from fastauth.exceptions import InvalidCredentialsError
 from fastauth.flows.credentials import EmptyResponse, SessionResponse
 from fastauth.flows.email_otp import (
     ChangeEmailOtpRequest,
     CheckOtpRequest,
-    EmailOtpConfig,
     RequestEmailChangeOtpRequest,
     RequestPasswordResetOtpRequest,
     ResetPasswordOtpRequest,
@@ -44,10 +45,11 @@ from fastauth.flows.email_otp import (
     verify_email_with_otp,
 )
 from fastauth.plugins.base import EndpointSpec, Plugin, RateLimitRule
+from fastauth.plugins.email_otp_options import EmailChangeOtpOptions, EmailOtpOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.otp import OtpService
 
-__all__ = ["EmailOtpConfig", "EmailOtpPlugin"]
+__all__ = ["EmailChangeOtpOptions", "EmailOtpOptions", "EmailOtpPlugin"]
 
 
 class EmailOtpPlugin(Plugin):
@@ -57,9 +59,10 @@ class EmailOtpPlugin(Plugin):
 
     id: ClassVar[str] = "fastauth-email-otp"
 
-    def __init__(self, config: EmailOtpConfig | None = None) -> None:
-        self.config = config or EmailOtpConfig()
-        self.otp_service = OtpService(length=self.config.length)
+    def __init__(self, options: EmailOtpOptions | None = None) -> None:
+        self.options = options or EmailOtpOptions()
+        self.config = self.options
+        self.otp_service = OtpService(length=self.config.code_length)
         self.context: AuthContext | None = None
 
     def bind(self, context: AuthContext) -> None:
@@ -131,12 +134,13 @@ class EmailOtpPlugin(Plugin):
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        set_session_cookie(
-            response,
-            context,
-            session_context.token,
-            context.config.session.max_age_seconds,
-        )
+        if isinstance(body.delivery, CookieCredentialDelivery):
+            set_session_cookie(
+                response,
+                context,
+                session_context.token,
+                context.config.session.max_age_seconds,
+            )
         return result
 
     async def verify_email_handler(
@@ -274,7 +278,7 @@ class EmailOtpPlugin(Plugin):
                 response_model=EmptyResponse,
             ),
         ]
-        if self.config.change_email_enabled:
+        if self.config.email_change.enabled:
             specs.extend(
                 [
                     EndpointSpec(
@@ -305,32 +309,32 @@ class EmailOtpPlugin(Plugin):
         return [
             RateLimitRule(
                 path="/email-otp/send-verification-otp",
-                window_seconds=60,
+                window=timedelta(seconds=60),
                 max_requests=3,
             ),
             RateLimitRule(
                 path="/email-otp/request-password-reset",
-                window_seconds=60,
+                window=timedelta(seconds=60),
                 max_requests=3,
             ),
             RateLimitRule(
                 path="/email-otp/check-verification-otp",
-                window_seconds=60,
+                window=timedelta(seconds=60),
                 max_requests=10,
             ),
             RateLimitRule(
                 path="/sign-in/email-otp",
-                window_seconds=60,
+                window=timedelta(seconds=60),
                 max_requests=10,
             ),
             RateLimitRule(
                 path="/email-otp/verify-email",
-                window_seconds=60,
+                window=timedelta(seconds=60),
                 max_requests=10,
             ),
             RateLimitRule(
                 path="/email-otp/reset-password",
-                window_seconds=60,
+                window=timedelta(seconds=60),
                 max_requests=10,
             ),
         ]

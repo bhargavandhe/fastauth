@@ -20,25 +20,34 @@ MEMORY_AUTH_SCAFFOLD = '''\
 """Authkit instance for this application.
 
 This scaffold demonstrates explicit dependency injection. Build your
-``FastAuthConfig`` in your application code, then pass it to ``create_auth``.
-fastauth never reads process-level configuration.
+``FastAuthOptions`` in your application code, then pass it to
+``fastauth(options)``. fastauth never reads process-level configuration.
 """
 from __future__ import annotations
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.storage.memory import InMemoryAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.providers import email_password
 
 
-def create_auth(config: FastAuthConfig) -> FastAuth:
-    return FastAuth(config, adapter=InMemoryAdapter())
+def create_options(secret_key: str) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=secret_key,
+        database=memory(),
+        plugins=[email_password()],
+    )
+
+
+def create_auth(secret_key: str):
+    return fastauth(create_options(secret_key))
 '''
 
 
 MONGO_AUTH_SCAFFOLD = '''\
 """Mongo-backed fastauth instance for this application.
 
-Build ``FastAuthConfig`` in your application code. The Mongo URL and database
-name come from ``config.database.mongo``; fastauth never reads process-level
+Build ``FastAuthOptions`` in your application code. The Mongo URL and database
+name come from your own settings object; fastauth never reads process-level
 configuration.
 """
 from __future__ import annotations
@@ -48,37 +57,52 @@ from typing import Any
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import mongo
+from fastauth.providers import email_password
+from fastauth.storage.beanie import init_beanie_documents
 
 
-def create_mongo_database(config: FastAuthConfig) -> AsyncDatabase[Any]:
+def create_mongo_database(mongo_url: str, database_name: str) -> AsyncDatabase[Any]:
     client: AsyncMongoClient[Any] = AsyncMongoClient(
-        config.database.mongo.url,
+        mongo_url,
         uuidRepresentation="standard",
     )
-    return client[config.database.mongo.database_name]
+    return client[database_name]
 
 
-def create_auth(
-    config: FastAuthConfig,
+def create_options(
+    *,
+    secret_key: str,
     database: AsyncDatabase[Any],
-) -> FastAuth:
-    return FastAuth(
-        config,
-        adapter=BeanieAdapter(
+    collection_prefix: str = "",
+    collection_suffix: str = "",
+) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=secret_key,
+        database=mongo(
             database,
-            collection_prefix=config.database.mongo.collection_prefix,
-            collection_suffix=config.database.mongo.collection_suffix,
+            collection_prefix=collection_prefix,
+            collection_suffix=collection_suffix,
         ),
+        plugins=[email_password()],
     )
 
 
-async def init_auth_database(config: FastAuthConfig, database: AsyncDatabase[Any]) -> None:
+def create_auth(options: FastAuthOptions):
+    return fastauth(options)
+
+
+async def init_auth_database(
+    database: AsyncDatabase[Any],
+    *,
+    collection_prefix: str = "",
+    collection_suffix: str = "",
+) -> None:
     await init_beanie_documents(
         database,
-        collection_prefix=config.database.mongo.collection_prefix,
-        collection_suffix=config.database.mongo.collection_suffix,
+        collection_prefix=collection_prefix,
+        collection_suffix=collection_suffix,
     )
 '''
 
@@ -86,34 +110,41 @@ async def init_auth_database(config: FastAuthConfig, database: AsyncDatabase[Any
 POSTGRES_AUTH_SCAFFOLD = '''\
 """Postgres-backed fastauth instance for this application.
 
-Build ``FastAuthConfig`` in your application code. The Postgres URL and table
-prefix/suffix come from ``config.database.postgres``; fastauth never reads
+Build ``FastAuthOptions`` in your application code. The Postgres URL and table
+prefix/suffix come from your own settings object; fastauth never reads
 process-level configuration.
 """
 from __future__ import annotations
 
 from fastapi import FastAPI
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.storage.postgres import PostgresAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import postgres
+from fastauth.providers import email_password
 
 
-def create_auth(config: FastAuthConfig) -> FastAuth:
-    adapter = PostgresAdapter.from_url(
-        config.database.postgres.url,
-        table_prefix=config.database.postgres.table_prefix,
-        table_suffix=config.database.postgres.table_suffix,
+def create_options(
+    *,
+    secret_key: str,
+    postgres_url: str,
+    table_prefix: str = "fastauth_",
+    table_suffix: str = "",
+) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=secret_key,
+        database=postgres(
+            postgres_url,
+            table_prefix=table_prefix,
+            table_suffix=table_suffix,
+        ),
+        plugins=[email_password()],
     )
-    return FastAuth(config, adapter=adapter)
 
 
-def create_app(config: FastAuthConfig) -> FastAPI:
-    auth = create_auth(config)
-    adapter = auth.context.adapter
-    if not isinstance(adapter, PostgresAdapter):
-        raise RuntimeError("expected PostgresAdapter")
-    app = FastAPI(lifespan=adapter.checked_lifespan(auth))
-    auth.install(app)
+def create_app(options: FastAuthOptions) -> FastAPI:
+    auth = fastauth(options)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     return app
 '''
 
@@ -136,7 +167,7 @@ def init_command(
         help="Scaffold backend: memory, mongo, or postgres",
     ),
 ) -> None:
-    """Scaffold an ``auth.py`` showing explicit FastAuthConfig construction."""
+    """Scaffold an ``auth.py`` showing explicit FastAuthOptions construction."""
     backend_key = backend.lower()
     if backend_key not in AUTH_SCAFFOLDS:
         rich_print("[red]--backend must be one of: memory, mongo, postgres[/red]")

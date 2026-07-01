@@ -21,12 +21,20 @@ the `/audit-logs/all` admin endpoint.
 ## Example
 
 ```python
-from fastauth.plugins.audit_logs import AuditLogsConfig, AuditLogsPlugin
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.audit_logs import AuditLogsConfig
+from fastauth.providers import audit_logs, email_password
 
-auth = FastAuth(
-    config,
-    adapter=adapter,
-    plugins=[AuditLogsPlugin(AuditLogsConfig(admin_user_ids=["00000000-...-admin"]))],
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[
+            email_password(),
+            audit_logs(AuditLogsConfig(admin_user_ids=["00000000-...-admin"])),
+        ],
+    )
 )
 ```
 

@@ -33,12 +33,14 @@ parsing email bodies.
 ## Configuration
 
 ```python
-from fastauth.config import FastAuthConfig, EmailVerificationConfig
+from fastauth import FastAuthOptions
+from fastauth.options import EmailVerificationOptions
+from datetime import timedelta
 
-config = FastAuthConfig(
+options = FastAuthOptions(
     # ...
-    email_verification=EmailVerificationConfig(
-        token_ttl_minutes=15,
+    email_verification=EmailVerificationOptions(
+        expires_in=timedelta(minutes=15),
         base_verify_url="https://app.example.com/verify",
         require_verified_for_sign_in=True,
     ),
@@ -50,14 +52,16 @@ config = FastAuthConfig(
 Replace the default `ConsoleEmailSender` with your provider's adapter:
 
 ```python
+from fastauth import fastauth
+
 class SesEmailSender:
     async def send(self, message: EmailMessage) -> None:
         ...
 
-auth = FastAuth(config, adapter=adapter, email_sender=SesEmailSender())
+auth = fastauth(options, email_sender=SesEmailSender())
 ```
 
 ## Capturing tokens in tests
 
-Install `TestUtilsPlugin(TestUtilsConfig(capture_otp=True))` and read
+Install `test_utils(TestUtilsConfig(capture_otp=True))` and read
 `helpers.get_otp(identifier)` after triggering the verification email.

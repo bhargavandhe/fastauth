@@ -82,7 +82,8 @@ def test_user_facing_docs_do_not_reference_removed_database_config_fields() -> N
         "config.database.mongo_url",
         "config.database.database_name",
         "DatabaseConfig(mongo_url",
-        "mongo_url=",
+        "FastAuthConfig",
+        "auth.install(app)",
     )
     offenders: list[str] = []
     for path in project_files("README.md", "docs"):
@@ -100,7 +101,7 @@ def test_postgres_docs_describe_tracked_migrations() -> None:
     deploying = read_project_file("docs/guides/deploying.md")
 
     assert "schema_migrations" in adapters
-    assert "adapter.checked_lifespan(auth)" in adapters
+    assert "postgres(url, apply_migrations=False)" in adapters
     assert "tracked schema migrations" in deploying
 
 
@@ -111,10 +112,12 @@ def test_installation_docs_match_fastauth_init_output() -> None:
     assert "writes auth.py" in text
 
 
-def test_readme_quickstart_uses_auth_install() -> None:
+def test_readme_quickstart_uses_auth_mount() -> None:
     text = read_project_file("README.md")
 
-    assert "auth.install(app)" in text
+    assert "auth.mount(app)" in text
+    assert "FastAuthOptions" in text
+    assert "plugins=[email_password()]" in text
     assert (
         "with CSRF, rate-limiting, account-lockout, refresh\n"
         "tokens, and security headers all on by default."

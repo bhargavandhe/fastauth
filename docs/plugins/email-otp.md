@@ -11,53 +11,59 @@ When enabled, the plugin contributes the following endpoints to
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/auth/email-otp/send-verification-otp` | Issue + email an OTP. `type` ∈ `sign-in \| email-verification \| password-reset` |
+| `POST` | `/auth/email-otp/send-verification-otp` | Issue + email an OTP. `purpose` in `sign-in \| email-verification \| password-reset` |
 | `POST` | `/auth/email-otp/check-verification-otp` | Verify an OTP **without consuming it** (UX pre-check) |
 | `POST` | `/auth/sign-in/email-otp` | Consume OTP → return session. Auto-registers if user is new |
-| `POST` | `/auth/email-otp/verify-email` | Consume OTP → mark `email_verified=true` |
+| `POST` | `/auth/email-otp/verify-email` | Consume OTP → mark `emailVerified=true` |
 | `POST` | `/auth/email-otp/request-password-reset` | Issue + email a reset OTP |
 | `POST` | `/auth/email-otp/reset-password` | Consume OTP → set new password, revoke sessions |
-| `POST` | `/auth/email-otp/request-email-change` | (Auth required) issue OTP for new email — gated by `change_email_enabled` |
-| `POST` | `/auth/email-otp/change-email` | (Auth required) consume OTP → update email — gated by `change_email_enabled` |
+| `POST` | `/auth/email-otp/request-email-change` | (Auth required) issue OTP for new email when email-change is enabled |
+| `POST` | `/auth/email-otp/change-email` | (Auth required) consume OTP → update email when email-change is enabled |
 
 ## Installation
 
 ```python
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.flows.email_otp import EmailOtpConfig
-from fastauth.plugins.email_otp import EmailOtpPlugin
+from datetime import timedelta
 
-auth = FastAuth(
-    config,
-    adapter=adapter,
-    plugins=[
-        EmailOtpPlugin(EmailOtpConfig(
-            length=6,
-            expires_in_seconds=300,
-            allowed_attempts=3,
-            disable_sign_up=False,
-            change_email_enabled=False,
-        )),
-    ],
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions
+from fastauth.providers import email_otp, email_password
+
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[
+            email_password(),
+            email_otp(EmailOtpOptions(
+                code_length=6,
+                expires_in=timedelta(minutes=5),
+                max_attempts=3,
+                allow_sign_up=True,
+                email_change=EmailChangeOtpOptions(enabled=False),
+            )),
+        ],
+    )
 )
 ```
 
 Every config field has a sensible default; the snippet above shows the
-defaults explicitly. Pass an empty `EmailOtpConfig()` (or simply
-`EmailOtpPlugin()`) to accept all defaults.
+defaults explicitly. Pass an empty `EmailOtpOptions()` (or simply
+`email_otp()`) to accept all defaults.
 
 ## Configuration reference
 
-`EmailOtpConfig` fields:
+`EmailOtpOptions` fields:
 
 | Field | Default | Notes |
 |---|---|---|
-| `length` | `6` | OTP digit count. Range 4–10 (validated at construction). |
-| `expires_in_seconds` | `300` | Per-OTP TTL (5 minutes). After this the row is expired and a fresh OTP is required. |
-| `allowed_attempts` | `3` | Failed verifications before the OTP row is destroyed. The user must request a new OTP. |
-| `disable_sign_up` | `False` | When `True`, sign-in via OTP rejects unknown emails (no auto-register). The send endpoint silently no-ops on unknown emails to preserve anti-enumeration. |
-| `change_email_enabled` | `False` | Registers `/email-otp/request-email-change` and `/email-otp/change-email`. |
-| `change_email_verify_current` | `False` | When `True`, the email-change request must include an OTP previously sent to the user's *current* email (`type=email-verification`) before a new-email OTP is issued. |
+| `code_length` | `6` | OTP digit count. Range 4–10 (validated at construction). |
+| `expires_in` | `timedelta(minutes=5)` | Per-OTP TTL. After this the row is expired and a fresh OTP is required. |
+| `max_attempts` | `3` | Failed verifications before the OTP row is destroyed. The user must request a new OTP. |
+| `allow_sign_up` | `True` | When `False`, sign-in via OTP rejects unknown emails. The send endpoint silently no-ops on unknown emails to preserve anti-enumeration. |
+| `email_change.enabled` | `False` | Registers `/email-otp/request-email-change` and `/email-otp/change-email`. |
+| `email_change.verify_current_email` | `False` | When `True`, the email-change request must include an OTP previously sent to the user's current email (`purpose=email-verification`) before a new-email OTP is issued. |
 
 ## Sign-in flow
 
@@ -65,7 +71,7 @@ defaults explicitly. Pass an empty `EmailOtpConfig()` (or simply
 # 1. Client requests an OTP
 await client.post(
     "/auth/email-otp/send-verification-otp",
-    json={"email": "alice@example.com", "type": "sign-in"},
+    json={"email": "alice@example.com", "purpose": "sign-in"},
 )
 # 2. User reads the email, types the 6-digit code into your UI
 # 3. Client exchanges the OTP for a session
@@ -73,16 +79,16 @@ response = await client.post(
     "/auth/sign-in/email-otp",
     json={"email": "alice@example.com", "otp": "123456", "name": "Alice"},
 )
-# response.json() carries {user, session, token?, refresh_token?}
+# response.json() carries {user, session, credentials?}
 # A session cookie is set on the response.
 ```
 
 If the email doesn't match an existing user, a new user is created with
-`email_verified=true` (OTP delivery proved email ownership) and an
+`emailVerified=true` (OTP delivery proved email ownership) and an
 `Account` row tied to `ProviderId.EMAIL_OTP` with no password. The
 `name` field on the request is only consulted for new users.
 
-To restrict to existing users only, set `disable_sign_up=True`. The send
+To restrict to existing users only, set `allow_sign_up=False`. The send
 endpoint will silently succeed on unknown emails (anti-enumeration) and
 the sign-in endpoint will return `401 INVALID_CREDENTIALS`.
 
@@ -91,7 +97,7 @@ the sign-in endpoint will return `401 INVALID_CREDENTIALS`.
 ```python
 await client.post(
     "/auth/email-otp/send-verification-otp",
-    json={"email": user.email, "type": "email-verification"},
+    json={"email": user.email, "purpose": "email-verification"},
 )
 await client.post(
     "/auth/email-otp/verify-email",
@@ -123,27 +129,27 @@ creates the credential `Account` row for them; subsequent sign-ins via
 
 ## Change email
 
-Set `change_email_enabled=True` to register the change-email pair.
+Set `email_change=EmailChangeOtpOptions(enabled=True)` to register the change-email pair.
 Without an authenticated session both endpoints return `401`.
 
 ```python
 # Request OTP for the new email
 await client.post(
     "/auth/email-otp/request-email-change",
-    json={"new_email": "new@example.com"},
+    json={"newEmail": "new@example.com"},
     cookies=session_cookies,
 )
 # Confirm with the OTP delivered to the new email
 await client.post(
     "/auth/email-otp/change-email",
-    json={"new_email": "new@example.com", "otp": "123456"},
+    json={"newEmail": "new@example.com", "otp": "123456"},
     cookies=session_cookies,
 )
 ```
 
-For added security, set `change_email_verify_current=True`. The request
+For added security, set `EmailChangeOtpOptions(verify_current_email=True)`. The request
 endpoint then requires a second OTP that the client must have separately
-obtained via `send-verification-otp` with `type=email-verification`. This
+obtained via `send-verification-otp` with `purpose=email-verification`. This
 double-confirms the change is initiated by someone who controls *both*
 the current and new email addresses, defending against the case where an
 attacker has temporarily-active session cookies.
@@ -152,19 +158,19 @@ attacker has temporarily-active session cookies.
 # 1. Send an OTP to the user's current email first
 await client.post(
     "/auth/email-otp/send-verification-otp",
-    json={"email": current_email, "type": "email-verification"},
+    json={"email": current_email, "purpose": "email-verification"},
     cookies=session_cookies,
 )
 # 2. Submit the change request with that OTP, plus the new email
 await client.post(
     "/auth/email-otp/request-email-change",
-    json={"new_email": "new@example.com", "otp_for_current": "123456"},
+    json={"newEmail": "new@example.com", "otpForCurrent": "123456"},
     cookies=session_cookies,
 )
 # 3. Then confirm with the OTP delivered to the new email
 await client.post(
     "/auth/email-otp/change-email",
-    json={"new_email": "new@example.com", "otp": "654321"},
+    json={"newEmail": "new@example.com", "otp": "654321"},
     cookies=session_cookies,
 )
 ```
@@ -178,7 +184,7 @@ consuming it. Useful for "submit your code" forms that want to display a
 ```python
 await client.post(
     "/auth/email-otp/check-verification-otp",
-    json={"email": user.email, "type": "sign-in", "otp": "123456"},
+    json={"email": user.email, "purpose": "sign-in", "otp": "123456"},
 )
 ```
 
@@ -197,7 +203,7 @@ account.
   available — every send issues a fresh OTP and invalidates any prior
   un-consumed code (the "rotate" strategy).
 - **Per-OTP attempt cap.** Each OTP row carries an `attempt_count`. When
-  it equals `allowed_attempts` the row is deleted; the user must
+  it equals `max_attempts` the row is deleted; the user must
   request a fresh OTP.
 - **Lockout coupling.** Failed sign-in / verify-email / reset / change
   OTP attempts feed `AccountLockoutTracker.record_failure(identifier)`
@@ -208,17 +214,17 @@ account.
   `{"success": true}`, regardless of whether the email matches an
   existing user. This holds for `email-verification` and `password-reset`
   where the recipient must already be a user, and for `sign-in` when
-  `disable_sign_up=True`.
+  `allow_sign_up=False`.
 - **One-time use.** A successful verification deletes the row; the same
   OTP cannot be replayed for a second action.
 - **Rate limiting.** The plugin contributes per-IP rate-limit rules:
   - 3/min on `send-verification-otp` and `request-password-reset`
   - 10/min on `check-verification-otp`, `sign-in`, `verify-email`,
-    `reset-password`. These compose with the global `RateLimitConfig`.
+    `reset-password`. These compose with the global `RateLimitOptions`.
 
 ## Audit events
 
-The plugin publishes three new events that `AuditLogsPlugin` will
+The plugin publishes three new events that `audit_logs()` will
 auto-capture:
 
 - `OtpRequested(identifier, purpose)` — emitted on every issuance. No
@@ -236,26 +242,30 @@ codes during integration tests.
 ## Capturing OTPs in tests
 
 ```python
-from fastauth.plugins.email_otp import EmailOtpPlugin
-from fastauth.plugins.test_utils import TestUtilsPlugin, TestUtilsConfig
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.test_utils import TestUtilsConfig
+from fastauth.providers import email_otp, test_utils
 
-auth = FastAuth(
-    config,
-    adapter=InMemoryAdapter(),
-    plugins=[
-        EmailOtpPlugin(),
-        TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
-    ],
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[
+            email_otp(),
+            test_utils(TestUtilsConfig(capture_otp=True)),
+        ],
+    )
 )
 
 # Trigger send
 await client.post("/auth/email-otp/send-verification-otp",
-                 json={"email": "alice@example.com", "type": "sign-in"})
+                 json={"email": "alice@example.com", "purpose": "sign-in"})
 # Read it back
 helpers = auth.context.plugins.by_id["fastauth-test-utils"].helpers
 otp = helpers.get_otp("alice@example.com")
 ```
 
-`TestUtilsPlugin` subscribes to `OtpGenerated` and stores plaintext OTPs
+`test_utils()` subscribes to `OtpGenerated` and stores plaintext OTPs
 in memory keyed by `identifier`. Only enable `capture_otp=True` in
 tests — production deployments should not capture plaintext codes.

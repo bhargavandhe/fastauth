@@ -2,7 +2,7 @@
 
 `CsrfMiddleware` blocks cross-origin state-changing requests by validating the
 `Origin` header (falling back to `Referer`) against
-`CsrfConfig.trusted_origins`. `GET`, `HEAD`, and `OPTIONS` are bypassed, and
+`CsrfOptions.trusted_origins`. `GET`, `HEAD`, and `OPTIONS` are bypassed, and
 Bearer-only requests are bypassed too — a request that does not carry the
 session cookie cannot be a CSRF target by definition.
 
@@ -19,7 +19,7 @@ app.add_middleware(
 
 Trusted-origin patterns support a leading `*.` wildcard
 (`https://*.app.test`) and can include relative paths when
-`csrf.allow_relative_paths` is enabled (default). `auth.install(app)` and
+`csrf.allow_relative_paths` is enabled (default). `auth.mount(app)` and
 `FastAuth.as_asgi()` install the middleware automatically. If you need
 lower-level control, call `fastauth.web.fastapi.install_csrf(app, auth.context)`
 directly.

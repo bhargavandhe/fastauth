@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -125,7 +126,7 @@ class RateLimitRule(BaseModel):
     """Declarative rate-limit rule for a plugin endpoint."""
 
     path: str
-    window_seconds: int
+    window: timedelta
     max_requests: int
 
 
@@ -191,10 +192,10 @@ class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses
 class PluginRegistry:
     """Validates and aggregates a list of `Plugin` instances."""
 
-    def __init__(self, plugins: list[Plugin]) -> None:
-        self.plugins = plugins
+    def __init__(self, plugins: Sequence[Plugin]) -> None:
+        self.plugins = list(plugins)
         self.by_id: dict[str, Plugin] = {}
-        for plugin in plugins:
+        for plugin in self.plugins:
             if not plugin.id:
                 raise ValueError(f"plugin {plugin.__class__.__name__} must set 'id'")
             if plugin.id in self.by_id:

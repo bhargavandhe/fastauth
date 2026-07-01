@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
-from pydantic import ConfigDict, EmailStr
+from pydantic import ConfigDict, EmailStr, SecretStr
 
+from fastauth.api.responses import authentication_response
 from fastauth.domain.enums import EmailMessageKind, VerificationPurpose
 from fastauth.domain.events import EmailVerificationSent, OtpGenerated, UserEmailVerified
 from fastauth.domain.models import EmailMessage, Verification, WireModel
@@ -32,7 +33,7 @@ class SendVerificationEmailRequest(WireModel):
 class VerifyEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
-    token: str
+    token: SecretStr
 
 
 async def send_verification_email(
@@ -104,7 +105,7 @@ async def verify_email(
     user_agent: str | None,
 ) -> tuple[SessionResponse, SessionContext]:
     """Verify a token, mark the user's email verified, and issue a fresh session."""
-    token_hash = context.token_service.hash_only(request.token)
+    token_hash = context.token_service.hash_only(request.token.get_secret_value())
     verification = await context.adapter.get_verification(
         request.email,
         VerificationPurpose.EMAIL_VERIFICATION,
@@ -141,7 +142,4 @@ async def verify_email(
             user_agent=user_agent,
         ),
     )
-    return (
-        SessionResponse(user=user, session=session_context.session),
-        session_context,
-    )
+    return (authentication_response(user=user, session=session_context.session), session_context)

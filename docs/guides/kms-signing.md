@@ -26,15 +26,26 @@ class CloudKmsSigner:
 Wire the factory into the plugin:
 
 ```python
-from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import memory
+from fastauth.plugins.jwt import JwtOptions
+from fastauth.providers import email_password, jwt
 
-auth = FastAuth(
-    config,
-    adapter=adapter,
-    plugins=[JwtPlugin(
-        JwtPluginConfig(disable_private_key_encryption=True),
-        signer_factory=lambda registry: CloudKmsSigner(registry, key_id="projects/.../fastauth"),
-    )],
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=memory(),
+        plugins=[
+            email_password(),
+            jwt(
+                JwtOptions(disable_private_key_encryption=True),
+                signer_factory=lambda registry: CloudKmsSigner(
+                    registry,
+                    key_id="projects/.../fastauth",
+                ),
+            ),
+        ],
+    )
 )
 ```
 
@@ -47,5 +58,5 @@ be a placeholder.
 
 `LocalKmsSigner` is the default signer; it loads the encrypted private key
 from the `jwks_keys` collection, decrypts it with a KEK derived from
-`config.secret_key`, and signs in-process. This is appropriate for
+`options.secret_key`, and signs in-process. This is appropriate for
 development and small deployments.

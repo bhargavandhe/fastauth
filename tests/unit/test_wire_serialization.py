@@ -1,10 +1,21 @@
 from __future__ import annotations
 
-from fastauth.web.fastapi import camelize_keys
+from fastauth.security.jwt import JwksDocument
 
 
-def test_camelize_keys_preserves_jwks_key_parameters() -> None:
-    body = {
+def test_jwks_document_preserves_jwk_key_parameters() -> None:
+    body = JwksDocument(
+        keys=[
+            {
+                "kid": "k1",
+                "kty": "OKP",
+                "key_ops": ["verify"],
+                "x5t#S256": "thumbprint",
+            },
+        ],
+    )
+
+    assert body.model_dump() == {
         "keys": [
             {
                 "kid": "k1",
@@ -14,5 +25,3 @@ def test_camelize_keys_preserves_jwks_key_parameters() -> None:
             },
         ],
     }
-
-    assert camelize_keys(body) == body

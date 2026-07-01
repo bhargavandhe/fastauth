@@ -9,22 +9,27 @@ Optional capabilities live in separate protocols:
 - `ApiKeyStore` for `ApiKeyPlugin`.
 - `JwksKeyStore` for `JwtPlugin` and JWT session strategy.
 - `AuditLogStore` for `AuditLogsPlugin`.
-- `RateLimitStore` when `RateLimitConfig.storage == DATABASE`.
+- `RateLimitStore` when `RateLimitOptions.storage == DATABASE`.
 
 `InMemoryAdapter`, `BeanieAdapter`, and `PostgresAdapter` implement every
 first-party capability.
 
 ```python
-from fastapi import FastAPI
 from pymongo import AsyncMongoClient
-from fastauth.storage.beanie import BeanieAdapter
+
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import mongo
+from fastauth.providers import email_password
 
 mongo_client = AsyncMongoClient("mongodb://localhost:27017", uuidRepresentation="standard")
 mongo_database = mongo_client["myapp"]
-adapter = BeanieAdapter(mongo_database)
-
-# Use adapter.lifespan(auth) in FastAPI to initialize Beanie indexes at startup.
-app = FastAPI(lifespan=adapter.lifespan(auth))
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=mongo(mongo_database),
+        plugins=[email_password()],
+    )
+)
 ```
 
 The Mongo adapter stores primary keys and Mongo-owned relation ids as
@@ -34,13 +39,17 @@ Protocol identifiers such as JWKS `kid` remain strings because they are not
 Mongo references.
 
 To namespace fastauth collections inside a shared Mongo database, pass a
-prefix and/or suffix when constructing the adapter:
+prefix and/or suffix through the Mongo database option:
 
 ```python
-adapter = BeanieAdapter(
-    mongo_database,
-    collection_prefix="tenant_",
-    collection_suffix="_auth",
+options = FastAuthOptions(
+    secret_key="replace-me-with-your-application-secret",
+    database=mongo(
+        mongo_database,
+        collection_prefix="tenant_",
+        collection_suffix="_auth",
+    ),
+    plugins=[email_password()],
 )
 ```
 
@@ -53,27 +62,30 @@ For Postgres, install `fastauth-py[postgres]` and pass a SQLAlchemy async
 engine or URL:
 
 ```python
-from fastapi import FastAPI
-from fastauth.storage.postgres import PostgresAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import postgres
+from fastauth.providers import email_password
 
-adapter = PostgresAdapter.from_url(
-    "postgresql+asyncpg://user:pass@localhost/myapp",
-    table_prefix="fastauth_",
-    table_suffix="",
+auth = fastauth(
+    FastAuthOptions(
+        secret_key="replace-me-with-your-application-secret",
+        database=postgres(
+            "postgresql+asyncpg://user:pass@localhost/myapp",
+            table_prefix="fastauth_",
+            table_suffix="",
+        ),
+        plugins=[email_password()],
+    )
 )
-
-# Convenience path: apply tracked fastauth migrations before startup.
-app = FastAPI(lifespan=adapter.lifespan(auth))
 ```
 
 `fastauth migrate --postgres-url postgresql+asyncpg://...` applies the same
 tracked schema migrations from the CLI and records the fastauth schema version
 in `<prefix>schema_migrations<suffix>`. Postgres table names follow the same
 `<prefix><base><suffix>` rule as Mongo collections. For long-lived production
-deployments, run the CLI during deploy and start FastAPI with
-`adapter.checked_lifespan(auth)` or `adapter.lifespan(auth, apply_migrations=False)`
-so the app fails fast if the database is behind instead of mutating schema at
-process startup.
+deployments, run the CLI during deploy and pass
+`postgres(url, apply_migrations=False)` so the app fails fast if the database
+is behind instead of mutating schema at process startup.
 
 The adapter uses FastAuth's string domain IDs as primary keys and stores plugin
 data in native Postgres types such as `jsonb` and `bytea`.

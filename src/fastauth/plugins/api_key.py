@@ -10,11 +10,12 @@ from __future__ import annotations
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
+from fastauth.api.responses import ApiKeyView, api_key_view
 from fastauth.domain.events import ApiKeyCreated, ApiKeyRevoked, ApiKeyVerifyFailed
 from fastauth.domain.models import ApiKey, WireModel
 from fastauth.exceptions import ConfigError, InvalidCredentialsError, NotFoundError
@@ -25,7 +26,7 @@ from fastauth.security.tokens import TokenService
 from fastauth.storage.base import ApiKeyStore
 
 __all__ = [
-    "ApiKeyConfig",
+    "ApiKeyOptions",
     "ApiKeyPlugin",
     "CreateApiKeyRequest",
     "CreateApiKeyResponse",
@@ -41,52 +42,49 @@ __all__ = [
 ]
 
 
-class ApiKeyConfig(BaseModel):
+class ApiKeyOptions(BaseModel):
     """Static configuration for ``ApiKeyPlugin``.
 
     All fields are defaults applied when the create request omits the
     corresponding value.
     """
 
-    model_config = ConfigDict(extra="forbid")
-    default_prefix: str = "ak_"
-    default_remaining: int | None = None
-    default_rate_limit_max: int | None = None
-    default_rate_limit_window_ms: int | None = None
-    default_expires_in_seconds: int | None = None
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    default_prefix: str = Field(default="ak_", min_length=1, max_length=32)
+    default_remaining: int | None = Field(default=None, ge=1)
+    default_rate_limit_max: int | None = Field(default=None, ge=1)
+    default_rate_limit_window: timedelta | None = Field(default=None, gt=timedelta(0))
+    default_expires_in: timedelta | None = Field(default=None, gt=timedelta(0))
 
 
 class CreateApiKeyRequest(WireModel):
     """Request body for ``POST /auth/api-key/create``.
 
-    All numeric quota/interval fields are ``Field(ge=1)`` — a value of ``0``
-    on, say, ``expires_in_seconds`` would create a key that's expired-on-arrival,
-    and ``remaining=0`` would create a key that's exhausted on first verify. Both
-    are user-experience traps when API explorers (Scalar, Swagger UI) prefill
-    every numeric field with ``0``. Pass ``null`` or omit the field to opt out
-    of the corresponding limit; positive integers are otherwise required.
+    Durations remain ``timedelta`` at the API boundary and are converted to
+    seconds/milliseconds only when persisted in the storage model.
     """
 
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=128)
     remaining: int | None = Field(default=None, ge=1)
-    expires_in_seconds: int | None = Field(default=None, ge=1)
+    expires_in: timedelta | None = Field(default=None, gt=timedelta(0))
     refill_amount: int | None = Field(default=None, ge=1)
-    refill_interval_ms: int | None = Field(default=None, ge=1)
+    refill_interval: timedelta | None = Field(default=None, gt=timedelta(0))
     rate_limit_max: int | None = Field(default=None, ge=1)
-    rate_limit_window_ms: int | None = Field(default=None, ge=1)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    rate_limit_window: timedelta | None = Field(default=None, gt=timedelta(0))
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
     permissions: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class CreateApiKeyResponse(WireModel):
-    api_key: ApiKey
+    api_key: ApiKeyView
     key: str
 
 
 class VerifyApiKeyRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
-    key: str
+    key: SecretStr
     permissions: dict[str, list[str]] | None = None
 
 
@@ -97,7 +95,7 @@ class VerifyApiKeyError(WireModel):
 
 class VerifyApiKeyResponse(WireModel):
     valid: bool
-    api_key: ApiKey | None = None
+    api_key: ApiKeyView | None = None
     error: VerifyApiKeyError | None = None
 
 
@@ -106,7 +104,7 @@ class UpdateApiKeyRequest(WireModel):
     id: str
     name: str | None = None
     enabled: bool | None = None
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, JsonValue] | None = None
     permissions: dict[str, list[str]] | None = None
 
 
@@ -116,7 +114,7 @@ class DeleteApiKeyRequest(WireModel):
 
 
 class ListApiKeysResponse(WireModel):
-    items: list[ApiKey]
+    items: list[ApiKeyView]
     total: int
     limit: int
     offset: int
@@ -146,8 +144,9 @@ class ApiKeyPlugin(Plugin):
 
     id: ClassVar[str] = "fastauth-api-key"
 
-    def __init__(self, config: ApiKeyConfig | None = None) -> None:
-        self.config = config or ApiKeyConfig()
+    def __init__(self, options: ApiKeyOptions | None = None) -> None:
+        self.options = options or ApiKeyOptions()
+        self.config = self.options
         self.context: AuthContext | None = None
         self.store: ApiKeyStore | None = None
 
@@ -219,7 +218,7 @@ class ApiKeyPlugin(Plugin):
                 name="api_key_update",
                 tags=["ApiKey"],
                 handler=self.update_handler,
-                response_model=ApiKey,
+                response_model=ApiKeyView,
             ),
             EndpointSpec(
                 method="POST",
@@ -252,12 +251,8 @@ class ApiKeyPlugin(Plugin):
         prefix = self.config.default_prefix
         full_key = encode_api_key(prefix, plain)
         rate_limit_max = body.rate_limit_max or self.config.default_rate_limit_max
-        rate_limit_window_ms = body.rate_limit_window_ms or self.config.default_rate_limit_window_ms
-        expires_in_seconds = (
-            body.expires_in_seconds
-            if body.expires_in_seconds is not None
-            else self.config.default_expires_in_seconds
-        )
+        rate_limit_window = body.rate_limit_window or self.config.default_rate_limit_window
+        expires_in = body.expires_in or self.config.default_expires_in
         api_key = ApiKey(
             user_id=user_id,
             name=body.name,
@@ -267,13 +262,21 @@ class ApiKeyPlugin(Plugin):
                 body.remaining if body.remaining is not None else self.config.default_remaining
             ),
             refill_amount=body.refill_amount,
-            refill_interval_ms=body.refill_interval_ms,
+            refill_interval_ms=(
+                int(body.refill_interval.total_seconds() * 1000)
+                if body.refill_interval is not None
+                else None
+            ),
             rate_limit_max=rate_limit_max,
-            rate_limit_window_ms=rate_limit_window_ms,
+            rate_limit_window_ms=(
+                int(rate_limit_window.total_seconds() * 1000)
+                if rate_limit_window is not None
+                else None
+            ),
             rate_limit_enabled=bool(rate_limit_max),
             expires_at=(
-                datetime.now(UTC) + timedelta(seconds=expires_in_seconds)
-                if expires_in_seconds
+                datetime.now(UTC) + expires_in
+                if expires_in is not None
                 else None
             ),
             metadata=body.metadata,
@@ -283,15 +286,17 @@ class ApiKeyPlugin(Plugin):
         await context.event_bus.publish(
             ApiKeyCreated(user_id=user_id, api_key_id=api_key.id),
         )
-        return CreateApiKeyResponse(api_key=api_key, key=full_key)
+        return CreateApiKeyResponse(api_key=api_key_view(api_key), key=full_key)
 
     async def verify_handler(self, body: VerifyApiKeyRequest) -> VerifyApiKeyResponse:
         context = self.assert_bound()
         store = self.assert_store()
-        plain = split_api_key(body.key, self.config.default_prefix)
+        key_value = body.key.get_secret_value()
+        key_identifier = key_value[:8]
+        plain = split_api_key(key_value, self.config.default_prefix)
         if plain is None:
             await context.event_bus.publish(
-                ApiKeyVerifyFailed(identifier=body.key[:8]),
+                ApiKeyVerifyFailed(identifier=key_identifier),
             )
             return VerifyApiKeyResponse(
                 valid=False,
@@ -301,7 +306,7 @@ class ApiKeyPlugin(Plugin):
         api_key = await store.get_api_key_by_hash(TokenService().hash_only(plain))
         if api_key is None or not api_key.enabled:
             await context.event_bus.publish(
-                ApiKeyVerifyFailed(identifier=body.key[:8]),
+                ApiKeyVerifyFailed(identifier=key_identifier),
             )
             return VerifyApiKeyResponse(
                 valid=False,
@@ -312,7 +317,7 @@ class ApiKeyPlugin(Plugin):
 
         if api_key.expires_at is not None and api_key.expires_at < now:
             await context.event_bus.publish(
-                ApiKeyVerifyFailed(identifier=body.key[:8]),
+                ApiKeyVerifyFailed(identifier=key_identifier),
             )
             return VerifyApiKeyResponse(
                 valid=False,
@@ -336,7 +341,7 @@ class ApiKeyPlugin(Plugin):
                 api_key.last_request_at = now
                 await store.update_api_key(api_key)
                 await context.event_bus.publish(
-                    ApiKeyVerifyFailed(identifier=body.key[:8]),
+                    ApiKeyVerifyFailed(identifier=key_identifier),
                 )
                 return VerifyApiKeyResponse(
                     valid=False,
@@ -360,7 +365,7 @@ class ApiKeyPlugin(Plugin):
                     missing[resource] = missing_actions
             if missing:
                 await context.event_bus.publish(
-                    ApiKeyVerifyFailed(identifier=body.key[:8]),
+                    ApiKeyVerifyFailed(identifier=key_identifier),
                 )
                 return VerifyApiKeyResponse(
                     valid=False,
@@ -370,7 +375,7 @@ class ApiKeyPlugin(Plugin):
                     ),
                 )
 
-        return VerifyApiKeyResponse(valid=True, api_key=api_key)
+        return VerifyApiKeyResponse(valid=True, api_key=api_key_view(api_key))
 
     async def list_handler(
         self,
@@ -386,13 +391,18 @@ class ApiKeyPlugin(Plugin):
             limit=limit,
             offset=offset,
         )
-        return ListApiKeysResponse(items=items, total=total, limit=limit, offset=offset)
+        return ListApiKeysResponse(
+            items=[api_key_view(item) for item in items],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     async def update_handler(
         self,
         body: UpdateApiKeyRequest,
         request: Request,
-    ) -> ApiKey:
+    ) -> ApiKeyView:
         self.assert_bound()
         store = self.assert_store()
         user_id = await self.current_user_id(request)
@@ -408,7 +418,7 @@ class ApiKeyPlugin(Plugin):
         if body.permissions is not None:
             api_key.permissions = body.permissions
         await store.update_api_key(api_key)
-        return api_key
+        return api_key_view(api_key)
 
     async def delete_handler(
         self,

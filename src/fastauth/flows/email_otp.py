@@ -25,10 +25,17 @@ account just like five password failures would.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
+from enum import StrEnum
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import EmailStr, Field, SecretStr
 
+from fastauth.api.commands import (
+    BearerCredentialDelivery,
+    CookieCredentialDelivery,
+    CredentialDelivery,
+)
+from fastauth.api.responses import authentication_response
 from fastauth.config import FastAuthConfig
 from fastauth.domain.enums import (
     EmailMessageKind,
@@ -66,6 +73,7 @@ from fastauth.flows.credentials import (
     SessionResponse,
     maybe_issue_refresh_token,
 )
+from fastauth.plugins.email_otp_options import EmailOtpOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.otp import OtpService
 from fastauth.security.sessions import SessionContext
@@ -73,11 +81,10 @@ from fastauth.security.sessions import SessionContext
 __all__ = [
     "ChangeEmailOtpRequest",
     "CheckOtpRequest",
-    "EmailOtpConfig",
+    "EmailOtpPurpose",
     "RequestEmailChangeOtpRequest",
     "RequestPasswordResetOtpRequest",
     "ResetPasswordOtpRequest",
-    "SendOtpKind",
     "SendOtpRequest",
     "SignInOtpRequest",
     "VerifyEmailOtpRequest",
@@ -93,70 +100,46 @@ __all__ = [
 ]
 
 
-# --- Config (owned by the plugin, threaded through to flows) -----------------
-
-
-class EmailOtpConfig(BaseModel):
-    """Tunables for the email-OTP plugin.
-
-    Defaults match better-auth: 6 digits, 5-minute expiry, 3 attempts per
-    OTP. Auto-sign-up on first sign-in is enabled (set
-    ``disable_sign_up=True`` for closed-membership applications).
-    """
-
-    length: int = 6
-    expires_in_seconds: int = 300
-    allowed_attempts: int = 3
-    disable_sign_up: bool = False
-    change_email_enabled: bool = False
-    change_email_verify_current: bool = False
-
-
 # --- Request payloads --------------------------------------------------------
 
 
-# better-auth uses the strings "sign-in" / "email-verification" /
-# "forget-password" as the discriminator. We keep those wire values
-# verbatim for compatibility, then map them onto our internal
-# ``VerificationPurpose`` enum at the boundary.
-SendOtpKind = str  # one of: "sign-in" | "email-verification" | "password-reset"
+class EmailOtpPurpose(StrEnum):
+    SIGN_IN = "sign-in"
+    EMAIL_VERIFICATION = "email-verification"
+    PASSWORD_RESET = "password-reset"  # noqa: S105
 
 
-def purpose_for_kind(kind: str) -> VerificationPurpose:
+def purpose_for_kind(kind: EmailOtpPurpose) -> VerificationPurpose:
     """Map the wire-level OTP kind onto the internal ``VerificationPurpose``."""
     mapping = {
-        "sign-in": VerificationPurpose.EMAIL_OTP_SIGN_IN,
-        "email-verification": VerificationPurpose.EMAIL_OTP_VERIFICATION,
-        "password-reset": VerificationPurpose.EMAIL_OTP_PASSWORD_RESET,
-        # Accept better-auth's legacy spelling as a synonym.
-        "forget-password": VerificationPurpose.EMAIL_OTP_PASSWORD_RESET,
+        EmailOtpPurpose.SIGN_IN: VerificationPurpose.EMAIL_OTP_SIGN_IN,
+        EmailOtpPurpose.EMAIL_VERIFICATION: VerificationPurpose.EMAIL_OTP_VERIFICATION,
+        EmailOtpPurpose.PASSWORD_RESET: VerificationPurpose.EMAIL_OTP_PASSWORD_RESET,
     }
-    if kind not in mapping:
-        raise TokenInvalidError(message=f"unknown otp kind: {kind!r}")
     return mapping[kind]
 
 
 class SendOtpRequest(WireModel):
     email: EmailStr
-    type: str = Field(description="One of: sign-in | email-verification | password-reset")
+    purpose: EmailOtpPurpose
 
 
 class CheckOtpRequest(WireModel):
     email: EmailStr
-    type: str
-    otp: str
+    purpose: EmailOtpPurpose
+    otp: SecretStr
 
 
 class SignInOtpRequest(WireModel):
     email: EmailStr
-    otp: str
+    otp: SecretStr
     name: str | None = None
-    include_token: bool = False
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
 
 class VerifyEmailOtpRequest(WireModel):
     email: EmailStr
-    otp: str
+    otp: SecretStr
 
 
 class RequestPasswordResetOtpRequest(WireModel):
@@ -165,18 +148,18 @@ class RequestPasswordResetOtpRequest(WireModel):
 
 class ResetPasswordOtpRequest(WireModel):
     email: EmailStr
-    otp: str
-    password: str = Field(min_length=8)
+    otp: SecretStr
+    password: SecretStr
 
 
 class RequestEmailChangeOtpRequest(WireModel):
     new_email: EmailStr
-    otp_for_current: str | None = None
+    otp_for_current: SecretStr | None = None
 
 
 class ChangeEmailOtpRequest(WireModel):
     new_email: EmailStr
-    otp: str
+    otp: SecretStr
 
 
 # --- Internal helpers --------------------------------------------------------
@@ -209,7 +192,7 @@ KIND_BY_PURPOSE: dict[VerificationPurpose, EmailMessageKind] = {
 async def issue_otp(
     context: AuthContext,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     identifier: str,
     purpose: VerificationPurpose,
@@ -224,7 +207,7 @@ async def issue_otp(
     """
     await context.adapter.delete_verifications_for_identifier(identifier, purpose)
     pair = otp_service.generate_pair()
-    expires_at = datetime.now(UTC) + timedelta(seconds=config.expires_in_seconds)
+    expires_at = datetime.now(UTC) + config.expires_in
     await context.adapter.create_verification(
         Verification(
             identifier=identifier,
@@ -238,7 +221,7 @@ async def issue_otp(
     template_vars: dict[str, str] = {
         "otp": pair.plain,
         "name": user_name or "",
-        "expires_in_minutes": str(max(1, config.expires_in_seconds // 60)),
+        "expires_in_minutes": str(max(1, int(config.expires_in.total_seconds()) // 60)),
     }
     if extra_template_vars:
         template_vars.update(extra_template_vars)
@@ -269,7 +252,7 @@ async def issue_otp(
 async def consume_otp(
     context: AuthContext,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     identifier: str,
     purpose: VerificationPurpose,
@@ -283,7 +266,7 @@ async def consume_otp(
     must not attempt further reads against the same id.
 
     On miss the row's ``attempt_count`` is bumped. When it equals or
-    exceeds ``config.allowed_attempts`` the row is deleted and a fresh
+    exceeds ``config.max_attempts`` the row is deleted and a fresh
     OTP is required.
 
     When ``feed_lockout=True`` (the default for sign-in / verify-email /
@@ -316,7 +299,7 @@ async def consume_otp(
 
     if not otp_service.verify_match(plain_otp, row.value_hash):
         row.attempt_count += 1
-        if row.attempt_count >= config.allowed_attempts:
+        if row.attempt_count >= config.max_attempts:
             # Burned. Delete; user must request a fresh one.
             await context.adapter.delete_verification(row.id)
         else:
@@ -347,7 +330,7 @@ async def send_otp(
     context: AuthContext,
     request: SendOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
@@ -357,14 +340,14 @@ async def send_otp(
     For ``sign-in`` we send the OTP regardless of whether the user
     exists, because auto-sign-up is enabled by default and a non-existent
     user is a legitimate first-time-signup recipient. When
-    ``disable_sign_up=True`` AND the user doesn't exist we still return
+    sign-up is disabled AND the user doesn't exist we still return
     success but skip the email — anti-enumeration.
     """
-    purpose = purpose_for_kind(request.type)
+    purpose = purpose_for_kind(request.purpose)
     user = await context.adapter.get_user_by_email(request.email)
 
     if purpose is VerificationPurpose.EMAIL_OTP_SIGN_IN:
-        if user is None and config.disable_sign_up:
+        if user is None and not config.allow_sign_up:
             # Anti-enumeration: silently succeed without sending.
             return EmptyResponse(success=True)
     elif user is None:
@@ -395,7 +378,7 @@ async def check_otp(
     context: AuthContext,
     request: CheckOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
 ) -> EmptyResponse:
     """Verify an OTP **without consuming it**. Used as a UX pre-check.
@@ -409,16 +392,16 @@ async def check_otp(
     untouched so the actual sign-in / verify-email / reset endpoint can
     consume it next.
     """
-    purpose = purpose_for_kind(request.type)
+    purpose = purpose_for_kind(request.purpose)
     row = await context.adapter.get_active_verification(request.email, purpose)
     if row is None:
         raise TokenInvalidError(message="no active otp for this email")
     if row.expires_at <= datetime.now(UTC):
         await context.adapter.delete_verification(row.id)
         raise TokenExpiredError(message="otp expired")
-    if not otp_service.verify_match(request.otp, row.value_hash):
+    if not otp_service.verify_match(request.otp.get_secret_value(), row.value_hash):
         row.attempt_count += 1
-        if row.attempt_count >= config.allowed_attempts:
+        if row.attempt_count >= config.max_attempts:
             await context.adapter.delete_verification(row.id)
         else:
             await context.adapter.update_verification(row)
@@ -430,7 +413,7 @@ async def sign_in_with_otp(
     context: AuthContext,
     request: SignInOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
@@ -438,18 +421,18 @@ async def sign_in_with_otp(
     """Consume an OTP and return a fresh session. Auto-registers new users.
 
     When the email doesn't match an existing user AND
-    ``config.disable_sign_up=False`` (the default), a new user is
+    ``config.allow_sign_up=True`` (the default), a new user is
     created with no password and an ``Account`` row tied to
     ``ProviderId.EMAIL_OTP``. Email is marked verified because OTP
     delivery proves ownership.
 
-    When ``disable_sign_up=True`` and the user doesn't exist, this raises
+    When sign-up is disabled and the user doesn't exist, this raises
     ``InvalidCredentialsError`` — consistent with better-auth.
     """
     await context.lockout_tracker.check_locked(request.email)
     user = await context.adapter.get_user_by_email(request.email)
     is_new_user = user is None
-    if user is None and config.disable_sign_up:
+    if user is None and not config.allow_sign_up:
         # Even though there's no user, still record the failure so an
         # attacker iterating emails sees uniform timing.
         await context.lockout_tracker.record_failure(request.email)
@@ -460,7 +443,7 @@ async def sign_in_with_otp(
         otp_service=otp_service,
         identifier=request.email,
         purpose=VerificationPurpose.EMAIL_OTP_SIGN_IN,
-        plain_otp=request.otp,
+        plain_otp=request.otp.get_secret_value(),
         feed_lockout=True,
     )
 
@@ -546,15 +529,19 @@ async def sign_in_with_otp(
     refresh_plain = await maybe_issue_refresh_token(
         context,
         user_id=user.id,
-        include_token=request.include_token,
+        delivery=request.delivery,
         ip=ip,
         user_agent=user_agent,
     )
     return (
-        SessionResponse(
+        authentication_response(
             user=user,
             session=session_context.session,
-            token=session_context.token if request.include_token else None,
+            token=(
+                session_context.token
+                if isinstance(request.delivery, BearerCredentialDelivery)
+                else None
+            ),
             refresh_token=refresh_plain,
         ),
         session_context,
@@ -565,7 +552,7 @@ async def verify_email_with_otp(
     context: AuthContext,
     request: VerifyEmailOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
@@ -585,7 +572,7 @@ async def verify_email_with_otp(
         otp_service=otp_service,
         identifier=request.email,
         purpose=VerificationPurpose.EMAIL_OTP_VERIFICATION,
-        plain_otp=request.otp,
+        plain_otp=request.otp.get_secret_value(),
         feed_lockout=True,
     )
     if not user.email_verified:
@@ -613,7 +600,7 @@ async def request_password_reset_otp(
     context: AuthContext,
     request: RequestPasswordResetOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
@@ -644,7 +631,7 @@ async def reset_password_with_otp(
     context: AuthContext,
     request: ResetPasswordOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
@@ -658,10 +645,12 @@ async def reset_password_with_otp(
         otp_service=otp_service,
         identifier=request.email,
         purpose=VerificationPurpose.EMAIL_OTP_PASSWORD_RESET,
-        plain_otp=request.otp,
+        plain_otp=request.otp.get_secret_value(),
         feed_lockout=True,
     )
-    new_hash = context.password_hasher.hash(request.password)
+    from fastauth.flows.credentials import validate_password_policy
+
+    new_hash = context.password_hasher.hash(validate_password_policy(context, request.password))
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None:
         # User signed up via OTP and never set a password. Create the
@@ -708,16 +697,16 @@ async def request_email_change_otp(
     request: RequestEmailChangeOtpRequest,
     *,
     auth_config: FastAuthConfig,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
     """Send an OTP to the user's *new* email address.
 
-    When ``config.change_email_verify_current=True`` the caller must
+    When ``config.email_change.verify_current_email=True`` the caller must
     first send themselves an OTP via the regular send-otp flow (with
-    ``type=email-verification``) and pass that OTP as
+    ``purpose=email-verification``) and pass that OTP as
     ``otp_for_current``. We verify it here before sending the new-email
     OTP. This double-confirm protects against an attacker who has
     transient access to a logged-in session.
@@ -725,7 +714,7 @@ async def request_email_change_otp(
     Duplicate-email + same-as-current-email checks match the
     token-based change-email flow (:mod:`fastauth.flows.change_email`).
     """
-    if not config.change_email_enabled:
+    if not config.email_change.enabled:
         raise NotFoundError(resource="change_email_otp_endpoint")
     if request.new_email == user.email:
         raise TokenInvalidError(message="new email matches current email")
@@ -733,7 +722,7 @@ async def request_email_change_otp(
     if existing is not None and existing.id != user.id:
         raise TokenInvalidError(message="new email already in use")
 
-    if config.change_email_verify_current:
+    if config.email_change.verify_current_email:
         if request.otp_for_current is None:
             raise InvalidCredentialsError()
         # Consume the verification OTP sent to the *current* email.
@@ -743,7 +732,7 @@ async def request_email_change_otp(
             otp_service=otp_service,
             identifier=user.email,
             purpose=VerificationPurpose.EMAIL_OTP_VERIFICATION,
-            plain_otp=request.otp_for_current,
+            plain_otp=request.otp_for_current.get_secret_value(),
             feed_lockout=True,
         )
 
@@ -775,12 +764,12 @@ async def change_email_with_otp(
     user: User,
     request: ChangeEmailOtpRequest,
     *,
-    config: EmailOtpConfig,
+    config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
-    if not config.change_email_enabled:
+    if not config.email_change.enabled:
         raise NotFoundError(resource="change_email_otp_endpoint")
     if user.pending_email_change != request.new_email:
         raise TokenInvalidError(message="no pending change for this email")
@@ -790,7 +779,7 @@ async def change_email_with_otp(
         otp_service=otp_service,
         identifier=request.new_email,
         purpose=VerificationPurpose.EMAIL_OTP_EMAIL_CHANGE,
-        plain_otp=request.otp,
+        plain_otp=request.otp.get_secret_value(),
         feed_lockout=True,
     )
 

@@ -10,13 +10,13 @@ trusts every device they're signed in from).
 
 from __future__ import annotations
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, SecretStr
 
 from fastauth.domain.enums import ProviderId
 from fastauth.domain.events import PasswordChanged, SessionsRevokedAll
 from fastauth.domain.models import User, WireModel
 from fastauth.exceptions import InvalidCredentialsError, NotFoundError
-from fastauth.flows.credentials import EmptyResponse
+from fastauth.flows.credentials import EmptyResponse, validate_password_policy
 from fastauth.runtime.context import AuthContext
 
 __all__ = ["ChangePasswordRequest", "change_password"]
@@ -34,8 +34,8 @@ class ChangePasswordRequest(WireModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-    current_password: str
-    new_password: str = Field(min_length=8)
+    current_password: SecretStr
+    new_password: SecretStr
     revoke_other_sessions: bool = True
 
 
@@ -51,10 +51,15 @@ async def change_password(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None or account.password is None:
         raise NotFoundError(resource="credential_account")
-    if not context.password_hasher.verify(request.current_password, account.password):
+    if not context.password_hasher.verify(
+        request.current_password.get_secret_value(),
+        account.password,
+    ):
         raise InvalidCredentialsError()
 
-    account.password = context.password_hasher.hash(request.new_password)
+    account.password = context.password_hasher.hash(
+        validate_password_policy(context, request.new_password),
+    )
     await context.adapter.update_account(account)
 
     revoked = 0

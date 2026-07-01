@@ -6,9 +6,11 @@ import pytest
 from fastapi import Request
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthConfig
+from fastauth.database import custom
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
+from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import EndpointSpec, Plugin, PluginRegistry
+from fastauth.runtime.auth import FastAuth
 from fastauth.storage.base import AuditLogStore
 from fastauth.storage.memory import InMemoryAdapter
 
@@ -82,9 +84,12 @@ def test_plugin_base_requires_declared_capability() -> None:
 
 async def test_plugin_base_requires_session_from_request() -> None:
     plugin = HelloPlugin()
+    adapter = InMemoryAdapter()
     auth = FastAuth(
-        FastAuthConfig(secret_key=SecretStr("a" * 64)),
-        adapter=InMemoryAdapter(),
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(adapter),
+        ),
     )
     plugin.bind(auth.context)
     request = Request({"type": "http", "method": "GET", "path": "/", "headers": []})

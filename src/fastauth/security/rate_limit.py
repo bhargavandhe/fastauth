@@ -169,7 +169,8 @@ class RateLimiter:
         self.advanced = advanced
         self.storage = storage
         self.plugin_rules: dict[str, tuple[int, int]] = {
-            rule.path: (rule.window_seconds, rule.max_requests) for rule in plugin_rules
+            rule.path: (int(rule.window.total_seconds()), rule.max_requests)
+            for rule in plugin_rules
         }
 
     def rule_for(self, path: str) -> tuple[int, int]:

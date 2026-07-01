@@ -58,9 +58,9 @@ async def test_list_sessions_returns_only_current_after_signup(
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["sessions"]) == 1
-    assert payload["sessions"][0]["is_current"] is True
+    assert payload["sessions"][0]["isCurrent"] is True
     # Sensitive fields must not leak.
-    assert "token_hash" not in payload["sessions"][0]
+    assert "tokenHash" not in payload["sessions"][0]
 
 
 async def test_list_sessions_marks_only_current_session(
@@ -72,7 +72,7 @@ async def test_list_sessions_marks_only_current_session(
     assert response.status_code == 200
     sessions = response.json()["sessions"]
     assert len(sessions) == 2
-    current_flags = [s["is_current"] for s in sessions]
+    current_flags = [s["isCurrent"] for s in sessions]
     assert current_flags.count(True) == 1
     assert current_flags.count(False) == 1
 
@@ -90,13 +90,13 @@ async def test_revoke_specific_session(client: httpx.AsyncClient) -> None:
     await sign_up_and_capture_cookie(client)
     await open_extra_session(client)
     listed = (await client.get("/auth/sessions")).json()["sessions"]
-    other = next(s for s in listed if not s["is_current"])
+    other = next(s for s in listed if not s["isCurrent"])
     response = await client.delete(f"/auth/sessions/{other['id']}")
     assert response.status_code == 200
     assert response.json() == {"revoked": 1}
     after = (await client.get("/auth/sessions")).json()["sessions"]
     assert len(after) == 1
-    assert after[0]["is_current"] is True
+    assert after[0]["isCurrent"] is True
 
 
 async def test_revoke_unknown_session_returns_404(client: httpx.AsyncClient) -> None:
@@ -136,7 +136,7 @@ async def test_revoke_other_sessions_keeps_current(client: httpx.AsyncClient) ->
     assert response.json() == {"revoked": 2}
     after = (await client.get("/auth/sessions")).json()["sessions"]
     assert len(after) == 1
-    assert after[0]["is_current"] is True
+    assert after[0]["isCurrent"] is True
 
 
 @pytest.mark.parametrize(

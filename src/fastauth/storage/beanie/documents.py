@@ -1,10 +1,10 @@
-"""Beanie ``Document`` subclasses + Doc→domain conversion helpers.
+"""Beanie ``Document`` classes + explicit domain conversion helpers.
 
-Each Doc subclass overrides the parent Pydantic model's ``id: str`` (and
-Mongo-owned relation ids where applicable) with ``PydanticObjectId``,
-aliased to ``_id`` for the primary key. Beanie/PyMongo then store these as
-real BSON ObjectIds. The ``to_*`` converters at the bottom of this module
-rebuild plain string-typed domain models on the way out.
+Each Doc class declares its persisted fields directly instead of inheriting
+from the storage-agnostic Pydantic domain models. Mongo-owned primary and
+relation ids use ``PydanticObjectId`` so Beanie/PyMongo store them as real
+BSON ObjectIds. The ``from_*``/``to_*`` converters at the bottom of this
+module translate between these documents and plain string-typed domain models.
 
 Why ``model_dump()`` + manual id-string conversion instead of
 ``mode="json"``? ``mode="json"`` recursively converts ``bytes`` fields to
@@ -17,6 +17,7 @@ re-stringifies the ``PydanticObjectId`` fields we care about.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, ClassVar
 
 import pymongo
@@ -29,6 +30,7 @@ from pydantic import Field
 from pymongo import IndexModel
 from pymongo.asynchronous.database import AsyncDatabase
 
+from fastauth.domain.enums import AuditEventType, ProviderId, VerificationPurpose
 from fastauth.domain.models import (
     Account,
     ApiKey,
@@ -39,6 +41,11 @@ from fastauth.domain.models import (
     Session,
     User,
     Verification,
+    utc_now,
+)
+from fastauth.storage.beanie.helpers import (
+    require_object_id,
+    to_pydantic_object_id_or_none,
 )
 
 __all__ = [
@@ -54,6 +61,15 @@ __all__ = [
     "UserDoc",
     "VerificationDoc",
     "build_beanie_document_models",
+    "from_account",
+    "from_api_key",
+    "from_audit_log",
+    "from_jwks_key",
+    "from_rate_limit",
+    "from_refresh_token",
+    "from_session",
+    "from_user",
+    "from_verification",
     "init_beanie_documents",
     "to_account",
     "to_api_key",
@@ -70,8 +86,17 @@ __all__ = [
 # --- Document classes ---
 
 
-class UserDoc(User, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
+class UserDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    email: str
+    username: str | None = None
+    name: str | None = None
+    image: str | None = None
+    email_verified: bool = False
+    pending_email_change: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "users"
@@ -81,9 +106,15 @@ class UserDoc(User, Document):  # pyright: ignore[reportIncompatibleVariableOver
         ]
 
 
-class SessionDoc(Session, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
-    user_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
+class SessionDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    user_id: PydanticObjectId
+    token_hash: str
+    expires_at: datetime
+    ip_address: str | None = None
+    user_agent: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "sessions"
@@ -94,11 +125,18 @@ class SessionDoc(Session, Document):  # pyright: ignore[reportIncompatibleVariab
         ]
 
 
-class RefreshTokenDoc(RefreshToken, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
-    user_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
-    family_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
-    replaced_by: PydanticObjectId | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+class RefreshTokenDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    user_id: PydanticObjectId
+    token_hash: str
+    family_id: PydanticObjectId
+    expires_at: datetime
+    consumed_at: datetime | None = None
+    replaced_by: PydanticObjectId | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "refresh_tokens"
@@ -110,9 +148,20 @@ class RefreshTokenDoc(RefreshToken, Document):  # pyright: ignore[reportIncompat
         ]
 
 
-class AccountDoc(Account, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
-    user_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
+class AccountDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    user_id: PydanticObjectId
+    provider_id: ProviderId
+    account_id: str
+    password: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+    access_token_expires_at: datetime | None = None
+    refresh_token_expires_at: datetime | None = None
+    scope: str | None = None
+    id_token: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "accounts"
@@ -125,8 +174,15 @@ class AccountDoc(Account, Document):  # pyright: ignore[reportIncompatibleVariab
         ]
 
 
-class VerificationDoc(Verification, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
+class VerificationDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    identifier: str
+    value_hash: str
+    purpose: VerificationPurpose
+    expires_at: datetime
+    attempt_count: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "verifications"
@@ -144,9 +200,27 @@ class VerificationDoc(Verification, Document):  # pyright: ignore[reportIncompat
         ]
 
 
-class ApiKeyDoc(ApiKey, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
-    user_id: PydanticObjectId  # pyright: ignore[reportIncompatibleVariableOverride]
+class ApiKeyDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    user_id: PydanticObjectId
+    name: str
+    key_hash: str
+    key_prefix: str
+    enabled: bool = True
+    expires_at: datetime | None = None
+    remaining: int | None = None
+    refill_amount: int | None = None
+    refill_interval_ms: int | None = None
+    rate_limit_enabled: bool = False
+    rate_limit_max: int | None = None
+    rate_limit_window_ms: int | None = None
+    last_refill_at: datetime | None = None
+    last_request_at: datetime | None = None
+    request_count: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    permissions: dict[str, list[str]] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "api_keys"
@@ -157,8 +231,15 @@ class ApiKeyDoc(ApiKey, Document):  # pyright: ignore[reportIncompatibleVariable
         ]
 
 
-class JwksKeyDoc(JwksKey, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
+class JwksKeyDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    kid: str
+    alg: str
+    public_key: str
+    private_key_encrypted: bytes
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime | None = None
+    rotated_at: datetime | None = None
 
     class Settings:
         name = "jwks_keys"
@@ -167,9 +248,15 @@ class JwksKeyDoc(JwksKey, Document):  # pyright: ignore[reportIncompatibleVariab
         ]
 
 
-class AuditLogDoc(AuditLog, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
-    user_id: PydanticObjectId | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+class AuditLogDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    event_type: AuditEventType
+    identifier: str | None = None
+    user_id: PydanticObjectId | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
+    event_data: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
 
     class Settings:
         name = "audit_logs"
@@ -182,8 +269,11 @@ class AuditLogDoc(AuditLog, Document):  # pyright: ignore[reportIncompatibleVari
         ]
 
 
-class RateLimitDoc(RateLimit, Document):  # pyright: ignore[reportIncompatibleVariableOverride]
-    id: PydanticObjectId | None = Field(default=None, alias="_id")  # pyright: ignore[reportIncompatibleVariableOverride]
+class RateLimitDoc(Document):
+    id: PydanticObjectId | None = Field(default=None, alias="_id")
+    key: str
+    count: int  # pyright: ignore[reportIncompatibleMethodOverride]
+    last_request_ms: int
 
     class Settings:
         name = "rate_limits"
@@ -310,7 +400,96 @@ async def init_beanie_documents(
     await init_beanie(database=database, document_models=document_models.all)
 
 
-# --- Doc → domain conversion ---
+# --- Domain ↔ Doc conversion ---
+
+
+def document_id(value: str | None) -> PydanticObjectId | None:
+    if value is None:
+        return None
+    oid = to_pydantic_object_id_or_none(value)
+    if oid is None:
+        raise ValueError("expected a Mongo ObjectId hex string")
+    return oid
+
+
+def from_user(user: User, *, include_id: bool = True) -> UserDoc:
+    data = user.model_dump(exclude={"id"})
+    if include_id:
+        data["id"] = document_id(user.id)
+    return UserDoc.model_construct(**data)
+
+
+def from_session(session: Session, *, include_id: bool = True) -> SessionDoc:
+    data = session.model_dump(exclude={"id", "user_id"})
+    if include_id:
+        data["id"] = document_id(session.id)
+    data["user_id"] = require_object_id(session.user_id)
+    return SessionDoc.model_construct(**data)
+
+
+def from_refresh_token(
+    token: RefreshToken,
+    *,
+    include_id: bool = True,
+) -> RefreshTokenDoc:
+    data = token.model_dump(exclude={"id", "user_id", "family_id", "replaced_by"})
+    if include_id:
+        data["id"] = document_id(token.id)
+    data["user_id"] = require_object_id(token.user_id)
+    data["family_id"] = require_object_id(token.family_id)
+    if token.replaced_by is not None:
+        data["replaced_by"] = require_object_id(token.replaced_by)
+    return RefreshTokenDoc.model_construct(**data)
+
+
+def from_account(account: Account, *, include_id: bool = True) -> AccountDoc:
+    data = account.model_dump(exclude={"id", "user_id"})
+    if include_id:
+        data["id"] = document_id(account.id)
+    data["user_id"] = require_object_id(account.user_id)
+    return AccountDoc.model_construct(**data)
+
+
+def from_verification(
+    verification: Verification,
+    *,
+    include_id: bool = True,
+) -> VerificationDoc:
+    data = verification.model_dump(exclude={"id"})
+    if include_id:
+        data["id"] = document_id(verification.id)
+    return VerificationDoc.model_construct(**data)
+
+
+def from_api_key(api_key: ApiKey, *, include_id: bool = True) -> ApiKeyDoc:
+    data = api_key.model_dump(exclude={"id", "user_id"})
+    if include_id:
+        data["id"] = document_id(api_key.id)
+    data["user_id"] = require_object_id(api_key.user_id)
+    return ApiKeyDoc.model_construct(**data)
+
+
+def from_jwks_key(key: JwksKey, *, include_id: bool = True) -> JwksKeyDoc:
+    data = key.model_dump(exclude={"id"})
+    if include_id:
+        data["id"] = document_id(key.id)
+    return JwksKeyDoc.model_construct(**data)
+
+
+def from_audit_log(row: AuditLog, *, include_id: bool = True) -> AuditLogDoc:
+    data = row.model_dump(exclude={"id", "user_id"})
+    if include_id:
+        data["id"] = document_id(row.id)
+    if row.user_id is not None:
+        data["user_id"] = require_object_id(row.user_id)
+    return AuditLogDoc.model_construct(**data)
+
+
+def from_rate_limit(rate_limit: RateLimit, *, include_id: bool = True) -> RateLimitDoc:
+    data = rate_limit.model_dump(exclude={"id"})
+    if include_id:
+        data["id"] = document_id(rate_limit.id)
+    return RateLimitDoc.model_construct(**data)
 
 
 def to_user(doc: UserDoc) -> User:

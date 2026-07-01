@@ -44,12 +44,16 @@ async def test_change_email_round_trip(
     token, new_email = extract_change_email_token(email_outbox.outbox[0].text)
     assert new_email == "alice2@example.com"
 
-    # Until confirmed, get-session still shows the OLD email and pending_email_change.
+    # Until confirmed, get-session still shows the OLD email. The pending
+    # change is internal state and must not be exposed in the public DTO.
     me = await client.get("/auth/get-session")
     assert me.status_code == 200
     body = me.json()
     assert body["user"]["email"] == "alice@example.com"
-    assert body["user"]["pending_email_change"] == "alice2@example.com"
+    assert "pendingEmailChange" not in body["user"]
+    pending = await adapter.get_user_by_id(user_id)
+    assert pending is not None
+    assert pending.pending_email_change == "alice2@example.com"
 
     # Confirm.
     confirm = await client.post(
@@ -61,8 +65,8 @@ async def test_change_email_round_trip(
     # Now get-session reflects the new email, pending cleared, verified=True.
     me_after = (await client.get("/auth/get-session")).json()
     assert me_after["user"]["email"] == "alice2@example.com"
-    assert me_after["user"]["pending_email_change"] is None
-    assert me_after["user"]["email_verified"] is True
+    assert "pendingEmailChange" not in me_after["user"]
+    assert me_after["user"]["emailVerified"] is True
 
     # The current session stayed alive (no extra revocation).
     persisted = await adapter.get_user_by_id(user_id)

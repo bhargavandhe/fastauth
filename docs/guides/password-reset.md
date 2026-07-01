@@ -34,12 +34,14 @@ password change.
 ## Configuration
 
 ```python
-from fastauth.config import FastAuthConfig, PasswordResetConfig
+from fastauth import FastAuthOptions
+from fastauth.options import PasswordResetOptions
+from datetime import timedelta
 
-config = FastAuthConfig(
+options = FastAuthOptions(
     # ...
-    password_reset=PasswordResetConfig(
-        token_ttl_minutes=30,
+    password_reset=PasswordResetOptions(
+        expires_in=timedelta(minutes=30),
         base_reset_url="https://app.example.com/reset",
     ),
 )

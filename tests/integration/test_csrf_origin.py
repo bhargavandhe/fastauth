@@ -7,21 +7,22 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
-from fastauth.web.fastapi import install_csrf
 
 
-def csrf_config() -> FastAuthConfig:
-    return FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": True, "trusted_origins": ["http://trusted.test"]},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-        },
+def csrf_options(adapter: InMemoryAdapter) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[email_password()],
+        csrf=CsrfOptions(enabled=True, trusted_origins=("http://trusted.test",)),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
     )
 
 
@@ -29,10 +30,9 @@ def csrf_config() -> FastAuthConfig:
 async def csrf_client() -> AsyncIterator[httpx.AsyncClient]:
     adapter = InMemoryAdapter()
     sender = ConsoleEmailSender()
-    auth = FastAuth(csrf_config(), adapter=adapter, email_sender=sender)
-    app = FastAPI()
-    app.include_router(auth.router)
-    install_csrf(app, auth.context)
+    auth = FastAuth(csrf_options(adapter), email_sender=sender)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

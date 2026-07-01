@@ -3,26 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
+from typing import cast
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.plugins.base import Plugin
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
-def build_config() -> FastAuthConfig:
-    return FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-        },
+def build_options(adapter: InMemoryAdapter, plugins: list[Plugin] | None = None) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[email_password(), *(plugins or [])],
+        csrf=CsrfOptions(enabled=False),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
     )
 
 
@@ -42,13 +46,11 @@ def auth_factory(
     email_outbox: ConsoleEmailSender,
 ) -> Callable[..., FastAuth]:
     def factory(**overrides: object) -> FastAuth:
-        config = build_config()
-        plugins = overrides.pop("plugins", [])  # type: ignore[assignment]
+        plugins = cast(list[Plugin], overrides.pop("plugins", []))
+        options = build_options(adapter, plugins)
         return FastAuth(
-            config,
-            adapter=adapter,
+            options,
             email_sender=email_outbox,
-            plugins=list(plugins),  # type: ignore[arg-type]
             **overrides,  # type: ignore[arg-type]
         )
 
@@ -62,8 +64,8 @@ def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
 
 @pytest.fixture
 async def client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
-    app = FastAPI()
-    app.include_router(auth.router)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

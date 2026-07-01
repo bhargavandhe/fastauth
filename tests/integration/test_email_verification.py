@@ -17,7 +17,7 @@ async def test_signup_then_send_then_verify(
 ) -> None:
     sign_up = await client.post("/auth/sign-up/email", json=SIGNUP)
     assert sign_up.status_code == 200
-    assert sign_up.json()["user"]["email_verified"] is False
+    assert sign_up.json()["user"]["emailVerified"] is False
 
     sent = await client.post(
         "/auth/send-verification-email",
@@ -41,7 +41,7 @@ async def test_signup_then_send_then_verify(
         json={"email": SIGNUP["email"], "token": token},
     )
     assert verified.status_code == 200
-    assert verified.json()["user"]["email_verified"] is True
+    assert verified.json()["user"]["emailVerified"] is True
 
 
 async def test_verify_email_rejects_invalid_token(client: httpx.AsyncClient) -> None:

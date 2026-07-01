@@ -20,7 +20,7 @@ print(session.session.id)        # row id in the sessions collection
 
 Cookie packaging uses an `itsdangerous`-signed envelope so that tokens are
 tamper-evident at the transport boundary. Cookie attributes
-(`secure`, `same_site`, `http_only`, …) come from `CookieConfig`.
+(`secure`, `same_site`, `http_only`, …) come from `CookieOptions`.
 
 Database-backed sessions expire on the server, can be revoked individually
 (`sign-out`) or wholesale (`revoke_all` on password reset), and support

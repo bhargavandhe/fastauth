@@ -3,14 +3,14 @@
 Three submodules:
 
 * :mod:`.adapter` — the :class:`BeanieAdapter` class.
-* :mod:`.documents` — :class:`beanie.Document` subclasses + Doc→domain
-  converters + ``init_beanie_documents`` startup helper.
+* :mod:`.documents` — :class:`beanie.Document` classes + domain converters
+  + ``init_beanie_documents`` startup helper.
 * :mod:`.helpers` — datetime/ObjectId conversion utilities shared between
   the adapter and the document layer.
 
 The public API of this package is re-exported here. End users typically
 only need :class:`BeanieAdapter` and :func:`init_beanie_documents`; the
-document subclasses are useful when extending the schema (e.g. registering
+document classes are useful when extending the schema (e.g. registering
 your own Document with the same PyMongo async database).
 """
 
@@ -30,6 +30,15 @@ from fastauth.storage.beanie.documents import (
     UserDoc,
     VerificationDoc,
     build_beanie_document_models,
+    from_account,
+    from_api_key,
+    from_audit_log,
+    from_jwks_key,
+    from_rate_limit,
+    from_refresh_token,
+    from_session,
+    from_user,
+    from_verification,
     init_beanie_documents,
     to_account,
     to_api_key,
@@ -61,6 +70,15 @@ __all__ = [
     "UserDoc",
     "VerificationDoc",
     "build_beanie_document_models",
+    "from_account",
+    "from_api_key",
+    "from_audit_log",
+    "from_jwks_key",
+    "from_rate_limit",
+    "from_refresh_token",
+    "from_session",
+    "from_user",
+    "from_verification",
     "init_beanie_documents",
     "normalise_datetimes",
     "to_account",

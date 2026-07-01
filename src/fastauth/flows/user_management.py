@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from urllib.parse import quote
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, JsonValue, SecretStr, model_validator
 
 from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
 from fastauth.domain.events import (
@@ -25,7 +24,11 @@ from fastauth.exceptions import (
     TokenExpiredError,
     TokenInvalidError,
 )
-from fastauth.flows.credentials import EmptyResponse, record_failure_and_maybe_emit
+from fastauth.flows.credentials import (
+    EmptyResponse,
+    record_failure_and_maybe_emit,
+    validate_password_policy,
+)
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -50,7 +53,7 @@ class UpdateUserRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = None
     image: str | None = None
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
     def reject_metadata_null(self) -> UpdateUserRequest:
@@ -61,13 +64,13 @@ class UpdateUserRequest(WireModel):
 
 class SetPasswordRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
-    new_password: str = Field(min_length=8)
+    new_password: SecretStr
     revoke_other_sessions: bool = True
 
 
 class VerifyPasswordRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
-    password: str
+    password: SecretStr
 
 
 class VerifyPasswordResponse(WireModel):
@@ -76,12 +79,12 @@ class VerifyPasswordResponse(WireModel):
 
 class DeleteAccountRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
-    password: str
+    password: SecretStr
 
 
 class DeleteAccountConfirmRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
-    token: str
+    token: SecretStr
 
 
 async def update_user(
@@ -139,7 +142,9 @@ async def set_password(
             ),
         )
 
-    account.password = context.password_hasher.hash(request.new_password)
+    account.password = context.password_hasher.hash(
+        validate_password_policy(context, request.new_password),
+    )
     await context.adapter.update_account(account)
 
     revoked = 0
@@ -256,7 +261,7 @@ async def confirm_delete_account(
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
-    token_hash = context.token_service.hash_only(request.token)
+    token_hash = context.token_service.hash_only(request.token.get_secret_value())
     verification = await context.adapter.get_verification(
         user.email,
         VerificationPurpose.ACCOUNT_DELETION,
@@ -275,7 +280,7 @@ async def confirm_delete_account(
 async def verify_current_password(
     context: AuthContext,
     user: User,
-    password: str,
+    password: SecretStr,
     *,
     ip: str | None,
     user_agent: str | None,
@@ -285,7 +290,7 @@ async def verify_current_password(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None or account.password is None:
         raise NotFoundError(resource="credential_account")
-    if not context.password_hasher.verify(password, account.password):
+    if not context.password_hasher.verify(password.get_secret_value(), account.password):
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
     await context.lockout_tracker.reset(identifier)

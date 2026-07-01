@@ -1,4 +1,4 @@
-"""Integration tests for SessionConfig.strategy == JWT with JwtPlugin installed.
+"""Integration tests for SessionOptions.strategy == JWT with JwtPlugin installed.
 
 When the user opts into JWT sessions, FastAuth constructs a JwtSessionStrategy
 that shares its JwksRegistry with the installed JwtPlugin. Sign-up issues a
@@ -16,33 +16,42 @@ from fastapi import FastAPI
 from joserfc import jwk, jwt
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
+from fastauth.domain.enums import SessionStrategyKind
 from fastauth.messaging.email import ConsoleEmailSender
-from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    FastAuthOptions,
+    LockoutOptions,
+    RateLimitOptions,
+    SessionOptions,
+)
+from fastauth.plugins.jwt import JwtOptions, JwtPlugin
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
 async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, FastAuth]]:
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "lockout": {"enabled": False},
-            "session": {"strategy": "jwt"},
-        },
+    adapter = InMemoryAdapter()
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[
+            email_password(),
+            JwtPlugin(JwtOptions(issuer="http://t", audience="http://t")),
+        ],
+        csrf=CsrfOptions(enabled=False),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
+        lockout=LockoutOptions(enabled=False),
+        session=SessionOptions(strategy=SessionStrategyKind.JWT),
     )
-    auth = FastAuth(
-        config,
-        adapter=InMemoryAdapter(),
-        email_sender=ConsoleEmailSender(),
-        plugins=[JwtPlugin(JwtPluginConfig(issuer="http://t", audience="http://t"))],
-    )
+    auth = FastAuth(options, email_sender=ConsoleEmailSender())
     app = FastAPI(lifespan=auth.lifespan)
-    app.include_router(auth.router)
+    auth.mount(app)
     async with (
         httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://testserver"
@@ -61,14 +70,14 @@ async def test_sign_up_issues_a_jwt_session_token(
         json={
             "email": "alice@example.com",
             "password": "correct-horse-staple",
-            "include_token": True,
+            "delivery": {"kind": "bearer"},
         },
     )
     assert response.status_code == 200
     body = response.json()
     # The plain token is a 3-part JWT, not the opaque 32-char URL-safe string
     # that the DatabaseSessionStrategy issues.
-    assert body["token"].count(".") == 2
+    assert body["credentials"]["token"].count(".") == 2
 
 
 async def test_get_session_validates_the_jwt(
@@ -95,10 +104,10 @@ async def test_token_is_verifiable_against_jwks(
         json={
             "email": "carol@example.com",
             "password": "correct-horse-staple",
-            "include_token": True,
+            "delivery": {"kind": "bearer"},
         },
     )
-    token = sign_up.json()["token"]
+    token = sign_up.json()["credentials"]["token"]
 
     # The JWT carries the same kid that /auth/jwks publishes — the strategy
     # and the plugin share the registry, so verification works end-to-end.
@@ -130,12 +139,12 @@ async def test_no_db_session_row_under_jwt_strategy(
 
 def test_jwt_strategy_without_jwt_plugin_raises() -> None:
     """Misconfiguration: strategy=JWT but JwtPlugin not installed."""
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "session": {"strategy": "jwt"},
-        },
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(InMemoryAdapter()),
+        plugins=[email_password()],
+        csrf=CsrfOptions(enabled=False),
+        session=SessionOptions(strategy=SessionStrategyKind.JWT),
     )
     with pytest.raises(ValueError, match="requires JwtPlugin"):
-        FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
+        FastAuth(options, email_sender=ConsoleEmailSender())

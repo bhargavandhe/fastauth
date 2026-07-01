@@ -10,37 +10,39 @@ from fastapi import FastAPI
 from joserfc import jwk, jwt
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
-from fastauth.plugins.jwt import JwtPlugin, JwtPluginConfig
+from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.plugins.jwt import JwtOptions, JwtPlugin
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
 async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
+    adapter = InMemoryAdapter()
     auth = FastAuth(
-        FastAuthConfig.model_validate(
-            {
-                "secret_key": SecretStr("a" * 64),
-                "csrf": {"enabled": False},
-                "cookie": {"secure": False},
-                "rate_limit": {"enabled": False},
-            },
-        ),
-        adapter=InMemoryAdapter(),
-        email_sender=ConsoleEmailSender(),
-        plugins=[
-            JwtPlugin(
-                JwtPluginConfig(
-                    issuer="http://testserver",
-                    audience="http://testserver",
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(adapter),
+            plugins=[
+                email_password(),
+                JwtPlugin(
+                    JwtOptions(
+                        issuer="http://testserver",
+                        audience="http://testserver",
+                    ),
                 ),
-            ),
-        ],
+            ],
+            csrf=CsrfOptions(enabled=False),
+            cookie=CookieOptions(secure=False),
+            rate_limit=RateLimitOptions(enabled=False),
+        ),
+        email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    app.include_router(auth.router)
+    auth.mount(app)
     # httpx's ASGITransport doesn't drive lifespan events, so run the
     # FastAuth lifespan manually to ensure JwtPlugin's startup hook creates
     # the JWKS key before any request hits the app.

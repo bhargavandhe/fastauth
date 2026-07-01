@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from fastapi import Request, Response
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from fastauth.domain.enums import JwtAlgorithm
 from fastauth.domain.models import User, WireModel
@@ -29,8 +29,8 @@ from fastauth.security.jwt import JwksDocument, JwksRegistry, KmsSigner, LocalKm
 from fastauth.storage.base import JwksKeyStore
 
 __all__ = [
+    "JwtOptions",
     "JwtPlugin",
-    "JwtPluginConfig",
     "TokenResponse",
     "default_payload_builder",
 ]
@@ -40,20 +40,35 @@ PayloadBuilder = Callable[[User], dict[str, Any]]
 SignerFactory = Callable[[JwksRegistry], KmsSigner]
 
 
-class JwtPluginConfig(BaseModel):
+class JwtOptions(BaseModel):
     """Static configuration for ``JwtPlugin``."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
     alg: JwtAlgorithm = JwtAlgorithm.EDDSA
-    expires_in_seconds: int = 900
+    expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
     issuer: str | None = None
     audience: str | None = None
-    rotation_interval_seconds: int | None = None
-    grace_period_seconds: int = 60 * 60 * 24
+    rotation_interval: timedelta | None = Field(default=None, gt=timedelta(0))
+    grace_period: timedelta = Field(default=timedelta(days=1), gt=timedelta(0))
     disable_setting_jwt_header: bool = False
     disable_private_key_encryption: bool = False
-    jwks_path: str = "/jwks"
-    token_path: str = "/token"  # noqa: S105 — endpoint path, not a credential
+    jwks_path: str = Field(default="/jwks", pattern=r"^/")
+    token_path: str = Field(default="/token", pattern=r"^/")
+
+    @property
+    def expires_in_seconds(self) -> int:
+        return int(self.expires_in.total_seconds())
+
+    @property
+    def rotation_interval_seconds(self) -> int | None:
+        if self.rotation_interval is None:
+            return None
+        return int(self.rotation_interval.total_seconds())
+
+    @property
+    def grace_period_seconds(self) -> int:
+        return int(self.grace_period.total_seconds())
 
 
 class TokenResponse(WireModel):
@@ -85,12 +100,13 @@ class JwtPlugin(Plugin):
 
     def __init__(
         self,
-        config: JwtPluginConfig | None = None,
+        options: JwtOptions | None = None,
         *,
         payload_builder: PayloadBuilder | None = None,
         signer_factory: SignerFactory | None = None,
     ) -> None:
-        self.config = config or JwtPluginConfig()
+        self.options = options or JwtOptions()
+        self.config = self.options
         self.payload_builder: PayloadBuilder = payload_builder or default_payload_builder
         self.signer_factory: SignerFactory = signer_factory or LocalKmsSigner
         self.context: AuthContext | None = None
@@ -185,7 +201,7 @@ class JwtPlugin(Plugin):
             "aud": audience,
             "sub": user.id,
             "iat": int(now.timestamp()),
-            "exp": int((now + timedelta(seconds=self.config.expires_in_seconds)).timestamp()),
+            "exp": int((now + self.config.expires_in).timestamp()),
             **self.payload_builder(user),
         }
         return await signer.sign(

@@ -111,7 +111,7 @@ class JwksRegistry:
 
         Proactively probes each active key by attempting to decrypt its private
         portion. If decryption fails (typically because
-        ``FastAuthConfig.secret_key`` changed without an accompanying
+        ``FastAuthOptions.secret_key`` changed without an accompanying
         ``secret_key_rotation`` entry), the key is marked rotated immediately
         so it no longer attracts new signs, but its public portion stays in
         ``as_jwks_json`` during the grace period so any in-flight tokens it
@@ -126,7 +126,7 @@ class JwksRegistry:
                 now = datetime.now(UTC)
                 LOGGER.warning(
                     "rotating jwks key %s: private portion cannot be decrypted with "
-                    "the current FastAuthConfig.secret_key. "
+                    "the current FastAuthOptions.secret_key. "
                     "Old tokens stay verifiable during the %ss grace period; new "
                     "tokens will use a fresh key.",
                     candidate.kid,
@@ -188,7 +188,7 @@ class JwksRegistry:
         derived from ``secret_key_rotation`` (oldest last). Raises
         ``JwksDecryptionError`` if every KEK fails to authenticate the AES-GCM
         ciphertext — almost always because the current
-        ``FastAuthConfig.secret_key`` is different from the secret that encrypted
+        ``FastAuthOptions.secret_key`` is different from the secret that encrypted
         the stored key and no ``secret_key_rotation`` entry covers the previous
         value.
 
@@ -214,7 +214,7 @@ class JwksRegistry:
                     message=(
                         f"failed to decrypt JWKS key {key.kid}: AES-GCM tag mismatch "
                         "against every configured secret_key. Most likely "
-                        "FastAuthConfig.secret_key was changed without adding the previous "
+                        "FastAuthOptions.secret_key was changed without adding the previous "
                         "value to secret_key_rotation; ensure_key() rotates "
                         "the affected key on startup so this only surfaces from "
                         "out-of-band signers wired after lifespan_startup."

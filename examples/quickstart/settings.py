@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from examples.quickstart.app import config as settings
+from examples.quickstart.app import options as settings
 
 __all__ = ["settings"]

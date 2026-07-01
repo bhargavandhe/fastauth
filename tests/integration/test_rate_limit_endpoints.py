@@ -3,34 +3,41 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import timedelta
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
 async def rl_client() -> AsyncIterator[httpx.AsyncClient]:
+    adapter = InMemoryAdapter()
     auth = FastAuth(
-        FastAuthConfig.model_validate(
-            {
-                "secret_key": SecretStr("a" * 64),
-                "csrf": {"enabled": False},
-                "cookie": {"secure": False},
-                "rate_limit": {"enabled": True, "window_seconds": 60, "max_requests": 100},
-            },
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(adapter),
+            plugins=[email_password()],
+            csrf=CsrfOptions(enabled=False),
+            cookie=CookieOptions(secure=False),
+            rate_limit=RateLimitOptions(
+                enabled=True,
+                window=timedelta(seconds=60),
+                max_requests=100,
+            ),
         ),
-        adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),
     )
-    app = FastAPI()
-    app.include_router(auth.router)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

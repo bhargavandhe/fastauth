@@ -10,21 +10,31 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    FastAuthOptions,
+    RateLimitOptions,
+    RefreshTokenOptions,
+)
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
-def build_config(**refresh_overrides: object) -> FastAuthConfig:
-    return FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "refresh_token": {"enabled": True, **refresh_overrides},
-        },
+def build_options(adapter: InMemoryAdapter, **refresh_overrides: object) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[email_password()],
+        csrf=CsrfOptions(enabled=False),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
+        refresh_token=RefreshTokenOptions.model_validate(
+            {"enabled": True, **refresh_overrides},
+        ),
     )
 
 
@@ -36,16 +46,15 @@ def adapter() -> InMemoryAdapter:
 @pytest.fixture
 def auth(adapter: InMemoryAdapter) -> FastAuth:
     return FastAuth(
-        build_config(),
-        adapter=adapter,
+        build_options(adapter),
         email_sender=ConsoleEmailSender(),
     )
 
 
 @pytest.fixture
 async def client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
-    app = FastAPI()
-    app.include_router(auth.router)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -61,16 +70,16 @@ async def sign_up_with_tokens(
 ) -> tuple[str, str]:
     response = await client.post(
         "/auth/sign-up/email",
-        json={"email": email, "password": password, "include_token": True},
+        json={"email": email, "password": password, "delivery": {"kind": "bearer"}},
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["token"] is not None
-    assert body["refresh_token"] is not None
-    return body["token"], body["refresh_token"]
+    assert body["credentials"]["token"] is not None
+    assert body["credentials"]["refreshToken"] is not None
+    return body["credentials"]["token"], body["credentials"]["refreshToken"]
 
 
-async def test_sign_up_returns_refresh_token_when_enabled_and_include_token(
+async def test_sign_up_returns_refresh_token_when_bearer_delivery(
     client: httpx.AsyncClient,
 ) -> None:
     response = await client.post(
@@ -78,47 +87,36 @@ async def test_sign_up_returns_refresh_token_when_enabled_and_include_token(
         json={
             "email": "owner@example.com",
             "password": "supersecret123",
-            "include_token": True,
+            "delivery": {"kind": "bearer"},
         },
     )
     assert response.status_code == 200
     body = response.json()
-    assert isinstance(body["refresh_token"], str)
-    assert len(body["refresh_token"]) >= 32
+    assert isinstance(body["credentials"]["refreshToken"], str)
+    assert len(body["credentials"]["refreshToken"]) >= 32
 
 
-async def test_sign_up_without_include_token_omits_refresh_token(
+async def test_cookie_delivery_omits_response_credentials(
     client: httpx.AsyncClient,
 ) -> None:
-    """Refresh tokens piggyback on include_token: cookie-only clients don't
-    want a long-lived secret they have nowhere safe to put.
-    """
     response = await client.post(
         "/auth/sign-up/email",
         json={"email": "owner@example.com", "password": "supersecret123"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["token"] is None
-    assert body["refresh_token"] is None
+    assert body["credentials"] is None
 
 
 async def test_disabled_refresh_tokens_never_issued() -> None:
-    """When config.refresh_token.enabled=False, even include_token=True
-    yields refresh_token=None.
-    """
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "refresh_token": {"enabled": False},
-        },
+    """When refresh tokens are disabled, bearer delivery only returns access credentials."""
+    adapter = InMemoryAdapter()
+    auth = FastAuth(
+        build_options(adapter, enabled=False),
+        email_sender=ConsoleEmailSender(),
     )
-    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
-    app = FastAPI()
-    app.include_router(auth.router)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -128,11 +126,11 @@ async def test_disabled_refresh_tokens_never_issued() -> None:
             json={
                 "email": "a@example.com",
                 "password": "secretpassword",
-                "include_token": True,
+                "delivery": {"kind": "bearer"},
             },
         )
         assert response.status_code == 200
-        assert response.json()["refresh_token"] is None
+        assert response.json()["credentials"]["refreshToken"] is None
 
 
 async def test_refresh_returns_new_session_and_rotated_token(
@@ -141,20 +139,20 @@ async def test_refresh_returns_new_session_and_rotated_token(
     _access, refresh = await sign_up_with_tokens(client)
     response = await client.post(
         "/auth/refresh",
-        json={"refresh_token": refresh, "include_token": True},
+        json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["token"] is not None
-    assert body["refresh_token"] is not None
+    assert body["credentials"]["token"] is not None
+    assert body["credentials"]["refreshToken"] is not None
     # The new refresh token is a different opaque string.
-    assert body["refresh_token"] != refresh
+    assert body["credentials"]["refreshToken"] != refresh
 
 
 async def test_refresh_unknown_token_returns_400(client: httpx.AsyncClient) -> None:
     response = await client.post(
         "/auth/refresh",
-        json={"refresh_token": "not-a-real-token", "include_token": True},
+        json={"refreshToken": "not-a-real-token", "delivery": {"kind": "bearer"}},
     )
     assert response.status_code == 400
     assert response.json()["code"] == "TOKEN_INVALID"
@@ -173,15 +171,15 @@ async def test_refresh_token_reuse_revokes_family(
     # First rotation succeeds and gives us a new token.
     first = await client.post(
         "/auth/refresh",
-        json={"refresh_token": original, "include_token": True},
+        json={"refreshToken": original, "delivery": {"kind": "bearer"}},
     )
     assert first.status_code == 200
-    new_refresh = first.json()["refresh_token"]
+    new_refresh = first.json()["credentials"]["refreshToken"]
     assert len(adapter.refresh_tokens) == 2  # consumed + new
     # Second attempt with the (now consumed) original token: theft detected.
     second = await client.post(
         "/auth/refresh",
-        json={"refresh_token": original, "include_token": True},
+        json={"refreshToken": original, "delivery": {"kind": "bearer"}},
     )
     assert second.status_code == 401
     assert second.json()["code"] == "REFRESH_TOKEN_REUSE"
@@ -190,7 +188,7 @@ async def test_refresh_token_reuse_revokes_family(
     # Using the new refresh token afterwards must fail too.
     blocked = await client.post(
         "/auth/refresh",
-        json={"refresh_token": new_refresh, "include_token": True},
+        json={"refreshToken": new_refresh, "delivery": {"kind": "bearer"}},
     )
     assert blocked.status_code == 400
 
@@ -205,7 +203,7 @@ async def test_refresh_expired_token_returns_400(
     token_row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     response = await client.post(
         "/auth/refresh",
-        json={"refresh_token": refresh, "include_token": True},
+        json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
     )
     assert response.status_code == 400
     assert response.json()["code"] == "TOKEN_EXPIRED"
@@ -213,47 +211,36 @@ async def test_refresh_expired_token_returns_400(
 
 async def test_refresh_endpoint_disabled_returns_400() -> None:
     """When refresh tokens are disabled, the endpoint exists but always rejects."""
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "refresh_token": {"enabled": False},
-        },
+    adapter = InMemoryAdapter()
+    auth = FastAuth(
+        build_options(adapter, enabled=False),
+        email_sender=ConsoleEmailSender(),
     )
-    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
-    app = FastAPI()
-    app.include_router(auth.router)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as http:
         response = await http.post(
             "/auth/refresh",
-            json={"refresh_token": "anything", "include_token": True},
+            json={"refreshToken": "anything", "delivery": {"kind": "bearer"}},
         )
         assert response.status_code == 400
         assert response.json()["code"] == "TOKEN_INVALID"
 
 
 async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
-    """When the chain is older than absolute_max_age_seconds, rotation is
+    """When the chain is older than absolute_max_age, rotation is
     refused and the family is revoked so the user must sign in fresh.
     """
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "refresh_token": {"enabled": True, "absolute_max_age_seconds": 1},
-        },
-    )
     adapter = InMemoryAdapter()
-    auth = FastAuth(config, adapter=adapter, email_sender=ConsoleEmailSender())
-    app = FastAPI()
-    app.include_router(auth.router)
+    auth = FastAuth(
+        build_options(adapter, absolute_max_age=timedelta(seconds=1)),
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -263,16 +250,16 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
             json={
                 "email": "owner@example.com",
                 "password": "supersecret123",
-                "include_token": True,
+                "delivery": {"kind": "bearer"},
             },
         )
-        refresh = signup.json()["refresh_token"]
+        refresh = signup.json()["credentials"]["refreshToken"]
         # Back-date created_at past the absolute window.
         row = next(iter(adapter.refresh_tokens.values()))
         row.created_at = datetime.now(UTC) - timedelta(seconds=120)
         response = await http.post(
             "/auth/refresh",
-            json={"refresh_token": refresh, "include_token": True},
+            json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
         )
         assert response.status_code == 400
         assert response.json()["code"] == "TOKEN_EXPIRED"
@@ -280,11 +267,11 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
         assert len(adapter.refresh_tokens) == 0
 
 
-async def test_refresh_response_sets_session_cookie(client: httpx.AsyncClient) -> None:
+async def test_cookie_refresh_response_sets_session_cookie(client: httpx.AsyncClient) -> None:
     _access, refresh = await sign_up_with_tokens(client)
     response = await client.post(
         "/auth/refresh",
-        json={"refresh_token": refresh, "include_token": True},
+        json={"refreshToken": refresh, "delivery": {"kind": "cookie"}},
     )
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")

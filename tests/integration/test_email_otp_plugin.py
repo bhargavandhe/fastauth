@@ -8,8 +8,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from fastauth.flows.email_otp import EmailOtpConfig
-from fastauth.plugins.email_otp import EmailOtpPlugin
+from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions, EmailOtpPlugin
 from fastauth.plugins.test_utils import TestHelpers, TestUtilsConfig, TestUtilsPlugin
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter as MemoryAdapter
@@ -26,7 +25,9 @@ def get_helpers(auth: FastAuth) -> TestHelpers:
 def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(
         plugins=[
-            EmailOtpPlugin(EmailOtpConfig(change_email_enabled=True)),
+            EmailOtpPlugin(
+                EmailOtpOptions(email_change=EmailChangeOtpOptions(enabled=True)),
+            ),
             TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
         ],
     )
@@ -36,7 +37,7 @@ def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
 def disable_signup_auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(
         plugins=[
-            EmailOtpPlugin(EmailOtpConfig(disable_sign_up=True)),
+            EmailOtpPlugin(EmailOtpOptions(allow_sign_up=False)),
             TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
         ],
     )
@@ -48,7 +49,7 @@ def disable_signup_auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
 async def test_send_otp_for_sign_in(client: httpx.AsyncClient, auth: FastAuth) -> None:
     response = await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "fresh@example.com", "type": "sign-in"},
+        json={"email": "fresh@example.com", "purpose": "sign-in"},
     )
     assert response.status_code == 200
     assert response.json() == {"success": True}
@@ -67,7 +68,7 @@ async def test_send_otp_anti_enumeration_for_email_verification(
     """
     response = await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "unknown@example.com", "type": "email-verification"},
+        json={"email": "unknown@example.com", "purpose": "email-verification"},
     )
     assert response.status_code == 200
     assert get_helpers(auth).get_otp("unknown@example.com") is None
@@ -80,14 +81,14 @@ async def test_check_otp_does_not_consume(
     helpers = get_helpers(auth)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     otp = helpers.get_otp("alice@example.com")
     assert otp is not None
     # Pre-check passes.
     check = await client.post(
         "/auth/email-otp/check-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in", "otp": otp},
+        json={"email": "alice@example.com", "purpose": "sign-in", "otp": otp},
     )
     assert check.status_code == 200
     # Same OTP can still complete sign-in afterwards.
@@ -108,7 +109,7 @@ async def test_sign_in_auto_registers_new_user(
     helpers = get_helpers(auth)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "newbie@example.com", "type": "sign-in"},
+        json={"email": "newbie@example.com", "purpose": "sign-in"},
     )
     otp = helpers.get_otp("newbie@example.com")
     assert otp is not None
@@ -120,7 +121,7 @@ async def test_sign_in_auto_registers_new_user(
     body = response.json()
     assert body["user"]["email"] == "newbie@example.com"
     assert body["user"]["name"] == "Newbie"
-    assert body["user"]["email_verified"] is True
+    assert body["user"]["emailVerified"] is True
     assert "fastauth.session_token" in response.headers.get("set-cookie", "")
 
 
@@ -133,7 +134,7 @@ async def test_sign_in_existing_user(
     await helpers.save_user(user)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "returning@example.com", "type": "sign-in"},
+        json={"email": "returning@example.com", "purpose": "sign-in"},
     )
     otp = helpers.get_otp("returning@example.com")
     assert otp is not None
@@ -145,12 +146,12 @@ async def test_sign_in_existing_user(
     assert response.json()["user"]["id"] == user.id
 
 
-async def test_sign_in_disable_sign_up_rejects_unknown_user(
+async def test_sign_in_disallowed_sign_up_rejects_unknown_user(
     auth_factory: Callable[..., FastAuth],
 ) -> None:
     auth = auth_factory(
         plugins=[
-            EmailOtpPlugin(EmailOtpConfig(disable_sign_up=True)),
+            EmailOtpPlugin(EmailOtpOptions(allow_sign_up=False)),
             TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
         ],
     )
@@ -166,7 +167,7 @@ async def test_sign_in_disable_sign_up_rejects_unknown_user(
         # Send returns success but no email is sent (anti-enumeration).
         await client.post(
             "/auth/email-otp/send-verification-otp",
-            json={"email": "stranger@example.com", "type": "sign-in"},
+            json={"email": "stranger@example.com", "purpose": "sign-in"},
         )
         assert helpers.get_otp("stranger@example.com") is None
         # Sign-in attempt with any OTP fails.
@@ -184,7 +185,7 @@ async def test_sign_in_wrong_otp_rejected(
 ) -> None:
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     response = await client.post(
         "/auth/sign-in/email-otp",
@@ -194,18 +195,18 @@ async def test_sign_in_wrong_otp_rejected(
     assert response.json()["code"] == "TOKEN_INVALID"
 
 
-async def test_otp_invalidated_after_allowed_attempts(
+async def test_otp_invalidated_after_max_attempts(
     client: httpx.AsyncClient,
     auth: FastAuth,
 ) -> None:
     helpers = get_helpers(auth)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     correct_otp = helpers.get_otp("alice@example.com")
     assert correct_otp is not None
-    # 3 failed attempts (default allowed_attempts=3) burns the OTP.
+    # 3 failed attempts (default max_attempts=3) burns the OTP.
     for _ in range(3):
         bad = await client.post(
             "/auth/sign-in/email-otp",
@@ -228,7 +229,7 @@ async def test_otp_replay_protection(
     helpers = get_helpers(auth)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     otp = helpers.get_otp("alice@example.com")
     assert otp is not None
@@ -249,14 +250,14 @@ async def test_resend_rotates_otp(client: httpx.AsyncClient, auth: FastAuth) -> 
     helpers = get_helpers(auth)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     first_otp = helpers.get_otp("alice@example.com")
     assert first_otp is not None
     helpers.clear_otps()
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     second_otp = helpers.get_otp("alice@example.com")
     assert second_otp is not None
@@ -283,7 +284,7 @@ async def test_expired_otp_rejected(
     helpers = get_helpers(auth)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "alice@example.com", "type": "sign-in"},
+        json={"email": "alice@example.com", "purpose": "sign-in"},
     )
     otp = helpers.get_otp("alice@example.com")
     assert otp is not None
@@ -310,7 +311,7 @@ async def test_verify_email_with_otp(
     await helpers.save_user(user)
     await client.post(
         "/auth/email-otp/send-verification-otp",
-        json={"email": "bob@example.com", "type": "email-verification"},
+        json={"email": "bob@example.com", "purpose": "email-verification"},
     )
     otp = helpers.get_otp("bob@example.com")
     assert otp is not None
@@ -419,9 +420,9 @@ async def test_change_email_round_trip(
 async def test_change_email_endpoints_404_when_disabled(
     auth_factory: Callable[..., FastAuth],
 ) -> None:
-    """Without ``change_email_enabled``, the two endpoints are not registered."""
+    """Without email-change enabled, the two endpoints are not registered."""
     auth = auth_factory(
-        plugins=[EmailOtpPlugin(EmailOtpConfig())],  # default change_email_enabled=False
+        plugins=[EmailOtpPlugin(EmailOtpOptions())],
     )
     from fastapi import FastAPI
 

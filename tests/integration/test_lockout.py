@@ -8,14 +8,23 @@ a *smaller* window via a custom config so we can exercise the
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import timedelta
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    FastAuthOptions,
+    LockoutOptions,
+    RateLimitOptions,
+)
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
@@ -23,20 +32,21 @@ from fastauth.storage.memory import InMemoryAdapter
 @pytest.fixture
 async def lockout_client() -> AsyncIterator[httpx.AsyncClient]:
     """A fresh FastAuth with a deliberately small lockout window so the test
-    runs in milliseconds. Default ``max_failures=3``, ``window_seconds=2``.
+    runs in milliseconds. Default ``max_failures=3``, ``window=2s``.
     """
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "lockout": {"enabled": True, "max_failures": 3, "window_seconds": 2},
-        },
+    adapter = InMemoryAdapter()
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[email_password()],
+        csrf=CsrfOptions(enabled=False),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
+        lockout=LockoutOptions(enabled=True, max_failures=3, window=timedelta(seconds=2)),
     )
-    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
-    app = FastAPI()
-    app.include_router(auth.router)
+    auth = FastAuth(options, email_sender=ConsoleEmailSender())
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -120,18 +130,19 @@ async def test_lockout_resets_on_successful_sign_in(
 
 async def test_lockout_disabled_never_triggers() -> None:
     """``lockout.enabled=False`` keeps the historical sign-in behaviour."""
-    config = FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "lockout": {"enabled": False},
-        },
+    adapter = InMemoryAdapter()
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[email_password()],
+        csrf=CsrfOptions(enabled=False),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
+        lockout=LockoutOptions(enabled=False),
     )
-    auth = FastAuth(config, adapter=InMemoryAdapter(), email_sender=ConsoleEmailSender())
-    app = FastAPI()
-    app.include_router(auth.router)
+    auth = FastAuth(options, email_sender=ConsoleEmailSender())
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:

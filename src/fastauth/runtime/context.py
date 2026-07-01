@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-from pydantic import BaseModel, ConfigDict
 
 from fastauth.config import FastAuthConfig
 from fastauth.messaging.email import EmailSender, TemplateRenderer
@@ -24,10 +23,9 @@ if TYPE_CHECKING:
 __all__ = ["AuthContext"]
 
 
-class AuthContext(BaseModel):
+@dataclass(frozen=True, slots=True)
+class AuthContext:
     """Frozen container holding every dependency assembled by ``FastAuth``."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     config: FastAuthConfig
     adapter: DatabaseAdapter

@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-from pydantic import ConfigDict, EmailStr, Field
+from typing import Annotated, cast
 
+from pydantic import ConfigDict, EmailStr, Field, SecretStr, TypeAdapter, ValidationError
+
+from fastauth.api.commands import (
+    BearerCredentialDelivery,
+    CookieCredentialDelivery,
+    CredentialDelivery,
+)
+from fastauth.api.responses import AuthenticationResponse, authentication_response
 from fastauth.domain.enums import HookPhase, ProviderId
 from fastauth.domain.events import (
     AccountLockedOut,
@@ -13,8 +21,8 @@ from fastauth.domain.events import (
     UserSignedOut,
     UserSignedUp,
 )
-from fastauth.domain.models import Account, Session, User, WireModel
-from fastauth.exceptions import InvalidCredentialsError
+from fastauth.domain.models import Account, User, WireModel
+from fastauth.exceptions import InvalidCredentialsError, InvalidRequestError
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 
@@ -45,7 +53,7 @@ async def maybe_issue_refresh_token(
     context: AuthContext,
     *,
     user_id: str,
-    include_token: bool,
+    delivery: CredentialDelivery,
     ip: str | None,
     user_agent: str | None,
 ) -> str | None:
@@ -53,10 +61,12 @@ async def maybe_issue_refresh_token(
 
     Returns the plain refresh token string (the caller embeds it in the
     response) or ``None`` if either gate is closed. Refresh tokens piggyback
-    on ``include_token`` so cookie-only clients don't unintentionally receive
-    a long-lived secret they have nowhere safe to store.
+    on bearer delivery so cookie-only clients don't unintentionally receive a
+    long-lived secret they have nowhere safe to store.
     """
-    if not include_token or not context.refresh_token_service.enabled:
+    if not isinstance(delivery, BearerCredentialDelivery):
+        return None
+    if not delivery.include_refresh_token or not context.refresh_token_service.enabled:
         return None
     issued = await context.refresh_token_service.issue(
         user_id=user_id,
@@ -101,49 +111,46 @@ async def record_failure_and_maybe_emit(
         raise AccountLockedError(retry_after_seconds=retry_after)
 
 
+def validate_password_policy(context: AuthContext, password: SecretStr) -> str:
+    value = password.get_secret_value()
+    min_length = context.config.password.min_length
+    max_length = context.config.password.max_length
+    password_value = Annotated[
+        str,
+        Field(min_length=min_length, max_length=max_length),
+    ]
+    try:
+        return cast(str, TypeAdapter(password_value).validate_python(value, strict=True))
+    except ValidationError as exc:
+        first_error = exc.errors()[0]
+        message = str(first_error.get("msg", "password does not satisfy policy"))
+        raise InvalidRequestError(message=message) from exc
+
+
 class SignUpEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: SecretStr
     name: str | None = None
     username: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_.-]{3,32}$")
-    include_token: bool = False
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
 
 class SignInEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
-    password: str
-    include_token: bool = False
+    password: SecretStr
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
 
 class SignInUsernameRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     username: str
-    password: str
-    include_token: bool = False
+    password: SecretStr
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
 
-class SessionResponse(WireModel):
-    """Response payload for sign-up and sign-in flows.
-
-    ``token`` is populated only when the caller passes ``include_token=true`` in
-    the request body — SPAs and mobile clients that prefer ``Authorization:
-    Bearer`` over cookies opt in this way. When the field is omitted from the
-    request the response carries ``token=None`` so cookie-only clients don't
-    accidentally leak the plain token through logs or client-side storage.
-
-    ``refresh_token`` is populated only when ``RefreshTokenConfig.enabled`` is
-    ``True`` AND ``include_token=True`` on the request (refresh tokens only
-    make sense for clients that are also receiving an access token they
-    intend to refresh). When the flow doesn't issue one, the field is
-    ``None``.
-    """
-
-    user: User
-    session: Session
-    token: str | None = None
-    refresh_token: str | None = None
+SessionResponse = AuthenticationResponse
 
 
 class EmptyResponse(WireModel):
@@ -170,7 +177,9 @@ async def sign_up_email(
         user_id=user.id,
         provider_id=ProviderId.CREDENTIAL,
         account_id=user.id,
-        password=context.password_hasher.hash(request.password),
+        password=context.password_hasher.hash(
+            validate_password_policy(context, request.password),
+        ),
     )
     await context.adapter.create_account(account)
 
@@ -196,15 +205,19 @@ async def sign_up_email(
     refresh_plain = await maybe_issue_refresh_token(
         context,
         user_id=user.id,
-        include_token=request.include_token,
+        delivery=request.delivery,
         ip=ip,
         user_agent=user_agent,
     )
     return (
-        SessionResponse(
+        authentication_response(
             user=user,
             session=session_context.session,
-            token=session_context.token if request.include_token else None,
+            token=(
+                session_context.token
+                if isinstance(request.delivery, BearerCredentialDelivery)
+                else None
+            ),
             refresh_token=refresh_plain,
         ),
         session_context,
@@ -226,7 +239,7 @@ async def sign_in_email(
         identifier=request.email,
         ip=ip,
         user_agent=user_agent,
-        include_token=request.include_token,
+        delivery=request.delivery,
     )
 
 
@@ -245,33 +258,36 @@ async def sign_in_username(
         identifier=request.username,
         ip=ip,
         user_agent=user_agent,
-        include_token=request.include_token,
+        delivery=request.delivery,
     )
 
 
 async def complete_sign_in(
     context: AuthContext,
     user: User | None,
-    password: str,
+    password: SecretStr,
     *,
     identifier: str,
     ip: str | None,
     user_agent: str | None,
-    include_token: bool = False,
+    delivery: CredentialDelivery | None = None,
 ) -> tuple[SessionResponse, SessionContext]:
+    if delivery is None:
+        delivery = CookieCredentialDelivery()
+
     # Lockout check: if too many recent failures for this identifier, reject
     # before examining any password material.
     await context.lockout_tracker.check_locked(identifier)
 
     if user is None:
         # Constant-time path: hash anyway so timing is uniform.
-        context.password_hasher.verify(password, PLACEHOLDER_HASH)
+        context.password_hasher.verify(password.get_secret_value(), PLACEHOLDER_HASH)
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
 
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     stored = account.password if account is not None else None
-    if stored is None or not context.password_hasher.verify(password, stored):
+    if stored is None or not context.password_hasher.verify(password.get_secret_value(), stored):
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
 
@@ -299,14 +315,14 @@ async def complete_sign_in(
     )
 
     return (
-        SessionResponse(
+        authentication_response(
             user=user,
             session=session_context.session,
-            token=session_context.token if include_token else None,
+            token=session_context.token if isinstance(delivery, BearerCredentialDelivery) else None,
             refresh_token=await maybe_issue_refresh_token(
                 context,
                 user_id=user.id,
-                include_token=include_token,
+                delivery=delivery,
                 ip=ip,
                 user_agent=user_agent,
             ),
@@ -334,4 +350,4 @@ async def get_session(context: AuthContext, token: str | None) -> SessionRespons
     current = await context.session_strategy.read(token)
     if current is None:
         return None
-    return SessionResponse(user=current.user, session=current.session)
+    return authentication_response(user=current.user, session=current.session)

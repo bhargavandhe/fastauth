@@ -17,6 +17,7 @@ __all__ = [
     "FastAuthError",
     "HookAbortError",
     "InvalidCredentialsError",
+    "InvalidRequestError",
     "JwksDecryptionError",
     "NotFoundError",
     "PasswordAlreadySetError",
@@ -78,6 +79,13 @@ class PasswordAlreadySetError(FastAuthError):
 
 class AuthenticationError(FastAuthError):
     default_code = "AUTHENTICATION_ERROR"
+
+
+class InvalidRequestError(FastAuthError):
+    default_code = "INVALID_REQUEST"
+
+    def __init__(self, *, message: str) -> None:
+        super().__init__(message=message)
 
 
 class InvalidCredentialsError(AuthenticationError):
@@ -147,7 +155,7 @@ class AccountLockedError(AuthenticationError):
 class JwksDecryptionError(FastAuthError):
     """Raised when a stored JWKS private key cannot be decrypted.
 
-    Almost always means ``FastAuthConfig.secret_key`` was changed without an
+    Almost always means ``FastAuthOptions.secret_key`` was changed without an
     accompanying ``secret_key_rotation`` entry holding the previous value. The
     KEK derived from the current secret no longer matches the AES-GCM tag on
     the stored ciphertext. ``JwksRegistry.ensure_key`` proactively detects
@@ -176,6 +184,7 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     AdapterError: HTTPStatus.INTERNAL_SERVER_ERROR,
     NotFoundError: HTTPStatus.NOT_FOUND,
     DuplicateError: HTTPStatus.CONFLICT,
+    InvalidRequestError: HTTPStatus.BAD_REQUEST,
     PasswordAlreadySetError: HTTPStatus.CONFLICT,
     InvalidCredentialsError: HTTPStatus.UNAUTHORIZED,
     EmailNotVerifiedError: HTTPStatus.FORBIDDEN,

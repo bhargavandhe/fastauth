@@ -1,96 +1,81 @@
-"""Example FastAPI app exercising every fastauth v1 feature end-to-end.
+"""Example FastAPI app exercising every fastauth feature end-to-end.
 
-The example keeps configuration explicit: callers construct an
-``FastAuthConfig`` and pass it into the app factory. No process environment is
-read by the example or by fastauth.
+The example keeps configuration explicit: callers construct ``FastAuthOptions``
+and pass it to ``fastauth(options)``. No process environment is read by the
+example or by fastauth.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from contextlib import AbstractAsyncContextManager
+from typing import Any, Protocol
 
 from fastapi import FastAPI
 from pydantic import SecretStr
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
-from fastauth import FastAuth, FastAuthConfig
-from fastauth.config import (
-    CookieConfig,
-    CsrfConfig,
-    DatabaseConfig,
-    MongoDatabaseConfig,
-    RateLimitConfig,
-)
-from fastauth.domain.enums import DatabaseBackendKind
-from fastauth.plugins.api_key import ApiKeyPlugin
-from fastauth.plugins.audit_logs import AuditLogsPlugin
-from fastauth.plugins.jwt import JwtPlugin
-from fastauth.plugins.openapi import OpenApiPlugin
-from fastauth.storage.beanie import BeanieAdapter
+from fastauth import FastAuthOptions, fastauth
+from fastauth.database import mongo
+from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
+from fastauth.providers import api_key, audit_logs, email_password, jwt, openapi
 
 __all__ = [
+    "DATABASE_NAME",
+    "MONGO_URL",
     "app",
     "auth",
-    "build_config",
-    "config",
+    "build_options",
     "create_app",
     "create_auth",
     "lifespan",
     "mongo_client",
     "mongo_database",
+    "options",
 ]
 
 
-def build_config(
+class AuthRuntime(Protocol):
+    def lifespan(self, app: FastAPI) -> AbstractAsyncContextManager[None]: ...
+
+    def mount(self, app: FastAPI) -> None: ...
+
+
+MONGO_URL = "mongodb://localhost:27017"
+DATABASE_NAME = "fastauth"
+
+
+def build_options(
     *,
     secret_key: SecretStr,
-    mongo_url: str = "mongodb://localhost:27017",
-    database_name: str = "fastauth",
+    database: AsyncDatabase[Any],
     cookie_secure: bool = True,
     csrf_enabled: bool = True,
     rate_limit_enabled: bool = True,
-) -> FastAuthConfig:
-    return FastAuthConfig(
+) -> FastAuthOptions:
+    return FastAuthOptions(
         secret_key=secret_key,
-        database=DatabaseConfig(
-            backend=DatabaseBackendKind.MONGO,
-            mongo=MongoDatabaseConfig(
-                url=mongo_url,
-                database_name=database_name,
-            ),
-        ),
-        cookie=CookieConfig(secure=cookie_secure),
-        csrf=CsrfConfig(enabled=csrf_enabled),
-        rate_limit=RateLimitConfig(enabled=rate_limit_enabled),
-    )
-
-
-def create_auth(config: FastAuthConfig, database: AsyncDatabase[Any]) -> FastAuth:
-    adapter = BeanieAdapter(
-        database,
-        collection_prefix=config.database.mongo.collection_prefix,
-        collection_suffix=config.database.mongo.collection_suffix,
-    )
-    return FastAuth(
-        config,
-        adapter=adapter,
+        database=mongo(database),
         plugins=[
-            ApiKeyPlugin(),
-            JwtPlugin(),
-            AuditLogsPlugin(),
-            OpenApiPlugin(),
+            email_password(),
+            api_key(),
+            jwt(),
+            audit_logs(),
+            openapi(),
         ],
+        cookie=CookieOptions(secure=cookie_secure),
+        csrf=CsrfOptions(enabled=csrf_enabled),
+        rate_limit=RateLimitOptions(enabled=rate_limit_enabled),
     )
 
 
-def create_app(auth: FastAuth, database: AsyncDatabase[Any]) -> FastAPI:
-    del database  # The BeanieAdapter is already bound into the FastAuth instance.
-    adapter = auth.context.adapter
-    if not isinstance(adapter, BeanieAdapter):
-        raise TypeError("quickstart create_app requires a BeanieAdapter-backed FastAuth")
-    app_instance = FastAPI(title="fastauth quickstart", lifespan=adapter.lifespan(auth))
-    auth.install(app_instance)
+def create_auth(options: FastAuthOptions) -> AuthRuntime:
+    return fastauth(options)
+
+
+def create_app(auth: AuthRuntime) -> FastAPI:
+    app_instance = FastAPI(title="fastauth quickstart", lifespan=auth.lifespan)
+    auth.mount(app_instance)
 
     @app_instance.get("/")
     async def root() -> dict[str, str]:
@@ -100,16 +85,16 @@ def create_app(auth: FastAuth, database: AsyncDatabase[Any]) -> FastAPI:
     return app_instance
 
 
-config = build_config(
-    secret_key=SecretStr("replace-me-with-a-secret-from-your-application-config"),
-)
-
 mongo_client: AsyncMongoClient[Any] = AsyncMongoClient(
-    config.database.mongo.url,
+    MONGO_URL,
     uuidRepresentation="standard",
     tz_aware=True,
 )
-mongo_database: AsyncDatabase[Any] = mongo_client[config.database.mongo.database_name]
-auth = create_auth(config, mongo_database)
-app = create_app(auth, mongo_database)
+mongo_database: AsyncDatabase[Any] = mongo_client[DATABASE_NAME]
+options = build_options(
+    secret_key=SecretStr("replace-me-with-a-secret-from-your-application-config"),
+    database=mongo_database,
+)
+auth = create_auth(options)
+app = create_app(auth)
 lifespan = app.router.lifespan_context

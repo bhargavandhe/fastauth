@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import cast
 
 from fastapi import FastAPI, HTTPException, Request, status
 
-from fastauth.config import FastAuthConfig
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
-from fastauth.plugins.base import Plugin, PluginRegistry
+from fastauth.options import CustomDatabase, FastAuthOptions, MongoDatabase, PostgresDatabase
+from fastauth.plugins.base import PluginRegistry
 from fastauth.runtime.api import AuthApi
 from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
@@ -27,13 +28,10 @@ from fastauth.security.rate_limit import (
 from fastauth.security.refresh_tokens import RefreshTokenService
 from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
 from fastauth.security.tokens import SignedCookieValue, TokenService
-from fastauth.storage.base import DatabaseAdapter, JwksKeyStore, RateLimitStore
+from fastauth.storage.base import JwksKeyStore, RateLimitStore
 from fastauth.web.csrf import CsrfMiddleware
 from fastauth.web.fastapi import build_router, extract_session_token
 from fastauth.web.security_headers import SecurityHeadersMiddleware
-
-# Resolve the ``"RateLimiter"`` forward reference declared on AuthContext.
-AuthContext.model_rebuild()
 
 __all__ = ["FastAuth"]
 
@@ -43,17 +41,16 @@ class FastAuth:
 
     def __init__(
         self,
-        config: FastAuthConfig,
+        options: FastAuthOptions,
         *,
-        adapter: DatabaseAdapter | None = None,
-        plugins: list[Plugin] | None = None,
         email_sender: EmailSender | None = None,
         password_hasher: PasswordHasher | None = None,
         session_strategy: SessionStrategy | None = None,
         token_service: TokenService | None = None,
     ) -> None:
-        if adapter is None:
-            raise ConfigError(message="FastAuth requires an explicit adapter")
+        self.options = options
+        config = options.to_runtime_config()
+        adapter = options.database.build_adapter()
 
         password_hasher = password_hasher or Argon2idHasher(config.password)
         token_service = token_service or TokenService()
@@ -63,7 +60,7 @@ class FastAuth:
             list(config.secret_key_rotation),
         )
 
-        plugin_registry = PluginRegistry(plugins or [])
+        plugin_registry = PluginRegistry(options.plugins)
 
         if session_strategy is None:
             if config.session.strategy is SessionStrategyKind.DATABASE:
@@ -85,7 +82,7 @@ class FastAuth:
                 )
                 if jwt_plugin is None:
                     raise ValueError(
-                        "SessionConfig.strategy == JWT requires JwtPlugin in the "
+                        "SessionOptions.strategy == JWT requires JwtPlugin in the "
                         "plugins list, or pass an explicit 'session_strategy' "
                         "argument.",
                     )
@@ -93,8 +90,9 @@ class FastAuth:
                     raise ConfigError(
                         message="JWT sessions require an adapter implementing JwksKeyStore",
                     )
+                jwks_store = cast(JwksKeyStore, adapter)
                 registry, signer = jwt_plugin.ensure_registry_and_signer(
-                    adapter=adapter,
+                    adapter=jwks_store,
                     secret_key_value=config.secret_key,
                     secret_key_rotation=list(config.secret_key_rotation),
                 )
@@ -112,12 +110,13 @@ class FastAuth:
             if not isinstance(adapter, RateLimitStore):
                 raise ConfigError(
                     message=(
-                        "RateLimitConfig.storage == DATABASE requires an adapter "
+                        "RateLimitOptions.storage == DATABASE requires an adapter "
                         "implementing RateLimitStore"
                     ),
                 )
+            rate_limit_store = cast(RateLimitStore, adapter)
             rate_storage: DatabaseRateLimitStorage | MemoryRateLimitStorage = (
-                DatabaseRateLimitStorage(adapter)
+                DatabaseRateLimitStorage(rate_limit_store)
             )
         else:
             rate_storage = MemoryRateLimitStorage()
@@ -174,16 +173,11 @@ class FastAuth:
     def as_asgi(self) -> FastAPI:
         """Return a standalone ``FastAPI`` app wrapping the fastauth router."""
         app = FastAPI(title="fastauth", lifespan=self.lifespan)
-        self.install(app)
+        self.mount(app)
         return app
 
-    def install(self, app: FastAPI) -> None:
-        """Install fastauth routes and middleware on an existing ``FastAPI`` app.
-
-        This is the class-based convenience path for host-app integration:
-        construct ``FastAuth`` explicitly, create your ``FastAPI`` app with the
-        lifespan you need, then call ``auth.install(app)`` once.
-        """
+    def mount(self, app: FastAPI) -> None:
+        """Mount fastauth routes and middleware on an existing ``FastAPI`` app."""
         app.include_router(self.router)
         app.add_middleware(
             CsrfMiddleware,
@@ -198,8 +192,31 @@ class FastAuth:
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
-        """ASGI lifespan: call plugin startup/shutdown hooks in order."""
-        del app  # Starlette passes the app; we don't need it here.
+        """ASGI lifespan for storage bootstrap plus plugin startup/shutdown hooks."""
+        if isinstance(self.options.database, MongoDatabase):
+            from fastauth.storage.beanie.documents import init_beanie_documents
+
+            await init_beanie_documents(
+                self.options.database.database,  # type: ignore[arg-type]
+                collection_prefix=self.options.database.collection_prefix,
+                collection_suffix=self.options.database.collection_suffix,
+            )
+        if isinstance(self.options.database, PostgresDatabase):
+            adapter = self.context.adapter
+            if self.options.database.migration_mode == "apply":
+                await adapter.apply_migrations()  # type: ignore[attr-defined]
+            elif self.options.database.migration_mode == "check":
+                await adapter.assert_schema_current()  # type: ignore[attr-defined]
+        if isinstance(self.options.database, CustomDatabase) and self.options.database.lifespan:
+            async with self.options.database.lifespan(self)(app or FastAPI()):
+                async with self.plugin_lifespan():
+                    yield
+            return
+        async with self.plugin_lifespan():
+            yield
+
+    @asynccontextmanager
+    async def plugin_lifespan(self) -> AsyncGenerator[None, None]:
         for plugin in self.context.plugins.plugins:
             await plugin.lifespan_startup()
         try:

@@ -9,35 +9,41 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth.config import FastAuthConfig
+from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    FastAuthOptions,
+    RateLimitOptions,
+    SecurityHeadersOptions,
+)
+from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
-from fastauth.web.fastapi import install_security_headers
 
 
-def build_config(**security_overrides: object) -> FastAuthConfig:
-    return FastAuthConfig.model_validate(
-        {
-            "secret_key": SecretStr("a" * 64),
-            "csrf": {"enabled": False},
-            "cookie": {"secure": False},
-            "rate_limit": {"enabled": False},
-            "security_headers": security_overrides,
-        },
+def build_options(adapter: InMemoryAdapter, **security_overrides: object) -> FastAuthOptions:
+    return FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        database=custom(adapter),
+        plugins=[email_password()],
+        csrf=CsrfOptions(enabled=False),
+        cookie=CookieOptions(secure=False),
+        rate_limit=RateLimitOptions(enabled=False),
+        security_headers=SecurityHeadersOptions.model_validate(security_overrides),
     )
 
 
 @pytest.fixture
 async def secure_client() -> AsyncIterator[httpx.AsyncClient]:
+    adapter = InMemoryAdapter()
     auth = FastAuth(
-        build_config(),
-        adapter=InMemoryAdapter(),
+        build_options(adapter),
         email_sender=ConsoleEmailSender(),
     )
-    app = FastAPI()
-    app.include_router(auth.router)
-    install_security_headers(app, auth.context)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -60,13 +66,11 @@ async def test_default_security_headers_are_present(
 
 async def test_disabled_middleware_emits_no_headers() -> None:
     auth = FastAuth(
-        build_config(enabled=False),
-        adapter=InMemoryAdapter(),
+        build_options(InMemoryAdapter(), enabled=False),
         email_sender=ConsoleEmailSender(),
     )
-    app = FastAPI()
-    app.include_router(auth.router)
-    install_security_headers(app, auth.context)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -77,16 +81,15 @@ async def test_disabled_middleware_emits_no_headers() -> None:
 
 async def test_csp_and_permissions_policy_can_be_configured() -> None:
     auth = FastAuth(
-        build_config(
+        build_options(
+            InMemoryAdapter(),
             content_security_policy="default-src 'self'; frame-ancestors 'none'",
             permissions_policy="geolocation=(), camera=()",
         ),
-        adapter=InMemoryAdapter(),
         email_sender=ConsoleEmailSender(),
     )
-    app = FastAPI()
-    app.include_router(auth.router)
-    install_security_headers(app, auth.context)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -101,13 +104,11 @@ async def test_csp_and_permissions_policy_can_be_configured() -> None:
 async def test_individual_headers_can_be_disabled() -> None:
     """Setting a header field to ``None`` omits that header only."""
     auth = FastAuth(
-        build_config(hsts=None, x_frame_options=None),
-        adapter=InMemoryAdapter(),
+        build_options(InMemoryAdapter(), hsts=None, x_frame_options=None),
         email_sender=ConsoleEmailSender(),
     )
-    app = FastAPI()
-    app.include_router(auth.router)
-    install_security_headers(app, auth.context)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:

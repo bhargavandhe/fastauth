@@ -60,6 +60,14 @@ from fastauth.storage.beanie.documents import (
     SessionDoc,
     UserDoc,
     VerificationDoc,
+    from_account,
+    from_api_key,
+    from_audit_log,
+    from_jwks_key,
+    from_rate_limit,
+    from_session,
+    from_user,
+    from_verification,
     init_beanie_documents,
     to_account,
     to_api_key,
@@ -127,9 +135,12 @@ class BeanieAdapter:
     def lifespan(self, auth: FastAuth) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
         """Return a FastAPI lifespan that initialises Beanie, then fastauth.
 
-        This is a convenience for the common MongoDB setup:
+        This is a lower-level escape hatch for manually constructed adapters:
 
         ``app = FastAPI(lifespan=adapter.lifespan(auth))``
+
+        Application code should normally prefer ``FastAuthOptions`` with
+        ``database=mongo(database)`` and then use ``auth.lifespan``.
 
         It keeps Beanie-specific bootstrap in the Beanie adapter package while
         preserving ``FastAuth`` as storage-agnostic runtime code.
@@ -152,8 +163,7 @@ class BeanieAdapter:
         normalise_datetimes(user)
         # Drop the domain-side ``id`` (UUID-hex from ``new_id()``) so Beanie generates
         # a fresh ObjectId. The new id is written back into the input model below.
-        data = user.model_dump(exclude={"id"})
-        doc = self.user_doc(**data)
+        doc = from_user(user, include_id=False)
         try:
             await doc.insert()
         except DuplicateKeyError as exc:
@@ -216,10 +226,8 @@ class BeanieAdapter:
     async def create_session(self, session: Session) -> Session:
         normalise_datetimes(session)
         # ``user_id`` must be a valid ObjectId hex (set from a prior ``create_user``
-        # call). The Pydantic ``PydanticObjectId`` validator on ``self.session_doc.user_id``
-        # raises with a clear error if not.
-        data = session.model_dump(exclude={"id"})
-        doc = self.session_doc(**data)
+        # call). The document mapper raises with a clear error if not.
+        doc = from_session(session, include_id=False)
         await doc.insert()
         if doc.id is not None:
             session.id = str(doc.id)
@@ -371,8 +379,7 @@ class BeanieAdapter:
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:
         normalise_datetimes(account)
-        data = account.model_dump(exclude={"id"})
-        doc = self.account_doc(**data)
+        doc = from_account(account, include_id=False)
         await doc.insert()
         if doc.id is not None:
             account.id = str(doc.id)
@@ -422,8 +429,7 @@ class BeanieAdapter:
     # ----- Verification -----
     async def create_verification(self, verification: Verification) -> Verification:
         normalise_datetimes(verification)
-        data = verification.model_dump(exclude={"id"})
-        doc = self.verification_doc(**data)
+        doc = from_verification(verification, include_id=False)
         await doc.insert()
         if doc.id is not None:
             verification.id = str(doc.id)
@@ -492,8 +498,7 @@ class BeanieAdapter:
     # ----- ApiKey -----
     async def create_api_key(self, api_key: ApiKey) -> ApiKey:
         normalise_datetimes(api_key)
-        data = api_key.model_dump(exclude={"id"})
-        doc = self.api_key_doc(**data)
+        doc = from_api_key(api_key, include_id=False)
         await doc.insert()
         if doc.id is not None:
             api_key.id = str(doc.id)
@@ -552,8 +557,7 @@ class BeanieAdapter:
     # ----- JwksKey -----
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
         normalise_datetimes(key)
-        data = key.model_dump(exclude={"id"})
-        doc = self.jwks_key_doc(**data)
+        doc = from_jwks_key(key, include_id=False)
         await doc.insert()
         if doc.id is not None:
             key.id = str(doc.id)
@@ -586,8 +590,7 @@ class BeanieAdapter:
     # ----- AuditLog -----
     async def create_audit_log(self, row: AuditLog) -> AuditLog:
         normalise_datetimes(row)
-        data = row.model_dump(exclude={"id"})
-        doc = self.audit_log_doc(**data)
+        doc = from_audit_log(row, include_id=False)
         await doc.insert()
         if doc.id is not None:
             row.id = str(doc.id)
@@ -625,7 +628,7 @@ class BeanieAdapter:
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
         doc = await self.rate_limit_doc.find_one({"key": rate_limit.key})
         if doc is None:
-            new_doc = self.rate_limit_doc(**rate_limit.model_dump(exclude={"id"}))
+            new_doc = from_rate_limit(rate_limit, include_id=False)
             await new_doc.insert()
             if new_doc.id is not None:
                 rate_limit.id = str(new_doc.id)

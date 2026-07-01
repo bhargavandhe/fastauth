@@ -65,17 +65,18 @@ POST /auth/delete-account/confirm
 ```
 
 The confirmation token is sent to the current account email and is configured
-by `FastAuthConfig.delete_account`:
+by `FastAuthOptions.delete_account`:
 
 ```python
 from pydantic import SecretStr
-from fastauth import FastAuthConfig
-from fastauth.config import DeleteAccountConfig
+from datetime import timedelta
+from fastauth import FastAuthOptions
+from fastauth.options import DeleteAccountOptions
 
-config = FastAuthConfig(
+options = FastAuthOptions(
     secret_key=SecretStr("..."),
-    delete_account=DeleteAccountConfig(
-        token_ttl_minutes=15,
+    delete_account=DeleteAccountOptions(
+        expires_in=timedelta(minutes=15),
         base_confirm_url="https://app.example.com/account/delete/confirm",
         subject="Confirm account deletion",
     ),
