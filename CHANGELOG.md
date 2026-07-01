@@ -4,6 +4,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-07-01
+
+### Fixed
+
+- Updated the quickstart end-to-end test to assert the canonical camelCase
+  audit-log response field `eventType`.
+
 ## [0.3.3] — 2026-07-01
 
 ### Fixed

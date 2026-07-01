@@ -41,7 +41,7 @@ async def test_full_journey(client: httpx.AsyncClient) -> None:
     # Audit logs include the sign-up event.
     response = await client.get("/auth/audit-logs")
     assert response.status_code == 200, response.text
-    event_types = {row["event_type"] for row in response.json()["events"]}
+    event_types = {row["eventType"] for row in response.json()["events"]}
     assert "user_signed_up" in event_types
 
     # Scalar reference page is served at /auth/reference.
