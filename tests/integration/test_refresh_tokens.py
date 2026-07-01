@@ -270,12 +270,11 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
         assert len(adapter.refresh_tokens) == 0
 
 
-async def test_cookie_refresh_response_sets_session_cookie(client: httpx.AsyncClient) -> None:
+async def test_cookie_refresh_delivery_is_rejected(client: httpx.AsyncClient) -> None:
     _access, refresh = await sign_up_with_tokens(client)
     response = await client.post(
         "/auth/refresh",
         json={"refreshToken": refresh, "delivery": {"kind": "cookie"}},
     )
-    assert response.status_code == 200
-    set_cookie = response.headers.get("set-cookie", "")
-    assert "fastauth.session_token" in set_cookie
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"

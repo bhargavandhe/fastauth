@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 import httpx
 import pytest
 from fastapi import FastAPI
@@ -125,3 +127,19 @@ def test_old_config_names_are_not_exported() -> None:
 
     assert not hasattr(fastauth, "FastAuthConfig")
     assert hasattr(fastauth, "FastAuth")
+
+
+def test_auth_api_public_methods_do_not_expose_transport_kwargs_or_tuple_results() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("d" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+
+    for name, member in inspect.getmembers(auth.api, predicate=inspect.ismethod):
+        if name.startswith("_"):
+            continue
+        assert not name.startswith("internal_")
+        signature = inspect.signature(member)
+        assert "ip" not in signature.parameters
+        assert "user_agent" not in signature.parameters
+        assert "tuple[" not in str(signature.return_annotation)

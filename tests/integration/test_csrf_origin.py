@@ -58,6 +58,15 @@ async def test_trusted_origin_post_is_allowed(csrf_client: httpx.AsyncClient) ->
     assert response.status_code == 200
 
 
+async def test_missing_origin_post_is_blocked(csrf_client: httpx.AsyncClient) -> None:
+    response = await csrf_client.post(
+        "/auth/sign-up/email",
+        json={"email": "missing-origin@example.com", "password": "correct-horse-staple"},
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "CSRF_FORBIDDEN"
+
+
 async def test_bearer_only_post_bypasses_csrf(csrf_client: httpx.AsyncClient) -> None:
     # Bearer-only requests have no cookie attached; CSRF must not block.
     response = await csrf_client.post(

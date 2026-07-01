@@ -385,6 +385,26 @@ class InMemoryAdapter:
         return filtered[offset : offset + limit], len(filtered)
 
     # ----- RateLimit -----
+    async def increment_rate_limit(
+        self,
+        key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> tuple[int, int]:
+        async with self.lock:
+            existing = self.rate_limits.get(key)
+            if existing is None or existing.last_request_ms <= now_ms - window_ms:
+                updated = RateLimit(key=key, count=1, last_request_ms=now_ms)
+            else:
+                updated = RateLimit(
+                    key=key,
+                    count=existing.count + 1,
+                    last_request_ms=now_ms,
+                )
+            self.rate_limits[key] = updated
+            return updated.count, updated.last_request_ms - window_ms
+
     async def get_rate_limit(self, key: str) -> RateLimit | None:
         return self.rate_limits.get(key)
 

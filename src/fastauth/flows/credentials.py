@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import Annotated, cast
 
-from pydantic import ConfigDict, EmailStr, Field, SecretStr, TypeAdapter, ValidationError
+from pydantic import (
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 
 from fastauth.api.commands import (
     BearerCredentialDelivery,
@@ -22,6 +30,7 @@ from fastauth.domain.events import (
     UserSignedUp,
 )
 from fastauth.domain.models import Account, User, WireModel
+from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import InvalidCredentialsError, InvalidRequestError
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
@@ -135,12 +144,22 @@ class SignUpEmailRequest(WireModel):
     username: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_.-]{3,32}$")
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
 
 class SignInEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
     password: SecretStr
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
 
 
 class SignInUsernameRequest(WireModel):

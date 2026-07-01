@@ -135,7 +135,7 @@ class JwtPlugin(Plugin):
 
         The JWKS registry and signer may have already been built ahead of
         ``bind`` (specifically, by ``FastAuth.__init__`` when
-        ``SessionConfig.strategy == JWT`` and a ``JwtSessionStrategy`` is
+        ``SessionOptions.strategy == JWT`` and a ``JwtSessionStrategy`` is
         constructed before plugin binding). In that case we reuse them so
         the plugin's ``/token``/``/jwks`` endpoints and the session strategy
         share the same registry and produce the same kid space.

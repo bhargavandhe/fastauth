@@ -118,18 +118,16 @@ class HealthResponse(WireModel):
     name: str
 
 
-class AuthApi:
-    """Server-side callable surface. More methods are registered in later tasks."""
+class RouterAuthApi:
+    """Router-only bridge from HTTP handlers to flow functions."""
 
     def __init__(self, context: AuthContext) -> None:
         self.context = context
-        self.sign_up = SignUpApi(self)
-        self.sign_in = SignInApi(self)
 
     async def health(self) -> HealthResponse:
         return HealthResponse(status="ok", name=self.context.config.app.name)
 
-    async def sign_in_username(
+    async def internal_sign_in_username(
         self,
         request: SignInUsernameRequest,
         *,
@@ -138,13 +136,13 @@ class AuthApi:
     ) -> tuple[SessionResponse, SessionContext]:
         return await sign_in_username_flow(self.context, request, ip=ip, user_agent=user_agent)
 
-    async def sign_out(self, token: str | None) -> EmptyResponse:
+    async def internal_sign_out(self, token: str | None) -> EmptyResponse:
         return await sign_out_flow(self.context, token)
 
-    async def get_session(self, token: str | None) -> SessionResponse | None:
+    async def internal_get_session(self, token: str | None) -> SessionResponse | None:
         return await get_session_flow(self.context, token)
 
-    async def send_verification_email(
+    async def internal_send_verification_email(
         self,
         request: SendVerificationEmailRequest,
         *,
@@ -158,7 +156,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def verify_email(
+    async def internal_verify_email(
         self,
         request: VerifyEmailRequest,
         *,
@@ -172,7 +170,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def forgot_password(
+    async def internal_forgot_password(
         self,
         request: ForgotPasswordRequest,
         *,
@@ -186,7 +184,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def reset_password(
+    async def internal_reset_password(
         self,
         request: ResetPasswordRequest,
         *,
@@ -200,7 +198,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def change_password(
+    async def internal_change_password(
         self,
         user: User,
         *,
@@ -218,7 +216,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def update_user(
+    async def internal_update_user(
         self,
         user: User,
         request: UpdateUserRequest,
@@ -234,7 +232,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def set_password(
+    async def internal_set_password(
         self,
         user: User,
         *,
@@ -252,7 +250,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def verify_password(
+    async def internal_verify_password(
         self,
         user: User,
         request: VerifyPasswordRequest,
@@ -268,7 +266,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def delete_account_with_password(
+    async def internal_delete_account_with_password(
         self,
         user: User,
         request: DeleteAccountRequest,
@@ -284,7 +282,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def request_delete_account(
+    async def internal_request_delete_account(
         self,
         user: User,
         *,
@@ -298,7 +296,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def confirm_delete_account(
+    async def internal_confirm_delete_account(
         self,
         user: User,
         request: DeleteAccountConfirmRequest,
@@ -314,7 +312,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def request_email_change(
+    async def internal_request_email_change(
         self,
         user: User,
         request: RequestEmailChangeRequest,
@@ -330,7 +328,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def confirm_email_change(
+    async def internal_confirm_email_change(
         self,
         request: ConfirmEmailChangeRequest,
         *,
@@ -344,7 +342,7 @@ class AuthApi:
             user_agent=user_agent,
         )
 
-    async def list_sessions(
+    async def internal_list_sessions(
         self,
         user: User,
         *,
@@ -356,7 +354,7 @@ class AuthApi:
             current_session_id=current_session_id,
         )
 
-    async def revoke_session(
+    async def internal_revoke_session(
         self,
         user: User,
         *,
@@ -364,7 +362,7 @@ class AuthApi:
     ) -> RevokeSessionsResponse:
         return await revoke_session_flow(self.context, user=user, session_id=session_id)
 
-    async def revoke_other_sessions(
+    async def internal_revoke_other_sessions(
         self,
         user: User,
         *,
@@ -376,7 +374,7 @@ class AuthApi:
             current_session_id=current_session_id,
         )
 
-    async def refresh_session(
+    async def internal_refresh_session(
         self,
         request: RefreshTokenRequest,
         *,
@@ -389,6 +387,18 @@ class AuthApi:
             ip=ip,
             user_agent=user_agent,
         )
+
+
+class AuthApi:
+    """Public server-side API surface built from command/result models."""
+
+    def __init__(self, context: AuthContext) -> None:
+        self.context = context
+        self.sign_up = SignUpApi(self)
+        self.sign_in = SignInApi(self)
+
+    async def health(self) -> HealthResponse:
+        return HealthResponse(status="ok", name=self.context.config.app.name)
 
     async def generate_openapi_schema(self) -> dict[str, Any]:
         """Build the fastauth OpenAPI 3.1 schema offline (no running ASGI server).

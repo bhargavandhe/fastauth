@@ -85,6 +85,36 @@ async def test_remaining_decrements(client: httpx.AsyncClient) -> None:
     assert third.json()["error"]["code"] == "API_KEY_EXHAUSTED"
 
 
+async def test_insufficient_permission_does_not_consume_remaining_quota(
+    client: httpx.AsyncClient,
+) -> None:
+    await signed_in_client(client)
+    created = await client.post(
+        "/auth/api-key/create",
+        json={
+            "name": "limited",
+            "remaining": 1,
+            "permissions": {"deploy": ["read"]},
+        },
+    )
+    plain_key = created.json()["key"]
+    denied = await client.post(
+        "/auth/api-key/verify",
+        json={"key": plain_key, "permissions": {"deploy": ["write"]}},
+    )
+    allowed = await client.post(
+        "/auth/api-key/verify",
+        json={"key": plain_key, "permissions": {"deploy": ["read"]}},
+    )
+    exhausted = await client.post("/auth/api-key/verify", json={"key": plain_key})
+
+    assert denied.json()["valid"] is False
+    assert denied.json()["error"]["code"] == "INSUFFICIENT_PERMISSIONS"
+    assert allowed.json()["valid"] is True
+    assert exhausted.json()["valid"] is False
+    assert exhausted.json()["error"]["code"] == "API_KEY_EXHAUSTED"
+
+
 async def test_create_with_expires_in_one_hour_is_valid(
     client: httpx.AsyncClient,
 ) -> None:

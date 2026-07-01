@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -122,6 +123,57 @@ def test_readme_quickstart_uses_auth_mount() -> None:
         "with CSRF, rate-limiting, account-lockout, refresh\n"
         "tokens, and security headers all on by default."
     ) not in text
+
+
+def test_readme_route_protection_uses_public_user_view() -> None:
+    text = read_project_file("README.md")
+
+    assert "from fastauth.domain.models import User" not in text
+    assert "from fastauth.api.responses import UserView" in text
+    assert "Depends(auth.get_current_user_view)" in text
+
+
+def test_quickstart_route_protection_uses_public_user_view() -> None:
+    text = read_project_file("docs/quickstart.md")
+
+    assert "auth.get_current_user` | `User`" not in text
+    assert "auth.get_current_user_view` | `UserView`" in text
+    assert "from fastauth.api.responses import UserView" in text
+    assert "Depends(auth.get_current_user_view)" in text
+
+
+def test_session_docs_do_not_claim_unused_rotation_option() -> None:
+    text = read_project_file("docs/concepts/sessions.md")
+
+    assert "rotate_on_refresh" not in text
+    assert "sliding rotation" not in text.lower()
+
+
+def test_source_tree_does_not_contain_generated_python_caches() -> None:
+    tracked_files = subprocess.run(
+        ["git", "ls-files", "src/fastauth"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.splitlines()
+    offenders = [
+        path
+        for path in tracked_files
+        if "__pycache__" in pathlib.PurePosixPath(path).parts or path.endswith(".pyc")
+    ]
+
+    assert not offenders, "Generated Python cache files found:\n" + "\n".join(offenders)
+
+
+def test_package_version_matches_imported_version() -> None:
+    import tomllib
+
+    import fastauth
+
+    pyproject = tomllib.loads(read_project_file("pyproject.toml"))
+
+    assert fastauth.__version__ == pyproject["project"]["version"]
 
 
 def test_release_metadata_is_project_specific() -> None:

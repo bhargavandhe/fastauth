@@ -13,6 +13,7 @@ two read-only HTTP endpoints:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import ClassVar
 
 from fastapi import Request
@@ -21,12 +22,13 @@ from pydantic import Field
 from fastauth.domain.enums import AuditEventType
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.models import AuditLog, WireModel
+from fastauth.domain.value_objects import AuditEventData
 from fastauth.exceptions import ConfigError, CsrfError, InvalidCredentialsError
 from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.storage.base import AuditLogStore
 
-__all__ = ["AuditLogsOptions", "AuditLogsPlugin", "AuditLogsResponse"]
+__all__ = ["AuditLogView", "AuditLogsOptions", "AuditLogsPlugin", "AuditLogsResponse"]
 
 
 class AuditLogsOptions(PluginOptions):
@@ -35,13 +37,39 @@ class AuditLogsOptions(PluginOptions):
     admin_user_ids: tuple[str, ...] = Field(default_factory=tuple)
 
 
+class AuditLogView(WireModel):
+    """Safe public DTO for an audit event row."""
+
+    id: str
+    event_type: AuditEventType
+    user_id: str | None = None
+    identifier: str | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
+    event_data: AuditEventData = Field(default_factory=lambda: AuditEventData({}))
+    created_at: datetime
+
+
 class AuditLogsResponse(WireModel):
     """Paginated response body for the audit-log query endpoints."""
 
-    events: list[AuditLog]
+    events: list[AuditLogView]
     total: int
     limit: int
     offset: int
+
+
+def audit_log_view(event: AuditLog) -> AuditLogView:
+    return AuditLogView(
+        id=event.id,
+        event_type=event.event_type,
+        user_id=event.user_id,
+        identifier=event.identifier,
+        ip_address=event.ip_address,
+        user_agent=event.user_agent,
+        event_data=AuditEventData.model_validate(event.event_data),
+        created_at=event.created_at,
+    )
 
 
 class AuditLogsPlugin(Plugin):
@@ -163,7 +191,12 @@ class AuditLogsPlugin(Plugin):
             limit=limit,
             offset=offset,
         )
-        return AuditLogsResponse(events=events, total=total, limit=limit, offset=offset)
+        return AuditLogsResponse(
+            events=[audit_log_view(event) for event in events],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     async def list_all_handler(
         self,
@@ -191,4 +224,9 @@ class AuditLogsPlugin(Plugin):
             limit=limit,
             offset=offset,
         )
-        return AuditLogsResponse(events=events, total=total, limit=limit, offset=offset)
+        return AuditLogsResponse(
+            events=[audit_log_view(event) for event in events],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )

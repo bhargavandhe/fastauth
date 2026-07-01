@@ -51,6 +51,37 @@ async def test_read_returns_none_when_expired(
     assert await strategy.read(context.token) is None
 
 
+async def test_read_returns_none_when_idle_timeout_elapsed() -> None:
+    adapter = InMemoryAdapter()
+    strategy = DatabaseSessionStrategy(
+        adapter,
+        TokenService(),
+        SessionOptions(idle_timeout=timedelta(minutes=5)),
+    )
+    user = await adapter.create_user(User(email="idle@example.com"))
+    context = await strategy.create(user, ip=None, user_agent=None)
+    adapter.sessions[context.session.id].updated_at = datetime.now(UTC) - timedelta(minutes=6)
+
+    assert await strategy.read(context.token) is None
+
+
+async def test_read_refreshes_idle_activity_timestamp() -> None:
+    adapter = InMemoryAdapter()
+    strategy = DatabaseSessionStrategy(
+        adapter,
+        TokenService(),
+        SessionOptions(idle_timeout=timedelta(minutes=5)),
+    )
+    user = await adapter.create_user(User(email="active@example.com"))
+    context = await strategy.create(user, ip=None, user_agent=None)
+    adapter.sessions[context.session.id].updated_at = datetime.now(UTC) - timedelta(minutes=2)
+
+    read = await strategy.read(context.token)
+
+    assert read is not None
+    assert read.session.updated_at > context.session.created_at
+
+
 async def test_revoke_and_revoke_all(
     strategy: DatabaseSessionStrategy,
     user: User,

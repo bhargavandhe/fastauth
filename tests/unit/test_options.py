@@ -148,6 +148,10 @@ def test_fastauth_options_defaults_match_documented_values() -> None:
     assert options.security_headers.enabled is True
 
 
+def test_session_options_do_not_expose_unused_rotation_toggle() -> None:
+    assert "rotate_on_refresh" not in SessionOptions.model_fields
+
+
 def test_option_sections_are_pydantic_models() -> None:
     for cls in (
         AppOptions,

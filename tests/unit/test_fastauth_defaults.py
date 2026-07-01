@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import pytest
 from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import custom, memory
+from fastauth.exceptions import ConfigError
 from fastauth.options import MongoDatabaseOptions
+from fastauth.providers import email_password
 from fastauth.storage.memory import InMemoryAdapter
 
 
@@ -36,6 +39,16 @@ def test_fastauth_accepts_custom_adapter_database_option() -> None:
     )
 
     assert auth.context.adapter is adapter
+
+
+def test_production_deployment_requires_non_console_email_sender() -> None:
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        deployment="production",
+    )
+
+    with pytest.raises(ConfigError):
+        FastAuth(options, plugins=[email_password()])
 
 
 def test_mongo_database_option_models_collection_affixes() -> None:

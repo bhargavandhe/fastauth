@@ -59,12 +59,13 @@ auth.mount(app)
 
 ## Protecting routes with `CurrentUser` / `CurrentSession`
 
-The `FastAuth` instance exposes four FastAPI dependency callables:
+The `FastAuth` instance exposes public DTO dependencies for application routes,
+plus lower-level domain/session dependencies for advanced cases:
 
 | Dependency | Returns | On anonymous request |
 |---|---|---|
-| `auth.get_current_user` | `User` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
-| `auth.get_optional_current_user` | `User \| None` | returns `None` (never raises) |
+| `auth.get_current_user_view` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
+| `auth.get_optional_current_user_view` | `UserView \| None` | returns `None` (never raises) |
 | `auth.get_current_session` | `SessionContext` | raises HTTP 401 |
 | `auth.get_optional_current_session` | `SessionContext \| None` | returns `None` |
 
@@ -76,22 +77,22 @@ Both cookie and `Authorization: Bearer` transports are honoured automatically.
 # Style 1 — `Depends` as default value (always works, even with
 # `from __future__ import annotations`):
 from fastapi import Depends
-from fastauth.domain.models import User
+from fastauth.api.responses import UserView
 
 @app.get("/me")
-async def me(user: User = Depends(auth.get_current_user)) -> User:
+async def me(user: UserView = Depends(auth.get_current_user_view)) -> UserView:
     return user
 
 # Style 2 — `Annotated` type alias (idiomatic, requires `auth` to be a
 # module-level name so PEP 563 string-annotation resolution can find it):
 from typing import Annotated
 from fastapi import Depends
-from fastauth.domain.models import User
+from fastauth.api.responses import UserView
 
-CurrentUser = Annotated[User, Depends(auth.get_current_user)]
+CurrentUser = Annotated[UserView, Depends(auth.get_current_user_view)]
 
 @app.get("/me")
-async def me(user: CurrentUser) -> User:
+async def me(user: CurrentUser) -> UserView:
     return user
 ```
 

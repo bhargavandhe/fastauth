@@ -166,10 +166,10 @@ Python 3.11+ required. FastAPI 0.115+, Pydantic 2.8+.
 
 ```python
 from fastapi import Depends
-from fastauth.domain.models import User
+from fastauth.api.responses import UserView
 
 @app.get("/me")
-async def me(user: User = Depends(auth.get_current_user)) -> User:
+async def me(user: UserView = Depends(auth.get_current_user_view)) -> UserView:
     return user
 ```
 
@@ -178,12 +178,12 @@ Or with the `Annotated` style (FastAPI's idiom):
 ```python
 from typing import Annotated
 from fastapi import Depends
-from fastauth.domain.models import User
+from fastauth.api.responses import UserView
 
-CurrentUser = Annotated[User, Depends(auth.get_current_user)]
+CurrentUser = Annotated[UserView, Depends(auth.get_current_user_view)]
 
 @app.get("/me")
-async def me(user: CurrentUser) -> User:
+async def me(user: CurrentUser) -> UserView:
     return user
 ```
 

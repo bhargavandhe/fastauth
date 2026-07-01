@@ -166,6 +166,13 @@ class AuditLogStore(Protocol):
 
 @runtime_checkable
 class RateLimitStore(Protocol):
+    async def increment_rate_limit(
+        self,
+        key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> tuple[int, int]: ...
     async def get_rate_limit(self, key: str) -> RateLimit | None: ...
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit: ...
     async def delete_rate_limit(self, key: str) -> None: ...

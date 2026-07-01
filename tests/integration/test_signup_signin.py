@@ -34,6 +34,39 @@ async def test_sign_up_rejects_duplicate_email(
     assert second.json()["code"] == "DUPLICATE"
 
 
+async def test_sign_up_normalizes_email_and_rejects_case_variant_duplicate(
+    client: httpx.AsyncClient,
+) -> None:
+    first = await client.post(
+        "/auth/sign-up/email",
+        json={"email": "Alice@Example.COM", "password": "correct-horse-staple"},
+    )
+    assert first.status_code == 200
+    assert first.json()["user"]["email"] == "alice@example.com"
+
+    second = await client.post(
+        "/auth/sign-up/email",
+        json={"email": "alice@example.com", "password": "correct-horse-staple"},
+    )
+    assert second.status_code == 409
+
+
+async def test_sign_in_email_normalizes_identifier(client: httpx.AsyncClient) -> None:
+    await client.post(
+        "/auth/sign-up/email",
+        json={"email": "alice@example.com", "password": "correct-horse-staple"},
+    )
+    client.cookies.clear()
+
+    response = await client.post(
+        "/auth/sign-in/email",
+        json={"email": "Alice@Example.COM", "password": "correct-horse-staple"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["email"] == "alice@example.com"
+
+
 async def test_sign_up_rejects_short_password(client: httpx.AsyncClient) -> None:
     response = await client.post(
         "/auth/sign-up/email",

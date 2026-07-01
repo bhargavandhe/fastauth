@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
 from fastapi import FastAPI
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, case, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
@@ -761,6 +761,40 @@ class PostgresAdapter(
             select(self.schema.rate_limits).where(self.schema.rate_limits.c.key == key),
             row_to_rate_limit,
         )
+
+    async def increment_rate_limit(
+        self,
+        key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> tuple[int, int]:
+        threshold_ms = now_ms - window_ms
+        statement = (
+            postgres_insert(self.schema.rate_limits)
+            .values(key=key, count=1, last_request_ms=now_ms)
+            .on_conflict_do_update(
+                index_elements=[self.schema.rate_limits.c.key],
+                set_={
+                    "count": case(
+                        (
+                            self.schema.rate_limits.c.last_request_ms <= threshold_ms,
+                            1,
+                        ),
+                        else_=self.schema.rate_limits.c.count + 1,
+                    ),
+                    "last_request_ms": now_ms,
+                },
+            )
+            .returning(
+                self.schema.rate_limits.c.count,
+                self.schema.rate_limits.c.last_request_ms,
+            )
+        )
+        async with self.engine.begin() as connection:
+            result = await connection.execute(statement)
+            row = result.mappings().one()
+        return int(row["count"]), int(row["last_request_ms"]) - window_ms
 
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
         statement = (

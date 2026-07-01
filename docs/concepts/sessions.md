@@ -22,6 +22,7 @@ Cookie packaging uses an `itsdangerous`-signed envelope so that tokens are
 tamper-evident at the transport boundary. Cookie attributes
 (`secure`, `same_site`, `http_only`, …) come from `CookieOptions`.
 
-Database-backed sessions expire on the server, can be revoked individually
-(`sign-out`) or wholesale (`revoke_all` on password reset), and support
-sliding rotation when `session.rotate_on_refresh` is enabled.
+Database-backed sessions expire on the server and can be revoked individually
+(`sign-out`) or wholesale (`revoke_all` on password reset). `SessionOptions`
+also supports `idle_timeout`, which expires a session after a period without
+authenticated reads.

@@ -25,6 +25,7 @@ __all__ = [
     "UserMetadata",
     "VerificationId",
     "VerificationValueHash",
+    "normalize_email",
 ]
 
 
@@ -129,3 +130,9 @@ class AuditEventData(JsonObject):
 
 class PermissionSet(RootModel[dict[str, frozenset[str]]]):
     model_config = ConfigDict(frozen=True)
+
+
+def normalize_email(value: object) -> object:
+    if value is None:
+        return None
+    return str(value).lower()

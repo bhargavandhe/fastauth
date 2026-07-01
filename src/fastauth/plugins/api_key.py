@@ -333,6 +333,25 @@ class ApiKeyPlugin(Plugin):
                 api_key.remaining = api_key.refill_amount
                 api_key.last_refill_at = now
 
+        if body.permissions is not None:
+            missing: dict[str, list[str]] = {}
+            for resource, actions in body.permissions.root.items():
+                granted = set(api_key.permissions.get(resource, []))
+                missing_actions = [action for action in actions if action not in granted]
+                if missing_actions:
+                    missing[resource] = missing_actions
+            if missing:
+                await context.event_bus.publish(
+                    ApiKeyVerifyFailed(identifier=key_identifier),
+                )
+                return VerifyApiKeyResponse(
+                    valid=False,
+                    error=VerifyApiKeyError(
+                        code="INSUFFICIENT_PERMISSIONS",
+                        message=str(missing),
+                    ),
+                )
+
         if api_key.remaining is not None:
             if api_key.remaining <= 0:
                 api_key.request_count += 1
@@ -353,25 +372,6 @@ class ApiKeyPlugin(Plugin):
         api_key.request_count += 1
         api_key.last_request_at = now
         await store.update_api_key(api_key)
-
-        if body.permissions is not None:
-            missing: dict[str, list[str]] = {}
-            for resource, actions in body.permissions.root.items():
-                granted = set(api_key.permissions.get(resource, []))
-                missing_actions = [action for action in actions if action not in granted]
-                if missing_actions:
-                    missing[resource] = missing_actions
-            if missing:
-                await context.event_bus.publish(
-                    ApiKeyVerifyFailed(identifier=key_identifier),
-                )
-                return VerifyApiKeyResponse(
-                    valid=False,
-                    error=VerifyApiKeyError(
-                        code="INSUFFICIENT_PERMISSIONS",
-                        message=str(missing),
-                    ),
-                )
 
         return VerifyApiKeyResponse(valid=True, api_key=api_key_view(api_key))
 

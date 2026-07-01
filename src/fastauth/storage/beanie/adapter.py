@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from beanie import PydanticObjectId
 from fastapi import FastAPI
+from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
@@ -624,6 +625,44 @@ class BeanieAdapter:
     async def get_rate_limit(self, key: str) -> RateLimit | None:
         doc = await self.rate_limit_doc.find_one({"key": key})
         return to_rate_limit(doc) if doc else None
+
+    async def increment_rate_limit(
+        self,
+        key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> tuple[int, int]:
+        threshold_ms = now_ms - window_ms
+        collection = self.database[self.rate_limit_doc.Settings.name]
+        row = await collection.find_one_and_update(
+            {"key": key},
+            [
+                {
+                    "$set": {
+                        "key": key,
+                        "count": {
+                            "$cond": [
+                                {
+                                    "$lte": [
+                                        {"$ifNull": ["$last_request_ms", 0]},
+                                        threshold_ms,
+                                    ],
+                                },
+                                1,
+                                {"$add": [{"$ifNull": ["$count", 0]}, 1]},
+                            ],
+                        },
+                        "last_request_ms": now_ms,
+                    },
+                },
+            ],
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        if row is None:
+            raise RuntimeError("rate-limit increment failed")
+        return int(row["count"]), int(row["last_request_ms"]) - window_ms
 
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
         doc = await self.rate_limit_doc.find_one({"key": rate_limit.key})

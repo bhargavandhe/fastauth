@@ -8,6 +8,7 @@ from typing import cast
 
 from fastapi import FastAPI, HTTPException, Request, status
 
+from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
@@ -62,6 +63,13 @@ class FastAuth:
         password_hasher = password_hasher or Argon2idHasher(config.password)
         token_service = token_service or TokenService()
         email_sender = email_sender or ConsoleEmailSender()
+        if config.deployment == "production" and isinstance(email_sender, ConsoleEmailSender):
+            raise ConfigError(
+                message=(
+                    "FastAuthOptions.deployment='production' requires an explicit "
+                    "non-console email_sender"
+                ),
+            )
         signed_cookie = SignedCookieValue(
             config.secret_key,
             list(config.secret_key_rotation),
@@ -242,8 +250,8 @@ class FastAuth:
     # automatically. Users compose them with ``Annotated[T, Depends(...)]`` at
     # their callsite — e.g.::
     #
-    #     CurrentUser = Annotated[User, Depends(auth.get_current_user)]
-    #     async def me(user: CurrentUser) -> User: ...
+    #     CurrentUser = Annotated[UserView, Depends(auth.get_current_user_view)]
+    #     async def me(user: CurrentUser) -> UserView: ...
     #
     # Cookie and ``Authorization: Bearer`` transports are both honoured via
     # the same ``extract_session_token`` helper used by the core endpoints.
@@ -285,11 +293,16 @@ class FastAuth:
     async def get_current_user(self, request: Request) -> User:
         """Return the active ``User`` or raise 401.
 
-        Use as a FastAPI dependency with
+        Prefer ``get_current_user_view`` for application routes. Use this
+        lower-level dependency only when domain/session internals are required:
         ``Annotated[User, Depends(auth.get_current_user)]``.
         """
         session = await self.get_current_session(request)
         return session.user
+
+    async def get_current_user_view(self, request: Request) -> UserView:
+        """Return the active user as a safe public DTO or raise 401."""
+        return user_view(await self.get_current_user(request))
 
     async def get_optional_current_user(self, request: Request) -> User | None:
         """Return the active ``User`` or ``None`` for anonymous requests.
@@ -298,3 +311,8 @@ class FastAuth:
         """
         session = await self.get_optional_current_session(request)
         return session.user if session else None
+
+    async def get_optional_current_user_view(self, request: Request) -> UserView | None:
+        """Return the active user as a safe public DTO, or ``None`` for anonymous requests."""
+        user = await self.get_optional_current_user(request)
+        return user_view(user) if user is not None else None

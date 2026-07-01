@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
-from pydantic import ConfigDict, JsonValue, SecretStr, model_validator
+from pydantic import ConfigDict, SecretStr, model_validator
 
 from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
 from fastauth.domain.events import (
@@ -17,6 +17,7 @@ from fastauth.domain.events import (
     UserUpdated,
 )
 from fastauth.domain.models import Account, EmailMessage, User, Verification, WireModel
+from fastauth.domain.value_objects import UserMetadata
 from fastauth.exceptions import (
     InvalidCredentialsError,
     NotFoundError,
@@ -53,7 +54,7 @@ class UpdateUserRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = None
     image: str | None = None
-    metadata: dict[str, JsonValue] | None = None
+    metadata: UserMetadata | None = None
 
     @model_validator(mode="after")
     def reject_metadata_null(self) -> UpdateUserRequest:
@@ -103,7 +104,7 @@ async def update_user(
         user.image = request.image
         changed_fields.append("image")
     if "metadata" in request.model_fields_set:
-        user.metadata = request.metadata or {}
+        user.metadata = request.metadata.model_dump(mode="json") if request.metadata else {}
         changed_fields.append("metadata")
 
     if not changed_fields:

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
 from pydantic.alias_generators import to_camel
+
+from fastauth.domain.value_objects import normalize_email
 
 __all__ = [
     "BearerCredentialDelivery",
@@ -53,6 +55,11 @@ class SignInEmailCommand(CommandModel):
     context: RequestContext = Field(default_factory=RequestContext)
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
 
 class SignUpEmailCommand(CommandModel):
     email: EmailStr
@@ -61,3 +68,8 @@ class SignUpEmailCommand(CommandModel):
     username: str | None = None
     context: RequestContext = Field(default_factory=RequestContext)
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)

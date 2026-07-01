@@ -135,17 +135,11 @@ class DatabaseRateLimitStorage:
         window_ms: int,
         now_ms: int,
     ) -> tuple[int, int]:
-        existing = await self.adapter.get_rate_limit(key)
-        if existing is None or existing.last_request_ms <= now_ms - window_ms:
-            updated = RateLimit(key=key, count=1, last_request_ms=now_ms)
-        else:
-            updated = RateLimit(
-                key=key,
-                count=existing.count + 1,
-                last_request_ms=now_ms,
-            )
-        await self.adapter.upsert_rate_limit(updated)
-        return updated.count, updated.last_request_ms - window_ms
+        return await self.adapter.increment_rate_limit(
+            key,
+            window_ms=window_ms,
+            now_ms=now_ms,
+        )
 
     async def get(self, key: str) -> RateLimit | None:
         return await self.adapter.get_rate_limit(key)

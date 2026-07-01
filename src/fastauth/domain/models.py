@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, JsonValue, field_validator
 from pydantic.alias_generators import to_camel
 
 from fastauth.domain.enums import (
@@ -14,7 +14,7 @@ from fastauth.domain.enums import (
     ProviderId,
     VerificationPurpose,
 )
-from fastauth.domain.value_objects import NonEmptyString
+from fastauth.domain.value_objects import NonEmptyString, normalize_email
 
 __all__ = [
     "Account",
@@ -85,6 +85,11 @@ class User(FastAuthModel):
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("email", "pending_email_change", mode="before")
+    @classmethod
+    def normalize_email_fields(cls, value: object) -> object:
+        return normalize_email(value)
 
 
 class Session(FastAuthModel):

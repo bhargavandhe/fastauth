@@ -56,7 +56,7 @@ from fastauth.flows.verification import (
     SendVerificationEmailRequest,
     VerifyEmailRequest,
 )
-from fastauth.runtime.api import AuthApi, HealthResponse
+from fastauth.runtime.api import AuthApi, HealthResponse, RouterAuthApi
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 from fastauth.web.csrf import CsrfMiddleware
@@ -195,6 +195,8 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     """Build the fastauth ``APIRouter`` with health + credentials flow endpoints."""
     from fastauth.plugins.email_password import EmailPasswordPlugin
 
+    internal_api = RouterAuthApi(context)
+
     router = APIRouter(
         prefix=context.config.app.base_path,
         tags=["fastauth"],
@@ -290,7 +292,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
         response: Response,
     ) -> SessionResponse:
-        result, session_context = await api.sign_in_username(
+        result, session_context = await internal_api.internal_sign_in_username(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -314,7 +316,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
         response: Response,
     ) -> SessionResponse:
-        result, session_context = await api.refresh_session(
+        result, session_context = await internal_api.internal_refresh_session(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -334,7 +336,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         response: Response,
     ) -> EmptyResponse:
         token = extract_session_token(request, context)
-        await api.sign_out(token)
+        await internal_api.internal_sign_out(token)
         clear_session_cookie(response, context)
         return EmptyResponse(success=True)
 
@@ -366,7 +368,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         body: SendVerificationEmailRequest,
         request: Request,
     ) -> EmptyResponse:
-        return await api.send_verification_email(
+        return await internal_api.internal_send_verification_email(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -382,7 +384,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
         response: Response,
     ) -> SessionResponse:
-        result, session_context = await api.verify_email(
+        result, session_context = await internal_api.internal_verify_email(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -404,7 +406,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         body: ForgotPasswordRequest,
         request: Request,
     ) -> EmptyResponse:
-        return await api.forgot_password(
+        return await internal_api.internal_forgot_password(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -419,7 +421,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         body: ResetPasswordRequest,
         request: Request,
     ) -> EmptyResponse:
-        return await api.reset_password(
+        return await internal_api.internal_reset_password(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -435,7 +437,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> EmptyResponse:
         session_ctx = await require_session(request, context)
-        return await api.change_password(
+        return await internal_api.internal_change_password(
             session_ctx.user,
             current_session_id=session_ctx.session.id,
             request=body,
@@ -453,7 +455,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> UserView:
         session_ctx = await require_session(request, context)
-        updated = await api.update_user(
+        updated = await internal_api.internal_update_user(
             session_ctx.user,
             body,
             ip=client_ip(request, context),
@@ -471,7 +473,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> EmptyResponse:
         session_ctx = await require_session(request, context)
-        return await api.set_password(
+        return await internal_api.internal_set_password(
             session_ctx.user,
             current_session_id=session_ctx.session.id,
             request=body,
@@ -489,7 +491,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> VerifyPasswordResponse:
         session_ctx = await require_session(request, context)
-        return await api.verify_password(
+        return await internal_api.internal_verify_password(
             session_ctx.user,
             body,
             ip=client_ip(request, context),
@@ -507,7 +509,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         response: Response,
     ) -> EmptyResponse:
         session_ctx = await require_session(request, context)
-        result = await api.delete_account_with_password(
+        result = await internal_api.internal_delete_account_with_password(
             session_ctx.user,
             body,
             ip=client_ip(request, context),
@@ -525,7 +527,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> EmptyResponse:
         session_ctx = await require_session(request, context)
-        return await api.request_delete_account(
+        return await internal_api.internal_request_delete_account(
             session_ctx.user,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -542,7 +544,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         response: Response,
     ) -> EmptyResponse:
         session_ctx = await require_session(request, context)
-        result = await api.confirm_delete_account(
+        result = await internal_api.internal_confirm_delete_account(
             session_ctx.user,
             body,
             ip=client_ip(request, context),
@@ -561,7 +563,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> EmptyResponse:
         session_ctx = await require_session(request, context)
-        return await api.request_email_change(
+        return await internal_api.internal_request_email_change(
             session_ctx.user,
             body,
             ip=client_ip(request, context),
@@ -577,7 +579,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         body: ConfirmEmailChangeRequest,
         request: Request,
     ) -> EmptyResponse:
-        return await api.confirm_email_change(
+        return await internal_api.internal_confirm_email_change(
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -592,7 +594,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> ListSessionsResponse:
         session_ctx = await require_session(request, context)
-        return await api.list_sessions(
+        return await internal_api.internal_list_sessions(
             session_ctx.user,
             current_session_id=session_ctx.session.id,
         )
@@ -607,7 +609,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> RevokeSessionsResponse:
         session_ctx = await require_session(request, context)
-        return await api.revoke_session(session_ctx.user, session_id=session_id)
+        return await internal_api.internal_revoke_session(session_ctx.user, session_id=session_id)
 
     @router.delete(
         "/sessions",
@@ -618,7 +620,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
     ) -> RevokeSessionsResponse:
         session_ctx = await require_session(request, context)
-        return await api.revoke_other_sessions(
+        return await internal_api.internal_revoke_other_sessions(
             session_ctx.user,
             current_session_id=session_ctx.session.id,
         )

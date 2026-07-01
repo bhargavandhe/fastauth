@@ -77,7 +77,6 @@ class SessionOptions(OptionsSection):
     strategy: SessionStrategyKind = SessionStrategyKind.DATABASE
     expires_in: timedelta = Field(default=timedelta(days=7), gt=timedelta(0))
     idle_timeout: timedelta | None = Field(default=None, gt=timedelta(0))
-    rotate_on_refresh: bool = True
 
     @model_validator(mode="after")
     def validate_idle_timeout(self) -> SessionOptions:
@@ -180,6 +179,7 @@ class RateLimitOptions(OptionsSection):
 class CsrfOptions(OptionsSection):
     enabled: bool = True
     trusted_origins: tuple[str, ...] = Field(default_factory=tuple)
+    require_origin: bool = True
     allow_relative_paths: bool = True
 
 
@@ -317,6 +317,7 @@ class FastAuthOptions(OptionsModel):
 
     secret_key: SecretStr
     secret_key_rotation: tuple[SecretStr, ...] = Field(default_factory=tuple)
+    deployment: Literal["development", "production"] = "development"
     database: DatabaseOptions = Field(default_factory=MemoryDatabaseOptions)
     app: AppOptions = Field(default_factory=lambda: AppOptions())
     session: SessionOptions = Field(default_factory=lambda: SessionOptions())

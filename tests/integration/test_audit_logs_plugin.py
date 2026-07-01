@@ -7,7 +7,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from fastauth.plugins.audit_logs import AuditLogsOptions, AuditLogsPlugin
+from fastauth.plugins.audit_logs import AuditLogsOptions, AuditLogsPlugin, AuditLogsResponse
 from fastauth.runtime.auth import FastAuth
 
 
@@ -24,9 +24,15 @@ async def test_sign_up_writes_audit_event(client: httpx.AsyncClient) -> None:
     listed = await client.get("/auth/audit-logs", params={"limit": 50})
     assert listed.status_code == 200
     events = listed.json()["events"]
-    types = {event["event_type"] for event in events}
+    types = {event["eventType"] for event in events}
     assert "user_signed_up" in types
     assert "session_created" in types
+    assert all("updatedAt" not in event for event in events)
+    assert all("eventData" in event for event in events)
+
+
+def test_audit_logs_response_uses_public_view_model() -> None:
+    assert "AuditLogView" in str(AuditLogsResponse.model_fields["events"].annotation)
 
 
 async def test_filter_by_event_type(client: httpx.AsyncClient) -> None:
@@ -41,7 +47,7 @@ async def test_filter_by_event_type(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 1
-    assert body["events"][0]["event_type"] == "user_signed_up"
+    assert body["events"][0]["eventType"] == "user_signed_up"
 
 
 async def test_admin_endpoint_requires_admin(client: httpx.AsyncClient) -> None:

@@ -4,6 +4,25 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-07-01
+
+### Fixed
+
+- Hardened API key quota handling so authorization is checked before usage is
+  decremented.
+- Made CSRF origin validation reject missing origins by default on unsafe
+  methods.
+- Added idle-timeout enforcement for database-backed sessions.
+- Rejected refresh-token cookie delivery and kept refresh tokens bearer-only.
+- Normalized email values at Pydantic/domain boundaries.
+- Returned safe public audit-log DTOs instead of storage/domain records.
+- Guarded production deployments from using the console email sender.
+- Added atomic cross-adapter rate-limit increments.
+- Removed the unused `SessionOptions.rotate_on_refresh` field and corrected
+  session documentation.
+- Hid router-only internals from the public `auth.api` surface.
+- Updated route-protection documentation to prefer `UserView` dependencies.
+
 ## [0.3.1] — 2026-07-01
 
 ### Fixed

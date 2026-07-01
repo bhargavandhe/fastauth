@@ -103,7 +103,10 @@ class CsrfMiddleware:
             return
 
         origin = headers.get("origin") or headers.get("referer", "")
-        if not origin or is_trusted_origin(
+        if not origin and not self.config.require_origin:
+            await self.app(scope, receive, send)
+            return
+        if origin and is_trusted_origin(
             origin,
             self.trusted,
             allow_relative=self.config.allow_relative_paths,

@@ -76,8 +76,18 @@ class DatabaseSessionStrategy:
     async def read(self, token: str) -> SessionContext | None:
         token_hash = self.tokens.hash_only(token)
         session = await self.adapter.get_session_by_token_hash(token_hash)
-        if session is None or session.expires_at <= datetime.now(UTC):
+        now = datetime.now(UTC)
+        if session is None or session.expires_at <= now:
             return None
+        if self.config.idle_timeout_seconds is not None:
+            idle_expires_at = session.updated_at + timedelta(
+                seconds=self.config.idle_timeout_seconds,
+            )
+            if idle_expires_at <= now:
+                await self.adapter.delete_session(session.id)
+                return None
+            session.updated_at = now
+            session = await self.adapter.update_session(session)
         user = await self.adapter.get_user_by_id(session.user_id)
         if user is None:
             return None

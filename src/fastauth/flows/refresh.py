@@ -10,7 +10,7 @@ from fastauth.api.commands import (
 )
 from fastauth.api.responses import authentication_response
 from fastauth.domain.models import WireModel
-from fastauth.exceptions import TokenInvalidError
+from fastauth.exceptions import InvalidRequestError, TokenInvalidError
 from fastauth.flows.credentials import SessionResponse
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
@@ -43,6 +43,10 @@ async def refresh_session(
     """
     if not context.refresh_token_service.enabled:
         raise TokenInvalidError()
+    if not isinstance(request.delivery, BearerCredentialDelivery):
+        raise InvalidRequestError(
+            message="refresh token rotation requires bearer credential delivery",
+        )
     new_record, new_plain = await context.refresh_token_service.rotate(
         request.refresh_token.get_secret_value(),
         ip_address=ip,
@@ -63,11 +67,7 @@ async def refresh_session(
         authentication_response(
             user=user,
             session=session_context.session,
-            token=(
-                session_context.token
-                if isinstance(request.delivery, BearerCredentialDelivery)
-                else None
-            ),
+            token=session_context.token,
             refresh_token=new_plain,
         ),
         session_context,

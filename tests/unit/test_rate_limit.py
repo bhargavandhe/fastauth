@@ -46,6 +46,37 @@ async def test_database_storage_persists() -> None:
     assert count_a == 1 and count_b == 2
 
 
+async def test_database_storage_uses_adapter_atomic_increment() -> None:
+    class AtomicOnlyStore:
+        def __init__(self) -> None:
+            self.count = 0
+
+        async def increment_rate_limit(
+            self,
+            key: str,
+            *,
+            window_ms: int,
+            now_ms: int,
+        ) -> tuple[int, int]:
+            self.count += 1
+            return self.count, now_ms - window_ms
+
+        async def get_rate_limit(self, key: str):  # type: ignore[no-untyped-def]
+            raise AssertionError("increment must not use read-before-write")
+
+        async def upsert_rate_limit(self, rate_limit):  # type: ignore[no-untyped-def]
+            raise AssertionError("increment must not use read-before-write")
+
+        async def delete_rate_limit(self, key: str) -> None:
+            return None
+
+    storage = DatabaseRateLimitStorage(AtomicOnlyStore())
+    now = int(time.time() * 1000)
+
+    assert await storage.increment("k", window_ms=60_000, now_ms=now) == (1, now - 60_000)
+    assert await storage.increment("k", window_ms=60_000, now_ms=now) == (2, now - 60_000)
+
+
 async def test_limiter_blocks_after_threshold() -> None:
     limiter = RateLimiter(
         config=RateLimitOptions(window=timedelta(seconds=10), max_requests=2, enabled=True),
