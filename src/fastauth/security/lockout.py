@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import time
 
-from fastauth.config import LockoutConfig
 from fastauth.exceptions import AccountLockedError
+from fastauth.options import LockoutOptions
 from fastauth.security.rate_limit import RateLimitStorage
 
 __all__ = ["AccountLockoutTracker"]
@@ -45,7 +45,7 @@ class AccountLockoutTracker:
     enforcement (e.g. internal apps behind SSO that handle this elsewhere).
     """
 
-    def __init__(self, *, config: LockoutConfig, storage: RateLimitStorage) -> None:
+    def __init__(self, *, config: LockoutOptions, storage: RateLimitStorage) -> None:
         self.config = config
         self.storage = storage
 

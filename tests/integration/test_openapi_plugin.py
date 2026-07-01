@@ -7,13 +7,13 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from fastauth.plugins.openapi import OpenApiConfig, OpenApiPlugin
+from fastauth.plugins.openapi import OpenApiOptions, OpenApiPlugin
 from fastauth.runtime.auth import FastAuth
 
 
 @pytest.fixture
 def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
-    return auth_factory(plugins=[OpenApiPlugin(OpenApiConfig())])
+    return auth_factory(plugins=[OpenApiPlugin(OpenApiOptions())])
 
 
 async def test_reference_serves_scalar_html(client: httpx.AsyncClient) -> None:

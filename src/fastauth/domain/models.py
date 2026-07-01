@@ -14,6 +14,7 @@ from fastauth.domain.enums import (
     ProviderId,
     VerificationPurpose,
 )
+from fastauth.domain.value_objects import NonEmptyString
 
 __all__ = [
     "Account",
@@ -74,7 +75,7 @@ class WireModel(BaseModel):
 
 
 class User(FastAuthModel):
-    id: str = Field(default_factory=new_id)
+    id: NonEmptyString = Field(default_factory=new_id)
     email: EmailStr
     username: str | None = None
     name: str | None = None
@@ -87,9 +88,9 @@ class User(FastAuthModel):
 
 
 class Session(FastAuthModel):
-    id: str = Field(default_factory=new_id)
-    user_id: str
-    token_hash: str
+    id: NonEmptyString = Field(default_factory=new_id)
+    user_id: NonEmptyString
+    token_hash: NonEmptyString
     expires_at: datetime
     ip_address: str | None = None
     user_agent: str | None = None
@@ -122,13 +123,13 @@ class RefreshToken(FastAuthModel):
       trail reconstruction.
     """
 
-    id: str = Field(default_factory=new_id)
-    user_id: str
-    token_hash: str
-    family_id: str
+    id: NonEmptyString = Field(default_factory=new_id)
+    user_id: NonEmptyString
+    token_hash: NonEmptyString
+    family_id: NonEmptyString
     expires_at: datetime
     consumed_at: datetime | None = None
-    replaced_by: str | None = None
+    replaced_by: NonEmptyString | None = None
     ip_address: str | None = None
     user_agent: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -138,25 +139,25 @@ class RefreshToken(FastAuthModel):
 class Account(FastAuthModel):
     """Links a user to an authentication provider (credential, future OAuth, ...)."""
 
-    id: str = Field(default_factory=new_id)
-    user_id: str
+    id: NonEmptyString = Field(default_factory=new_id)
+    user_id: NonEmptyString
     provider_id: ProviderId
-    account_id: str
-    password: str | None = None  # argon2 hash, only for credential provider
-    access_token: str | None = None
-    refresh_token: str | None = None
+    account_id: NonEmptyString
+    password: NonEmptyString | None = None  # argon2 hash, only for credential provider
+    access_token: NonEmptyString | None = None
+    refresh_token: NonEmptyString | None = None
     access_token_expires_at: datetime | None = None
     refresh_token_expires_at: datetime | None = None
     scope: str | None = None
-    id_token: str | None = None
+    id_token: NonEmptyString | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Verification(FastAuthModel):
-    id: str = Field(default_factory=new_id)
-    identifier: str  # email or username
-    value_hash: str  # sha-256 of the plain token / OTP
+    id: NonEmptyString = Field(default_factory=new_id)
+    identifier: NonEmptyString  # email or username
+    value_hash: NonEmptyString  # sha-256 of the plain token / OTP
     purpose: VerificationPurpose
     expires_at: datetime
     # Number of failed verify attempts. Bumped by ``EmailOtpPlugin`` to enforce
@@ -169,11 +170,11 @@ class Verification(FastAuthModel):
 
 
 class ApiKey(FastAuthModel):
-    id: str = Field(default_factory=new_id)
-    user_id: str
-    name: str
-    key_hash: str
-    key_prefix: str
+    id: NonEmptyString = Field(default_factory=new_id)
+    user_id: NonEmptyString
+    name: NonEmptyString
+    key_hash: NonEmptyString
+    key_prefix: NonEmptyString
     enabled: bool = True
     expires_at: datetime | None = None
     remaining: int | None = None
@@ -192,10 +193,10 @@ class ApiKey(FastAuthModel):
 
 
 class JwksKey(FastAuthModel):
-    id: str = Field(default_factory=new_id)
-    kid: str
-    alg: str
-    public_key: str  # PEM or JWK JSON
+    id: NonEmptyString = Field(default_factory=new_id)
+    kid: NonEmptyString
+    alg: NonEmptyString
+    public_key: NonEmptyString  # PEM or JWK JSON
     private_key_encrypted: bytes
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime | None = None
@@ -203,19 +204,19 @@ class JwksKey(FastAuthModel):
 
 
 class RateLimit(FastAuthModel):
-    id: str = Field(default_factory=new_id)
-    key: str
+    id: NonEmptyString = Field(default_factory=new_id)
+    key: NonEmptyString
     count: int
     last_request_ms: int
 
 
 class AuditLog(FastAuthModel):
-    id: str = Field(default_factory=new_id)
+    id: NonEmptyString = Field(default_factory=new_id)
     event_type: AuditEventType
-    identifier: str | None = None
-    user_id: str | None = None
-    ip_address: str | None = None
-    user_agent: str | None = None
+    identifier: NonEmptyString | None = None
+    user_id: NonEmptyString | None = None
+    ip_address: NonEmptyString | None = None
+    user_agent: NonEmptyString | None = None
     event_data: dict[str, JsonValue] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -223,7 +224,7 @@ class AuditLog(FastAuthModel):
 class EmailMessage(FastAuthModel):
     kind: EmailMessageKind | None = None
     to: EmailStr
-    subject: str
-    html: str
-    text: str
+    subject: NonEmptyString
+    html: NonEmptyString
+    text: NonEmptyString
     headers: dict[str, str] = Field(default_factory=dict)

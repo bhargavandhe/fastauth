@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from fastauth.config import CsrfConfig
+from fastauth.options import CsrfOptions
 
 __all__ = ["SAFE_METHODS", "CsrfMiddleware", "is_trusted_origin", "matches_origin"]
 
@@ -65,7 +65,7 @@ class CsrfMiddleware:
         self,
         app: ASGIApp,
         *,
-        config: CsrfConfig,
+        config: CsrfOptions,
         additional_trusted_origins: list[str],
         cookie_name: str,
     ) -> None:

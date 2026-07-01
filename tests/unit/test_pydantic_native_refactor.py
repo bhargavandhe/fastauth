@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import BaseModel, SecretStr, ValidationError
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.options import (
     CookieOptions,
@@ -23,7 +23,7 @@ from fastauth.runtime.context import AuthContext
 
 def test_options_are_frozen_after_runtime_construction() -> None:
     options = FastAuthOptions(secret_key=SecretStr("a" * 64), database=memory())
-    fastauth(options)
+    FastAuth(options)
 
     with pytest.raises(ValidationError):
         options.session.expires_in = timedelta(seconds=-1)
@@ -57,15 +57,15 @@ def test_email_otp_options_reject_invalid_values_and_extra_fields() -> None:
 
 
 async def test_authentication_response_does_not_expose_internal_fields() -> None:
-    auth = fastauth(
+    auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("b" * 64),
             database=memory(),
-            plugins=[email_password()],
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
         ),
+        plugins=[email_password()],
     )
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)

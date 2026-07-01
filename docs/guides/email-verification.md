@@ -52,16 +52,16 @@ options = FastAuthOptions(
 Replace the default `ConsoleEmailSender` with your provider's adapter:
 
 ```python
-from fastauth import fastauth
+from fastauth import FastAuth
 
 class SesEmailSender:
     async def send(self, message: EmailMessage) -> None:
         ...
 
-auth = fastauth(options, email_sender=SesEmailSender())
+auth = FastAuth(options, email_sender=SesEmailSender())
 ```
 
 ## Capturing tokens in tests
 
-Install `test_utils(TestUtilsConfig(capture_otp=True))` and read
+Install `test_utils(TestUtilsOptions(capture_otp=True))` and read
 `helpers.get_otp(identifier)` after triggering the verification email.

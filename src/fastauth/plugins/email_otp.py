@@ -61,8 +61,7 @@ class EmailOtpPlugin(Plugin):
 
     def __init__(self, options: EmailOtpOptions | None = None) -> None:
         self.options = options or EmailOtpOptions()
-        self.config = self.options
-        self.otp_service = OtpService(length=self.config.code_length)
+        self.otp_service = OtpService(length=self.options.code_length)
         self.context: AuthContext | None = None
 
     def bind(self, context: AuthContext) -> None:
@@ -103,7 +102,7 @@ class EmailOtpPlugin(Plugin):
         return await send_otp(
             self.assert_bound(),
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -113,7 +112,7 @@ class EmailOtpPlugin(Plugin):
         return await check_otp(
             self.assert_bound(),
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
         )
 
@@ -129,7 +128,7 @@ class EmailOtpPlugin(Plugin):
         result, session_context = await sign_in_with_otp(
             context,
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -151,7 +150,7 @@ class EmailOtpPlugin(Plugin):
         return await verify_email_with_otp(
             self.assert_bound(),
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -165,7 +164,7 @@ class EmailOtpPlugin(Plugin):
         return await request_password_reset_otp(
             self.assert_bound(),
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -179,7 +178,7 @@ class EmailOtpPlugin(Plugin):
         return await reset_password_with_otp(
             self.assert_bound(),
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -200,7 +199,7 @@ class EmailOtpPlugin(Plugin):
             user_obj,
             body,
             auth_config=context.config,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -219,7 +218,7 @@ class EmailOtpPlugin(Plugin):
             self.assert_bound(),
             user_obj,
             body,
-            config=self.config,
+            config=self.options,
             otp_service=self.otp_service,
             ip=self.client_ip(request),
             user_agent=request.headers.get("user-agent"),
@@ -278,7 +277,7 @@ class EmailOtpPlugin(Plugin):
                 response_model=EmptyResponse,
             ),
         ]
-        if self.config.email_change.enabled:
+        if self.options.email_change.enabled:
             specs.extend(
                 [
                     EndpointSpec(

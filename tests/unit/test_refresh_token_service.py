@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from fastauth.config import RefreshTokenConfig
 from fastauth.exceptions import RefreshTokenReuseError
+from fastauth.options import RefreshTokenOptions
 from fastauth.security.refresh_tokens import RefreshTokenService
 from fastauth.storage.memory import InMemoryAdapter
 
@@ -33,7 +33,7 @@ async def test_concurrent_refresh_rotation_has_single_winner_and_revokes_family(
     adapter = RaceyRefreshTokenAdapter()
     service = RefreshTokenService(
         adapter=adapter,
-        config=RefreshTokenConfig(enabled=True),
+        config=RefreshTokenOptions(enabled=True),
     )
     issued = await service.issue(user_id="user-1")
     assert issued is not None

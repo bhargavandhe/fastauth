@@ -39,17 +39,20 @@ async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, FastAut
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[
-            email_password(),
-            JwtPlugin(JwtOptions(issuer="http://t", audience="http://t")),
-        ],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
         lockout=LockoutOptions(enabled=False),
         session=SessionOptions(strategy=SessionStrategyKind.JWT),
     )
-    auth = FastAuth(options, email_sender=ConsoleEmailSender())
+    auth = FastAuth(
+        options,
+        plugins=[
+            email_password(),
+            JwtPlugin(JwtOptions(issuer="http://t", audience="http://t")),
+        ],
+        email_sender=ConsoleEmailSender(),
+    )
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)
     async with (
@@ -142,7 +145,6 @@ def test_jwt_strategy_without_jwt_plugin_raises() -> None:
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(InMemoryAdapter()),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=False),
         session=SessionOptions(strategy=SessionStrategyKind.JWT),
     )

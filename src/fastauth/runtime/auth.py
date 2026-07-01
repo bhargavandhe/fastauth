@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -12,8 +12,13 @@ from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
-from fastauth.options import CustomDatabase, FastAuthOptions, MongoDatabase, PostgresDatabase
-from fastauth.plugins.base import PluginRegistry
+from fastauth.options import (
+    CustomDatabaseOptions,
+    FastAuthOptions,
+    MongoDatabaseOptions,
+    PostgresDatabaseOptions,
+)
+from fastauth.plugins.base import Plugin, PluginRegistry
 from fastauth.runtime.api import AuthApi
 from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
@@ -43,13 +48,15 @@ class FastAuth:
         self,
         options: FastAuthOptions,
         *,
+        plugins: Sequence[Plugin] = (),
         email_sender: EmailSender | None = None,
         password_hasher: PasswordHasher | None = None,
         session_strategy: SessionStrategy | None = None,
         token_service: TokenService | None = None,
-    ) -> None:
+        ) -> None:
         self.options = options
-        config = options.to_runtime_config()
+        self.plugins = tuple(plugins)
+        config = options
         adapter = options.database.build_adapter()
 
         password_hasher = password_hasher or Argon2idHasher(config.password)
@@ -60,7 +67,7 @@ class FastAuth:
             list(config.secret_key_rotation),
         )
 
-        plugin_registry = PluginRegistry(options.plugins)
+        plugin_registry = PluginRegistry(self.plugins)
 
         if session_strategy is None:
             if config.session.strategy is SessionStrategyKind.DATABASE:
@@ -100,9 +107,9 @@ class FastAuth:
                     adapter=adapter,
                     registry=registry,
                     signer=signer,
-                    issuer=jwt_plugin.config.issuer or config.app.base_url,
-                    audience=jwt_plugin.config.audience or config.app.base_url,
-                    expires_in_seconds=jwt_plugin.config.expires_in_seconds,
+                    issuer=jwt_plugin.options.issuer or str(config.app.base_url),
+                    audience=jwt_plugin.options.audience or str(config.app.base_url),
+                    expires_in_seconds=jwt_plugin.options.expires_in_seconds,
                     payload_builder=jwt_plugin.payload_builder,
                 )
 
@@ -193,7 +200,7 @@ class FastAuth:
     @asynccontextmanager
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
         """ASGI lifespan for storage bootstrap plus plugin startup/shutdown hooks."""
-        if isinstance(self.options.database, MongoDatabase):
+        if isinstance(self.options.database, MongoDatabaseOptions):
             from fastauth.storage.beanie.documents import init_beanie_documents
 
             await init_beanie_documents(
@@ -201,13 +208,16 @@ class FastAuth:
                 collection_prefix=self.options.database.collection_prefix,
                 collection_suffix=self.options.database.collection_suffix,
             )
-        if isinstance(self.options.database, PostgresDatabase):
+        if isinstance(self.options.database, PostgresDatabaseOptions):
             adapter = self.context.adapter
             if self.options.database.migration_mode == "apply":
                 await adapter.apply_migrations()  # type: ignore[attr-defined]
             elif self.options.database.migration_mode == "check":
                 await adapter.assert_schema_current()  # type: ignore[attr-defined]
-        if isinstance(self.options.database, CustomDatabase) and self.options.database.lifespan:
+        if (
+            isinstance(self.options.database, CustomDatabaseOptions)
+            and self.options.database.lifespan
+        ):
             async with self.options.database.lifespan(self)(app or FastAPI()):
                 async with self.plugin_lifespan():
                     yield

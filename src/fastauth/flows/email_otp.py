@@ -36,7 +36,6 @@ from fastauth.api.commands import (
     CredentialDelivery,
 )
 from fastauth.api.responses import authentication_response
-from fastauth.config import FastAuthConfig
 from fastauth.domain.enums import (
     EmailMessageKind,
     HookPhase,
@@ -73,6 +72,7 @@ from fastauth.flows.credentials import (
     SessionResponse,
     maybe_issue_refresh_token,
 )
+from fastauth.options import FastAuthOptions
 from fastauth.plugins.email_otp_options import EmailOtpOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.otp import OtpService
@@ -696,7 +696,7 @@ async def request_email_change_otp(
     user: User,
     request: RequestEmailChangeOtpRequest,
     *,
-    auth_config: FastAuthConfig,
+    auth_config: FastAuthOptions,
     config: EmailOtpOptions,
     otp_service: OtpService,
     ip: str | None,

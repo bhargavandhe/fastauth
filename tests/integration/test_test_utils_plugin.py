@@ -7,7 +7,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from fastauth.plugins.test_utils import TestHelpers, TestUtilsConfig, TestUtilsPlugin
+from fastauth.plugins.test_utils import TestHelpers, TestUtilsOptions, TestUtilsPlugin
 from fastauth.runtime.auth import FastAuth
 
 
@@ -20,7 +20,7 @@ def get_helpers(auth: FastAuth) -> TestHelpers:
 
 @pytest.fixture
 def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
-    return auth_factory(plugins=[TestUtilsPlugin(TestUtilsConfig(capture_otp=True))])
+    return auth_factory(plugins=[TestUtilsPlugin(TestUtilsOptions(capture_otp=True))])
 
 
 async def test_factory_and_login(client: httpx.AsyncClient, auth: FastAuth) -> None:

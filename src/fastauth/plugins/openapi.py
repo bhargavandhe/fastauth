@@ -2,7 +2,7 @@
 
 Contributes two read-only HTTP endpoints to the fastauth router:
 
-* ``GET {config.path}`` — returns an HTML page that loads the Scalar
+* ``GET {options.path}`` — returns an HTML page that loads the Scalar
   ``@scalar/api-reference`` web component from a CDN and points it at the
   OpenAPI JSON URL below.
 * ``GET /openapi.json`` — returns the OpenAPI 3.1 schema for the calling
@@ -21,19 +21,18 @@ from typing import Any, ClassVar, cast
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import Field
 
-from fastauth.plugins.base import EndpointSpec, Plugin
+from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 
-__all__ = ["SCALAR_TEMPLATE", "OpenApiConfig", "OpenApiPlugin"]
+__all__ = ["SCALAR_TEMPLATE", "OpenApiOptions", "OpenApiPlugin"]
 
 
-class OpenApiConfig(BaseModel):
+class OpenApiOptions(PluginOptions):
     """Static configuration for ``OpenApiPlugin``."""
 
-    model_config = ConfigDict(extra="forbid")
-    path: str = "/reference"
+    path: str = Field(default="/reference", pattern=r"^/")
     theme: str = "default"
     nonce: str | None = None
     title: str = "fastauth API"
@@ -60,8 +59,8 @@ class OpenApiPlugin(Plugin):
 
     id: ClassVar[str] = "fastauth-openapi"
 
-    def __init__(self, config: OpenApiConfig | None = None) -> None:
-        self.config = config or OpenApiConfig()
+    def __init__(self, options: OpenApiOptions | None = None) -> None:
+        self.options = options or OpenApiOptions()
         self.context: AuthContext | None = None
         self.cached_schema: dict[str, Any] | None = None
 
@@ -79,7 +78,7 @@ class OpenApiPlugin(Plugin):
         return [
             EndpointSpec(
                 method="GET",
-                path=self.config.path,
+                path=self.options.path,
                 name="auth_reference",
                 tags=["OpenApi"],
                 handler=self.reference_handler,
@@ -107,9 +106,9 @@ class OpenApiPlugin(Plugin):
             return self.cached_schema
         context = self.assert_bound()
         schema = get_openapi(
-            title=self.config.title,
+            title=self.options.title,
             version=context.config.app.name + " v1",
-            openapi_version=self.config.openapi_version,
+            openapi_version=self.options.openapi_version,
             description="fastauth endpoints",
             routes=app.routes,
         )
@@ -117,12 +116,12 @@ class OpenApiPlugin(Plugin):
         return schema
 
     async def reference_handler(self) -> HTMLResponse:
-        """``GET {config.path}`` — serve the Scalar HTML reference page."""
+        """``GET {options.path}`` — serve the Scalar HTML reference page."""
         context = self.assert_bound()
-        nonce_attribute = f' nonce="{self.config.nonce}"' if self.config.nonce else ""
+        nonce_attribute = f' nonce="{self.options.nonce}"' if self.options.nonce else ""
         openapi_url = context.config.app.base_path + "/openapi.json"
         html = SCALAR_TEMPLATE.format(
-            title=self.config.title,
+            title=self.options.title,
             openapi_url=openapi_url,
             nonce_attribute=nonce_attribute,
         )

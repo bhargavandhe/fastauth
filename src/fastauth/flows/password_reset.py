@@ -73,7 +73,7 @@ async def forgot_password(
     )
 
     reset_url = (
-        context.config.password_reset.base_reset_url
+        str(context.config.password_reset.base_reset_url)
         + f"?token={quote(pair.plain)}&email={quote(user.email)}"
     )
     html, text = context.template_renderer.render(

@@ -8,31 +8,31 @@ contributes two read-only HTTP endpoints.
 
 - `GET /auth/audit-logs` — paginated, scoped to the current session's user.
 - `GET /auth/audit-logs/all` — paginated, requires the caller's user id to be
-  listed in `AuditLogsConfig.admin_user_ids`.
+  listed in `AuditLogsOptions.admin_user_ids`.
 
 Both endpoints support filtering by `event_type` and `identifier`, and
 standard `limit` / `offset` pagination.
 
 ## Config
 
-`AuditLogsConfig` exposes `admin_user_ids` — the user ids permitted to call
+`AuditLogsOptions` exposes `admin_user_ids` — the user ids permitted to call
 the `/audit-logs/all` admin endpoint.
 
 ## Example
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
-from fastauth.plugins.audit_logs import AuditLogsConfig
+from fastauth.plugins.audit_logs import AuditLogsOptions
 from fastauth.providers import audit_logs, email_password
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),
         plugins=[
             email_password(),
-            audit_logs(AuditLogsConfig(admin_user_ids=["00000000-...-admin"])),
+            audit_logs(AuditLogsOptions(admin_user_ids=["00000000-...-admin"])),
         ],
     )
 )

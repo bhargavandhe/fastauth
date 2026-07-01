@@ -19,11 +19,10 @@ from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
-def build_options(adapter: InMemoryAdapter, plugins: list[Plugin] | None = None) -> FastAuthOptions:
+def build_options(adapter: InMemoryAdapter) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password(), *(plugins or [])],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
@@ -47,9 +46,10 @@ def auth_factory(
 ) -> Callable[..., FastAuth]:
     def factory(**overrides: object) -> FastAuth:
         plugins = cast(list[Plugin], overrides.pop("plugins", []))
-        options = build_options(adapter, plugins)
+        options = build_options(adapter)
         return FastAuth(
             options,
+            plugins=[email_password(), *plugins],
             email_sender=email_outbox,
             **overrides,  # type: ignore[arg-type]
         )

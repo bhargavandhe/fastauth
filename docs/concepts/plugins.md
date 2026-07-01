@@ -8,7 +8,7 @@ the hooks you need:
 from typing import ClassVar
 from collections.abc import Sequence
 from datetime import timedelta
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.base import EndpointSpec, Plugin
 from fastauth.providers import email_password
@@ -29,7 +29,7 @@ class HelloPlugin(Plugin):
     async def hello(self) -> dict[str, str]:
         return {"hello": "world"}
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),

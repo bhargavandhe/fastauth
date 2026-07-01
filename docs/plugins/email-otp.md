@@ -25,12 +25,12 @@ When enabled, the plugin contributes the following endpoints to
 ```python
 from datetime import timedelta
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions
 from fastauth.providers import email_otp, email_password
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),
@@ -242,18 +242,18 @@ codes during integration tests.
 ## Capturing OTPs in tests
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
-from fastauth.plugins.test_utils import TestUtilsConfig
+from fastauth.plugins.test_utils import TestUtilsOptions
 from fastauth.providers import email_otp, test_utils
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),
         plugins=[
             email_otp(),
-            test_utils(TestUtilsConfig(capture_otp=True)),
+            test_utils(TestUtilsOptions(capture_otp=True)),
         ],
     )
 )

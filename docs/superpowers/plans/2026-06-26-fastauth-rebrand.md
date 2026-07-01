@@ -34,13 +34,13 @@ Expected: the package root now lives at `src/fastauth`.
 
 - [ ] **Step 2: Rename the public symbols in code**
 
-Replace public classes and imports so the exported API becomes `FastAuth`, `FastAuthConfig`, `FastAuthError`, and related `FastAuth*` names.
+Replace public classes and imports so the exported API becomes `FastAuth`, `FastAuthOptions`, `FastAuthError`, and related `FastAuth*` names.
 
 ```python
-from fastauth.config import FastAuthConfig
+from fastauth import FastAuthOptions
 from fastauth.runtime.auth import FastAuth
 
-__all__ = ["FastAuth", "FastAuthConfig", "__version__"]
+__all__ = ["FastAuth", "FastAuthOptions", "__version__"]
 __version__ = "0.1.0"
 ```
 
@@ -76,7 +76,7 @@ Expected: builds and imports resolve through `fastauth`.
 
 - [ ] **Step 1: Rename all user-facing references**
 
-Change the README, docs, examples, and changelog text so they refer to FastAuth, `fastauth`, `FastAuthConfig`, and the `fastauth` CLI.
+Change the README, docs, examples, and changelog text so they refer to FastAuth, `fastauth`, `FastAuthOptions`, and the `fastauth` CLI.
 
 - [ ] **Step 2: Update release and repo metadata**
 
@@ -95,7 +95,7 @@ Change repository URLs, package keywords, and release-please package names so th
 - [ ] **Step 3: Rewrite the quickstart example imports and names**
 
 ```python
-from fastauth import FastAuth, FastAuthConfig
+from fastauth import FastAuth, FastAuthOptions
 ```
 
 Expected: the quickstart imports the renamed public API and no longer mentions FastAuth anywhere.

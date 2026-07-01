@@ -8,7 +8,7 @@ from argon2 import PasswordHasher as Argon2PasswordHasher
 from argon2 import Type
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
-from fastauth.config import PasswordConfig
+from fastauth.options import PasswordOptions
 
 __all__ = ["Argon2idHasher", "PasswordHasher"]
 
@@ -21,7 +21,7 @@ class PasswordHasher(Protocol):
 
 
 class Argon2idHasher:
-    def __init__(self, config: PasswordConfig) -> None:
+    def __init__(self, config: PasswordOptions) -> None:
         self.config = config
         self.engine = Argon2PasswordHasher(
             time_cost=config.argon2_time_cost,

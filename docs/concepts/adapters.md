@@ -17,13 +17,13 @@ first-party capability.
 ```python
 from pymongo import AsyncMongoClient
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
 from fastauth.providers import email_password
 
 mongo_client = AsyncMongoClient("mongodb://localhost:27017", uuidRepresentation="standard")
 mongo_database = mongo_client["myapp"]
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=mongo(mongo_database),
@@ -62,11 +62,11 @@ For Postgres, install `fastauth-py[postgres]` and pass a SQLAlchemy async
 engine or URL:
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
 from fastauth.providers import email_password
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=postgres(

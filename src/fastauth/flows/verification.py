@@ -68,7 +68,7 @@ async def send_verification_email(
     )
 
     verify_url = (
-        context.config.email_verification.base_verify_url
+        str(context.config.email_verification.base_verify_url)
         + f"?token={quote(pair.plain)}&email={quote(user.email)}"
     )
     html, text = context.template_renderer.render(

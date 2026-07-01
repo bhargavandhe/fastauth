@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 from pydantic.alias_generators import to_camel
 
 __all__ = [
     "BearerCredentialDelivery",
     "CookieCredentialDelivery",
     "CredentialDelivery",
+    "RequestContext",
+    "SignInEmailCommand",
+    "SignUpEmailCommand",
 ]
 
 
@@ -37,3 +40,24 @@ CredentialDelivery = Annotated[
     CookieCredentialDelivery | BearerCredentialDelivery,
     Field(discriminator="kind"),
 ]
+
+
+class RequestContext(CommandModel):
+    ip_address: str | None = None
+    user_agent: str | None = None
+
+
+class SignInEmailCommand(CommandModel):
+    email: EmailStr
+    password: SecretStr
+    context: RequestContext = Field(default_factory=RequestContext)
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
+
+
+class SignUpEmailCommand(CommandModel):
+    email: EmailStr
+    password: SecretStr
+    name: str | None = None
+    username: str | None = None
+    context: RequestContext = Field(default_factory=RequestContext)
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)

@@ -8,10 +8,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from pydantic.alias_generators import to_camel
 
 from fastauth.domain.models import ApiKey, Session, User
+from fastauth.domain.value_objects import (
+    ApiKeyId,
+    ApiKeyMetadata,
+    ApiKeyPrefix,
+    PermissionSet,
+    RawToken,
+    SessionId,
+    UserId,
+    UserMetadata,
+)
 
 __all__ = [
     "ApiKeyView",
@@ -38,20 +48,20 @@ class ResponseModel(BaseModel):
 
 
 class UserView(ResponseModel):
-    id: str
+    id: UserId
     email: EmailStr
     username: str | None = None
     name: str | None = None
     image: str | None = None
     email_verified: bool
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    metadata: UserMetadata = Field(default_factory=lambda: UserMetadata({}))
     created_at: datetime
     updated_at: datetime
 
 
 class SessionView(ResponseModel):
-    id: str
-    user_id: str
+    id: SessionId
+    user_id: UserId
     expires_at: datetime
     ip_address: str | None = None
     user_agent: str | None = None
@@ -60,8 +70,8 @@ class SessionView(ResponseModel):
 
 
 class CredentialsView(ResponseModel):
-    token: str
-    refresh_token: str | None = None
+    token: RawToken
+    refresh_token: RawToken | None = None
 
 
 class AuthenticationResponse(ResponseModel):
@@ -71,28 +81,28 @@ class AuthenticationResponse(ResponseModel):
 
 
 class ApiKeyView(ResponseModel):
-    id: str
-    user_id: str
+    id: ApiKeyId
+    user_id: UserId
     name: str
-    key_prefix: str
+    key_prefix: ApiKeyPrefix
     enabled: bool
     expires_at: datetime | None = None
     remaining: int | None = None
-    permissions: dict[str, list[str]] = Field(default_factory=dict)
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    permissions: PermissionSet = Field(default_factory=lambda: PermissionSet({}))
+    metadata: ApiKeyMetadata = Field(default_factory=lambda: ApiKeyMetadata({}))
     created_at: datetime
     updated_at: datetime
 
 
 def user_view(user: User) -> UserView:
     return UserView(
-        id=user.id,
+        id=UserId(user.id),
         email=user.email,
         username=user.username,
         name=user.name,
         image=user.image,
         email_verified=user.email_verified,
-        metadata=user.metadata,
+        metadata=UserMetadata.model_validate(user.metadata),
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -100,8 +110,8 @@ def user_view(user: User) -> UserView:
 
 def session_view(session: Session) -> SessionView:
     return SessionView(
-        id=session.id,
-        user_id=session.user_id,
+        id=SessionId(session.id),
+        user_id=UserId(session.user_id),
         expires_at=session.expires_at,
         ip_address=session.ip_address,
         user_agent=session.user_agent,
@@ -112,15 +122,15 @@ def session_view(session: Session) -> SessionView:
 
 def api_key_view(api_key: ApiKey) -> ApiKeyView:
     return ApiKeyView(
-        id=api_key.id,
-        user_id=api_key.user_id,
+        id=ApiKeyId(api_key.id),
+        user_id=UserId(api_key.user_id),
         name=api_key.name,
-        key_prefix=api_key.key_prefix,
+        key_prefix=ApiKeyPrefix(api_key.key_prefix),
         enabled=api_key.enabled,
         expires_at=api_key.expires_at,
         remaining=api_key.remaining,
-        permissions=api_key.permissions,
-        metadata=api_key.metadata,
+        permissions=PermissionSet.model_validate(api_key.permissions),
+        metadata=ApiKeyMetadata.model_validate(api_key.metadata),
         created_at=api_key.created_at,
         updated_at=api_key.updated_at,
     )
@@ -134,7 +144,10 @@ def authentication_response(
     refresh_token: str | None = None,
 ) -> AuthenticationResponse:
     credentials = (
-        CredentialsView(token=token, refresh_token=refresh_token)
+        CredentialsView(
+            token=RawToken(token),
+            refresh_token=RawToken(refresh_token) if refresh_token is not None else None,
+        )
         if token is not None
         else None
     )

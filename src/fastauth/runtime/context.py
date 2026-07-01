@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from fastauth.config import FastAuthConfig
 from fastauth.messaging.email import EmailSender, TemplateRenderer
+from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import PluginRegistry
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks
@@ -27,7 +27,7 @@ __all__ = ["AuthContext"]
 class AuthContext:
     """Frozen container holding every dependency assembled by ``FastAuth``."""
 
-    config: FastAuthConfig
+    config: FastAuthOptions
     adapter: DatabaseAdapter
     session_strategy: SessionStrategy
     password_hasher: PasswordHasher

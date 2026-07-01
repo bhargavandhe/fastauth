@@ -27,7 +27,6 @@ def build_options(adapter: InMemoryAdapter, **security_overrides: object) -> Fas
     return FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
@@ -40,6 +39,7 @@ async def secure_client() -> AsyncIterator[httpx.AsyncClient]:
     adapter = InMemoryAdapter()
     auth = FastAuth(
         build_options(adapter),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
@@ -67,6 +67,7 @@ async def test_default_security_headers_are_present(
 async def test_disabled_middleware_emits_no_headers() -> None:
     auth = FastAuth(
         build_options(InMemoryAdapter(), enabled=False),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
@@ -86,6 +87,7 @@ async def test_csp_and_permissions_policy_can_be_configured() -> None:
             content_security_policy="default-src 'self'; frame-ancestors 'none'",
             permissions_policy="geolocation=(), camera=()",
         ),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
@@ -105,6 +107,7 @@ async def test_individual_headers_can_be_disabled() -> None:
     """Setting a header field to ``None`` omits that header only."""
     auth = FastAuth(
         build_options(InMemoryAdapter(), hsts=None, x_frame_options=None),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)

@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from fastauth.api.commands import SignInEmailCommand, SignUpEmailCommand
+from fastauth.api.responses import AuthenticationResponse
 from fastauth.domain.models import User, WireModel
 from fastauth.flows.change_email import (
     ConfirmEmailChangeRequest,
@@ -121,27 +123,11 @@ class AuthApi:
 
     def __init__(self, context: AuthContext) -> None:
         self.context = context
+        self.sign_up = SignUpApi(self)
+        self.sign_in = SignInApi(self)
 
     async def health(self) -> HealthResponse:
         return HealthResponse(status="ok", name=self.context.config.app.name)
-
-    async def sign_up_email(
-        self,
-        request: SignUpEmailRequest,
-        *,
-        ip: str | None,
-        user_agent: str | None,
-    ) -> tuple[SessionResponse, SessionContext]:
-        return await sign_up_email_flow(self.context, request, ip=ip, user_agent=user_agent)
-
-    async def sign_in_email(
-        self,
-        request: SignInEmailRequest,
-        *,
-        ip: str | None,
-        user_agent: str | None,
-    ) -> tuple[SessionResponse, SessionContext]:
-        return await sign_in_email_flow(self.context, request, ip=ip, user_agent=user_agent)
 
     async def sign_in_username(
         self,
@@ -430,3 +416,41 @@ class AuthApi:
         temp_app = FastAPI()
         temp_app.include_router(build_router(self.context, self))
         return plugin.render_schema(temp_app)
+
+
+class SignUpApi:
+    def __init__(self, api: AuthApi) -> None:
+        self._api = api
+
+    async def email(self, command: SignUpEmailCommand) -> AuthenticationResponse:
+        response, _session = await sign_up_email_flow(
+            self._api.context,
+            SignUpEmailRequest(
+                email=command.email,
+                password=command.password,
+                name=command.name,
+                username=command.username,
+                delivery=command.delivery,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+        return response
+
+
+class SignInApi:
+    def __init__(self, api: AuthApi) -> None:
+        self._api = api
+
+    async def email(self, command: SignInEmailCommand) -> AuthenticationResponse:
+        response, _session = await sign_in_email_flow(
+            self._api.context,
+            SignInEmailRequest(
+                email=command.email,
+                password=command.password,
+                delivery=command.delivery,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+        return response

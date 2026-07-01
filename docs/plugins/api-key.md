@@ -24,12 +24,12 @@ quota), `default_rate_limit_max`, `default_rate_limit_window`, and
 ## Example
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.api_key import ApiKeyOptions
 from fastauth.providers import api_key, email_password
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),

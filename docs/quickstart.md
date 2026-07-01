@@ -11,17 +11,17 @@ them.
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.providers import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key=SecretStr(app_secret),
         database=memory(),
-        plugins=[email_password()],
-    )
+    ),
+    plugins=[email_password()],
 )
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
@@ -43,16 +43,15 @@ SQLAlchemy URL or engine explicitly:
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
 from fastauth.providers import email_password, jwt
 
 options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
     database=postgres("postgresql+asyncpg://user:pass@localhost/myapp"),
-    plugins=[email_password(), jwt()],
 )
-auth = fastauth(options)
+auth = FastAuth(options, plugins=[email_password(), jwt()])
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
 auth.mount(app)

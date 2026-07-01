@@ -38,13 +38,12 @@ async def lockout_client() -> AsyncIterator[httpx.AsyncClient]:
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
         lockout=LockoutOptions(enabled=True, max_failures=3, window=timedelta(seconds=2)),
     )
-    auth = FastAuth(options, email_sender=ConsoleEmailSender())
+    auth = FastAuth(options, plugins=[email_password()], email_sender=ConsoleEmailSender())
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)
     async with httpx.AsyncClient(
@@ -134,13 +133,12 @@ async def test_lockout_disabled_never_triggers() -> None:
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
         lockout=LockoutOptions(enabled=False),
     )
-    auth = FastAuth(options, email_sender=ConsoleEmailSender())
+    auth = FastAuth(options, plugins=[email_password()], email_sender=ConsoleEmailSender())
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)
     async with httpx.AsyncClient(

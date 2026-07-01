@@ -109,7 +109,7 @@ async def request_email_change(
 
     # Build the confirm URL and send the email to the NEW address.
     confirm_url = (
-        context.config.email_change.base_confirm_url
+        str(context.config.email_change.base_confirm_url)
         + f"?token={quote(pair.plain)}&new_email={quote(request.new_email)}"
     )
     # We reuse the verification template — it shows a verify URL + recipient

@@ -10,18 +10,18 @@ pip install fastauth-py
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.providers import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key=SecretStr(app_secret),
         database=memory(),
-        plugins=[email_password()],
-    )
+    ),
+    plugins=[email_password()],
 )
 
 app = FastAPI(lifespan=auth.lifespan)
@@ -200,7 +200,7 @@ default; pass only what you want to override:
 from pydantic import SecretStr
 from datetime import timedelta
 
-from fastauth import FastAuthOptions
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.options import (
     AppOptions, CookieOptions, CsrfOptions,
@@ -211,7 +211,6 @@ from fastauth.providers import email_password
 options = FastAuthOptions(
     secret_key=SecretStr("…"),
     database=memory(),
-    plugins=[email_password()],
     app=AppOptions(name="My App", base_url="https://myapp.com"),
     cookie=CookieOptions(secure=True, same_site="strict"),
     csrf=CsrfOptions(trusted_origins=("https://myapp.com",)),
@@ -221,12 +220,15 @@ options = FastAuthOptions(
         content_security_policy="default-src 'self'",
     ),
 )
+
+auth = FastAuth(options, plugins=[email_password()])
 ```
 
 16 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
 `email_verification`, `password_reset`, `email_change`, `delete_account`,
 `rate_limit`, `csrf`, `lockout`, `refresh_token`, `security_headers`,
-`advanced`, plus the top-level `database` backend and `plugins` list.
+`advanced`, plus the top-level `database` backend. Plugins are behavior
+objects passed to `FastAuth(..., plugins=[...])`.
 
 See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.
 

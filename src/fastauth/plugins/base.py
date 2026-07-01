@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__all__ = ["EndpointSpec", "HttpMethod", "Plugin", "PluginRegistry", "RateLimitRule"]
+__all__ = [
+    "EndpointSpec",
+    "HttpMethod",
+    "Plugin",
+    "PluginOptions",
+    "PluginRegistry",
+    "RateLimitRule",
+]
 
 if TYPE_CHECKING:
     from fastapi import Request, Response
@@ -128,6 +135,20 @@ class RateLimitRule(BaseModel):
     path: str
     window: timedelta
     max_requests: int
+
+
+class PluginOptions(BaseModel):
+    """Common immutable base for first-party plugin configuration."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="always",
+    )
+
+    enabled: bool = True
 
 
 class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses override what they need

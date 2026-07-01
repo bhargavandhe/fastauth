@@ -25,7 +25,6 @@ async def rl_client() -> AsyncIterator[httpx.AsyncClient]:
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
             database=custom(adapter),
-            plugins=[email_password()],
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(
@@ -34,6 +33,7 @@ async def rl_client() -> AsyncIterator[httpx.AsyncClient]:
                 max_requests=100,
             ),
         ),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)

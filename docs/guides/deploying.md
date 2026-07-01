@@ -46,7 +46,7 @@ uv run fastauth migrate \
 ```
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
 from fastauth.providers import email_password
 
@@ -60,7 +60,7 @@ options = FastAuthOptions(
     ),
     plugins=[email_password()],
 )
-auth = fastauth(options)
+auth = FastAuth(options)
 ```
 
 For local development and small deployments, omit `apply_migrations=False` to

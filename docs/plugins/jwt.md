@@ -25,12 +25,12 @@ signing. Duration options are `datetime.timedelta` values — see the
 ```python
 from datetime import timedelta
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.jwt import JwtOptions
 from fastauth.providers import email_password, jwt
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),

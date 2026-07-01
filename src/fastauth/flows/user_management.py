@@ -226,8 +226,8 @@ async def request_delete_account(
         ),
     )
 
-    confirm_url = (
-        context.config.delete_account.base_confirm_url + f"?token={quote(pair.plain)}"
+    confirm_url = str(context.config.delete_account.base_confirm_url) + (
+        f"?token={quote(pair.plain)}"
     )
     html, text = context.template_renderer.render(
         "delete_account",

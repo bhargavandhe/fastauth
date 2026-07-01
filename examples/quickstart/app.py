@@ -1,7 +1,7 @@
 """Example FastAPI app exercising every fastauth feature end-to-end.
 
 The example keeps configuration explicit: callers construct ``FastAuthOptions``
-and pass it to ``fastauth(options)``. No process environment is read by the
+and pass it to ``FastAuth``. No process environment is read by the
 example or by fastauth.
 """
 
@@ -15,7 +15,7 @@ from pydantic import SecretStr
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
 from fastauth.providers import api_key, audit_logs, email_password, jwt, openapi
@@ -56,13 +56,6 @@ def build_options(
     return FastAuthOptions(
         secret_key=secret_key,
         database=mongo(database),
-        plugins=[
-            email_password(),
-            api_key(),
-            jwt(),
-            audit_logs(),
-            openapi(),
-        ],
         cookie=CookieOptions(secure=cookie_secure),
         csrf=CsrfOptions(enabled=csrf_enabled),
         rate_limit=RateLimitOptions(enabled=rate_limit_enabled),
@@ -70,7 +63,16 @@ def build_options(
 
 
 def create_auth(options: FastAuthOptions) -> AuthRuntime:
-    return fastauth(options)
+    return FastAuth(
+        options,
+        plugins=[
+            email_password(),
+            api_key(),
+            jwt(),
+            audit_logs(),
+            openapi(),
+        ],
+    )
 
 
 def create_app(auth: AuthRuntime) -> FastAPI:

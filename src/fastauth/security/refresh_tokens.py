@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from fastauth.config import RefreshTokenConfig
 from fastauth.domain.models import RefreshToken, new_id
 from fastauth.exceptions import RefreshTokenReuseError, TokenExpiredError, TokenInvalidError
+from fastauth.options import RefreshTokenOptions
 from fastauth.security.tokens import TokenPair, TokenService
 from fastauth.storage.base import DatabaseAdapter
 
@@ -33,7 +33,7 @@ __all__ = ["RefreshTokenService"]
 class RefreshTokenService:
     """Issue, rotate, and verify refresh tokens.
 
-    Initialised with the adapter + a :class:`RefreshTokenConfig`. When
+    Initialised with the adapter + a :class:`RefreshTokenOptions`. When
     ``config.enabled`` is ``False``, every method is a no-op (issue returns
     ``None``, rotate raises ``TokenInvalidError``) so callers can guard on
     presence instead of carrying a stack of feature flags.
@@ -43,7 +43,7 @@ class RefreshTokenService:
         self,
         *,
         adapter: DatabaseAdapter,
-        config: RefreshTokenConfig,
+        config: RefreshTokenOptions,
         token_service: TokenService | None = None,
     ) -> None:
         self.adapter = adapter

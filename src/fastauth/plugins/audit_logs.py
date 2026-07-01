@@ -7,7 +7,7 @@ two read-only HTTP endpoints:
 
 * ``GET /audit-logs`` — paginated, scoped to the current session's user.
 * ``GET /audit-logs/all`` — paginated, requires the caller's user id to be
-  listed in ``AuditLogsConfig.admin_user_ids``.
+  listed in ``AuditLogsOptions.admin_user_ids``.
 """
 
 from __future__ import annotations
@@ -16,24 +16,23 @@ from collections.abc import Sequence
 from typing import ClassVar
 
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from fastauth.domain.enums import AuditEventType
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.models import AuditLog, WireModel
 from fastauth.exceptions import ConfigError, CsrfError, InvalidCredentialsError
-from fastauth.plugins.base import EndpointSpec, Plugin
+from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.storage.base import AuditLogStore
 
-__all__ = ["AuditLogsConfig", "AuditLogsPlugin", "AuditLogsResponse"]
+__all__ = ["AuditLogsOptions", "AuditLogsPlugin", "AuditLogsResponse"]
 
 
-class AuditLogsConfig(BaseModel):
+class AuditLogsOptions(PluginOptions):
     """Static configuration for ``AuditLogsPlugin``."""
 
-    model_config = ConfigDict(extra="forbid")
-    admin_user_ids: list[str] = Field(default_factory=list)
+    admin_user_ids: tuple[str, ...] = Field(default_factory=tuple)
 
 
 class AuditLogsResponse(WireModel):
@@ -50,8 +49,8 @@ class AuditLogsPlugin(Plugin):
 
     id: ClassVar[str] = "fastauth-audit-logs"
 
-    def __init__(self, config: AuditLogsConfig | None = None) -> None:
-        self.config = config or AuditLogsConfig()
+    def __init__(self, options: AuditLogsOptions | None = None) -> None:
+        self.options = options or AuditLogsOptions()
         self.context: AuthContext | None = None
         self.store: AuditLogStore | None = None
 
@@ -179,7 +178,7 @@ class AuditLogsPlugin(Plugin):
         self.assert_bound()
         store = self.assert_store()
         caller_user_id = await self.current_user_id(request)
-        if caller_user_id not in self.config.admin_user_ids:
+        if caller_user_id not in self.options.admin_user_ids:
             # CsrfError maps to HTTP 403 via EXCEPTION_HTTP_STATUS; reused here
             # as the project's canonical 403 carrier until a dedicated
             # ``ForbiddenError`` is introduced.

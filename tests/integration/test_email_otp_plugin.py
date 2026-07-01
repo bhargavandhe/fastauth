@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions, EmailOtpPlugin
-from fastauth.plugins.test_utils import TestHelpers, TestUtilsConfig, TestUtilsPlugin
+from fastauth.plugins.test_utils import TestHelpers, TestUtilsOptions, TestUtilsPlugin
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter as MemoryAdapter
 
@@ -28,7 +28,7 @@ def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
             EmailOtpPlugin(
                 EmailOtpOptions(email_change=EmailChangeOtpOptions(enabled=True)),
             ),
-            TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
+            TestUtilsPlugin(TestUtilsOptions(capture_otp=True)),
         ],
     )
 
@@ -38,7 +38,7 @@ def disable_signup_auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
     return auth_factory(
         plugins=[
             EmailOtpPlugin(EmailOtpOptions(allow_sign_up=False)),
-            TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
+            TestUtilsPlugin(TestUtilsOptions(capture_otp=True)),
         ],
     )
 
@@ -152,7 +152,7 @@ async def test_sign_in_disallowed_sign_up_rejects_unknown_user(
     auth = auth_factory(
         plugins=[
             EmailOtpPlugin(EmailOtpOptions(allow_sign_up=False)),
-            TestUtilsPlugin(TestUtilsConfig(capture_otp=True)),
+            TestUtilsPlugin(TestUtilsOptions(capture_otp=True)),
         ],
     )
     helpers = get_helpers(auth)

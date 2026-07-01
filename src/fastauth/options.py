@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from typing import Annotated, Literal, cast
@@ -19,33 +19,11 @@ from pydantic import (
     model_validator,
 )
 
-from fastauth.config import (
-    AdvancedConfig,
-    AppConfig,
-    CookieConfig,
-    CsrfConfig,
-    DatabaseConfig,
-    DeleteAccountConfig,
-    EmailChangeConfig,
-    EmailConfig,
-    EmailVerificationConfig,
-    FastAuthConfig,
-    LockoutConfig,
-    MongoDatabaseConfig,
-    PasswordConfig,
-    PasswordResetConfig,
-    PostgresDatabaseConfig,
-    RateLimitConfig,
-    RefreshTokenConfig,
-    SecurityHeadersConfig,
-    SessionConfig,
-)
 from fastauth.domain.enums import (
     DatabaseBackendKind,
     RateLimitStorageKind,
     SessionStrategyKind,
 )
-from fastauth.plugins.base import Plugin
 from fastauth.storage.base import DatabaseAdapter
 
 __all__ = [
@@ -53,7 +31,7 @@ __all__ = [
     "AppOptions",
     "CookieOptions",
     "CsrfOptions",
-    "CustomDatabase",
+    "CustomDatabaseOptions",
     "DatabaseOptions",
     "DeleteAccountOptions",
     "EmailChangeOptions",
@@ -61,11 +39,11 @@ __all__ = [
     "EmailVerificationOptions",
     "FastAuthOptions",
     "LockoutOptions",
-    "MemoryDatabase",
-    "MongoDatabase",
+    "MemoryDatabaseOptions",
+    "MongoDatabaseOptions",
     "PasswordOptions",
     "PasswordResetOptions",
-    "PostgresDatabase",
+    "PostgresDatabaseOptions",
     "RateLimitOptions",
     "RefreshTokenOptions",
     "SecurityHeadersOptions",
@@ -82,7 +60,6 @@ class OptionsModel(BaseModel):
         strict=True,
         validate_default=True,
         revalidate_instances="always",
-        arbitrary_types_allowed=True,
     )
 
 
@@ -107,6 +84,16 @@ class SessionOptions(OptionsSection):
         if self.idle_timeout is not None and self.idle_timeout > self.expires_in:
             raise ValueError("idle_timeout cannot exceed expires_in")
         return self
+
+    @property
+    def max_age_seconds(self) -> int:
+        return int(self.expires_in.total_seconds())
+
+    @property
+    def idle_timeout_seconds(self) -> int | None:
+        if self.idle_timeout is None:
+            return None
+        return int(self.idle_timeout.total_seconds())
 
 
 class CookieOptions(OptionsSection):
@@ -145,10 +132,18 @@ class EmailVerificationOptions(OptionsSection):
     require_verified_for_sign_in: bool = False
     base_verify_url: AnyHttpUrl = "http://localhost:8000/auth/verify-email"  # type: ignore[assignment]
 
+    @property
+    def token_ttl_minutes(self) -> int:
+        return int(self.expires_in.total_seconds() // 60)
+
 
 class PasswordResetOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=30), gt=timedelta(0))
     base_reset_url: AnyHttpUrl = "http://localhost:8000/auth/reset-password"  # type: ignore[assignment]
+
+    @property
+    def token_ttl_minutes(self) -> int:
+        return int(self.expires_in.total_seconds() // 60)
 
 
 class EmailChangeOptions(OptionsSection):
@@ -156,11 +151,19 @@ class EmailChangeOptions(OptionsSection):
     base_confirm_url: AnyHttpUrl = "http://localhost:8000/auth/change-email/confirm"  # type: ignore[assignment]
     subject: str = Field(default="Confirm your new email address", min_length=1, max_length=200)
 
+    @property
+    def token_ttl_minutes(self) -> int:
+        return int(self.expires_in.total_seconds() // 60)
+
 
 class DeleteAccountOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
     base_confirm_url: AnyHttpUrl = "http://localhost:8000/auth/delete-account/confirm"  # type: ignore[assignment]
     subject: str = Field(default="Confirm account deletion", min_length=1, max_length=200)
+
+    @property
+    def token_ttl_minutes(self) -> int:
+        return int(self.expires_in.total_seconds() // 60)
 
 
 class RateLimitOptions(OptionsSection):
@@ -168,6 +171,10 @@ class RateLimitOptions(OptionsSection):
     window: timedelta = Field(default=timedelta(seconds=60), gt=timedelta(0))
     max_requests: int = Field(default=100, ge=1, le=1_000_000)
     storage: RateLimitStorageKind = RateLimitStorageKind.MEMORY
+
+    @property
+    def window_seconds(self) -> int:
+        return int(self.window.total_seconds())
 
 
 class CsrfOptions(OptionsSection):
@@ -181,11 +188,25 @@ class LockoutOptions(OptionsSection):
     max_failures: int = Field(default=5, ge=1, le=100)
     window: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
 
+    @property
+    def window_seconds(self) -> int:
+        return int(self.window.total_seconds())
+
 
 class RefreshTokenOptions(OptionsSection):
     enabled: bool = True
     max_age: timedelta = Field(default=timedelta(days=30), gt=timedelta(0))
     absolute_max_age: timedelta | None = Field(default=None, gt=timedelta(0))
+
+    @property
+    def max_age_seconds(self) -> int:
+        return int(self.max_age.total_seconds())
+
+    @property
+    def absolute_max_age_seconds(self) -> int | None:
+        if self.absolute_max_age is None:
+            return None
+        return int(self.absolute_max_age.total_seconds())
 
 
 class SecurityHeadersOptions(OptionsSection):
@@ -204,7 +225,7 @@ class AdvancedOptions(OptionsSection):
     cookie_secure_prefix: bool = True
 
 
-class MemoryDatabase(OptionsSection):
+class MemoryDatabaseOptions(OptionsSection):
     kind: Literal["memory"] = "memory"
 
     def build_adapter(self) -> DatabaseAdapter:
@@ -216,7 +237,7 @@ class MemoryDatabase(OptionsSection):
         return DatabaseBackendKind.MEMORY
 
 
-class MongoDatabase(OptionsSection):
+class MongoDatabaseOptions(OptionsSection):
     kind: Literal["mongo"] = "mongo"
     database: object
     collection_prefix: str = ""
@@ -242,7 +263,7 @@ class MongoDatabase(OptionsSection):
         return DatabaseBackendKind.MONGO
 
 
-class PostgresDatabase(OptionsSection):
+class PostgresDatabaseOptions(OptionsSection):
     kind: Literal["postgres"] = "postgres"
     url: PostgresDsn
     table_prefix: str = "fastauth_"
@@ -262,7 +283,16 @@ class PostgresDatabase(OptionsSection):
         return DatabaseBackendKind.POSTGRES
 
 
-class CustomDatabase(OptionsSection):
+class CustomDatabaseOptions(OptionsSection):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+        revalidate_instances="always",
+        arbitrary_types_allowed=True,
+    )
+
     kind: Literal["custom"] = "custom"
     adapter: DatabaseAdapter
     backend: DatabaseBackendKind = DatabaseBackendKind.MEMORY
@@ -278,17 +308,16 @@ class CustomDatabase(OptionsSection):
 
 
 DatabaseOptions = Annotated[
-    MemoryDatabase | MongoDatabase | PostgresDatabase | CustomDatabase,
+    MemoryDatabaseOptions | MongoDatabaseOptions | PostgresDatabaseOptions | CustomDatabaseOptions,
     Field(discriminator="kind"),
 ]
 
 class FastAuthOptions(OptionsModel):
-    """Single Pydantic options object accepted by ``fastauth(...)``."""
+    """Single Pydantic options object accepted by ``FastAuth``."""
 
     secret_key: SecretStr
     secret_key_rotation: tuple[SecretStr, ...] = Field(default_factory=tuple)
-    database: DatabaseOptions = Field(default_factory=MemoryDatabase)
-    plugins: Sequence[Plugin] = Field(default_factory=tuple)
+    database: DatabaseOptions = Field(default_factory=MemoryDatabaseOptions)
     app: AppOptions = Field(default_factory=lambda: AppOptions())
     session: SessionOptions = Field(default_factory=lambda: SessionOptions())
     cookie: CookieOptions = Field(default_factory=lambda: CookieOptions())
@@ -322,122 +351,3 @@ class FastAuthOptions(OptionsModel):
         if isinstance(value, list):
             return tuple(cast(list[SecretStr], value))
         return value
-
-    @field_validator("plugins", mode="before")
-    @classmethod
-    def normalize_plugins(cls, value: object) -> object:
-        if isinstance(value, list):
-            return tuple(cast(list[Plugin], value))
-        return value
-
-    def to_runtime_config(self) -> FastAuthConfig:
-        """Convert public options into the runtime config consumed by internals."""
-        if isinstance(self.database, MongoDatabase):
-            database = DatabaseConfig(
-                backend=self.database.backend_kind(),
-                mongo=MongoDatabaseConfig(
-                    collection_prefix=self.database.collection_prefix,
-                    collection_suffix=self.database.collection_suffix,
-                ),
-            )
-        elif isinstance(self.database, PostgresDatabase):
-            database = DatabaseConfig(
-                backend=self.database.backend_kind(),
-                postgres=PostgresDatabaseConfig(
-                    url=str(self.database.url),
-                    table_prefix=self.database.table_prefix,
-                    table_suffix=self.database.table_suffix,
-                ),
-            )
-        else:
-            database = DatabaseConfig(backend=self.database.backend_kind())
-        return FastAuthConfig(
-            secret_key=self.secret_key,
-            secret_key_rotation=self.secret_key_rotation,
-            app=AppConfig(
-                name=self.app.name,
-                base_url=str(self.app.base_url),
-                base_path=self.app.base_path,
-            ),
-            session=SessionConfig(
-                strategy=self.session.strategy,
-                max_age_seconds=int(self.session.expires_in.total_seconds()),
-                idle_timeout_seconds=(
-                    int(self.session.idle_timeout.total_seconds())
-                    if self.session.idle_timeout is not None
-                    else None
-                ),
-                rotate_on_refresh=self.session.rotate_on_refresh,
-            ),
-            cookie=CookieConfig.model_validate(self.cookie.model_dump()),
-            password=PasswordConfig(
-                min_length=self.password.min_length,
-                max_length=self.password.max_length,
-                argon2_time_cost=self.password.argon2_time_cost,
-                argon2_memory_cost_kib=self.password.argon2_memory_cost_kib,
-                argon2_parallelism=self.password.argon2_parallelism,
-            ),
-            email=EmailConfig(
-                from_address=self.email.from_address,
-                from_name=self.email.from_name,
-                verification_subject=self.email.verification_subject,
-                password_reset_subject=self.email.password_reset_subject,
-                template_directory=self.email.template_directory,
-            ),
-            email_verification=EmailVerificationConfig(
-                token_ttl_minutes=max(
-                    1,
-                    int(self.email_verification.expires_in.total_seconds() // 60),
-                ),
-                require_verified_for_sign_in=self.email_verification.require_verified_for_sign_in,
-                base_verify_url=str(self.email_verification.base_verify_url),
-            ),
-            password_reset=PasswordResetConfig(
-                token_ttl_minutes=max(1, int(self.password_reset.expires_in.total_seconds() // 60)),
-                base_reset_url=str(self.password_reset.base_reset_url),
-            ),
-            email_change=EmailChangeConfig(
-                token_ttl_minutes=max(1, int(self.email_change.expires_in.total_seconds() // 60)),
-                base_confirm_url=str(self.email_change.base_confirm_url),
-                subject=self.email_change.subject,
-            ),
-            delete_account=DeleteAccountConfig(
-                token_ttl_minutes=max(1, int(self.delete_account.expires_in.total_seconds() // 60)),
-                base_confirm_url=str(self.delete_account.base_confirm_url),
-                subject=self.delete_account.subject,
-            ),
-            rate_limit=RateLimitConfig(
-                enabled=self.rate_limit.enabled,
-                window_seconds=int(self.rate_limit.window.total_seconds()),
-                max_requests=self.rate_limit.max_requests,
-                storage=self.rate_limit.storage,
-            ),
-            csrf=CsrfConfig(
-                enabled=self.csrf.enabled,
-                trusted_origins=self.csrf.trusted_origins,
-                allow_relative_paths=self.csrf.allow_relative_paths,
-            ),
-            lockout=LockoutConfig(
-                enabled=self.lockout.enabled,
-                max_failures=self.lockout.max_failures,
-                window_seconds=int(self.lockout.window.total_seconds()),
-            ),
-            refresh_token=RefreshTokenConfig(
-                enabled=self.refresh_token.enabled,
-                max_age_seconds=int(self.refresh_token.max_age.total_seconds()),
-                absolute_max_age_seconds=(
-                    int(self.refresh_token.absolute_max_age.total_seconds())
-                    if self.refresh_token.absolute_max_age is not None
-                    else None
-                ),
-            ),
-            security_headers=SecurityHeadersConfig.model_validate(
-                self.security_headers.model_dump(),
-            ),
-            database=database,
-            advanced=AdvancedConfig(
-                ip_address_headers=self.advanced.ip_address_headers,
-                ipv6_subnet=self.advanced.ipv6_subnet,
-                cookie_secure_prefix=self.advanced.cookie_secure_prefix,
-            ),
-        )

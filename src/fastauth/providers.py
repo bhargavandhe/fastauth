@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastauth.plugins.api_key import ApiKeyOptions, ApiKeyPlugin
-    from fastauth.plugins.audit_logs import AuditLogsConfig, AuditLogsPlugin
+    from fastauth.plugins.audit_logs import AuditLogsOptions, AuditLogsPlugin
     from fastauth.plugins.email_otp import EmailOtpOptions, EmailOtpPlugin
     from fastauth.plugins.email_password import EmailPasswordOptions, EmailPasswordPlugin
     from fastauth.plugins.jwt import JwtOptions, JwtPlugin, PayloadBuilder, SignerFactory
-    from fastauth.plugins.openapi import OpenApiConfig, OpenApiPlugin
-    from fastauth.plugins.test_utils import TestUtilsConfig, TestUtilsPlugin
+    from fastauth.plugins.openapi import OpenApiOptions, OpenApiPlugin
+    from fastauth.plugins.test_utils import TestUtilsOptions, TestUtilsPlugin
 
 __all__ = [
     "api_key",
@@ -36,10 +36,10 @@ def api_key(options: ApiKeyOptions | None = None) -> ApiKeyPlugin:
     return ApiKeyPlugin(options)
 
 
-def audit_logs(config: AuditLogsConfig | None = None) -> AuditLogsPlugin:
+def audit_logs(options: AuditLogsOptions | None = None) -> AuditLogsPlugin:
     from fastauth.plugins.audit_logs import AuditLogsPlugin
 
-    return AuditLogsPlugin(config)
+    return AuditLogsPlugin(options)
 
 
 def email_otp(options: EmailOtpOptions | None = None) -> EmailOtpPlugin:
@@ -63,13 +63,13 @@ def jwt(
     )
 
 
-def openapi(config: OpenApiConfig | None = None) -> OpenApiPlugin:
+def openapi(options: OpenApiOptions | None = None) -> OpenApiPlugin:
     from fastauth.plugins.openapi import OpenApiPlugin
 
-    return OpenApiPlugin(config)
+    return OpenApiPlugin(options)
 
 
-def test_utils(config: TestUtilsConfig | None = None) -> TestUtilsPlugin:
+def test_utils(options: TestUtilsOptions | None = None) -> TestUtilsPlugin:
     from fastauth.plugins.test_utils import TestUtilsPlugin
 
-    return TestUtilsPlugin(config)
+    return TestUtilsPlugin(options)

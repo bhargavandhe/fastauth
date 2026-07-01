@@ -117,7 +117,7 @@ def test_readme_quickstart_uses_auth_mount() -> None:
 
     assert "auth.mount(app)" in text
     assert "FastAuthOptions" in text
-    assert "plugins=[email_password()]" in text
+    assert "FastAuth(options, plugins=[email_password()])" in text
     assert (
         "with CSRF, rate-limiting, account-lockout, refresh\n"
         "tokens, and security headers all on by default."

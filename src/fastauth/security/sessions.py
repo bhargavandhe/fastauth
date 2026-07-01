@@ -7,8 +7,8 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from fastauth.config import SessionConfig
 from fastauth.domain.models import Session, User
+from fastauth.options import SessionOptions
 from fastauth.security.tokens import TokenService
 from fastauth.storage.base import DatabaseAdapter
 
@@ -49,7 +49,7 @@ class DatabaseSessionStrategy:
         self,
         adapter: DatabaseAdapter,
         token_service: TokenService,
-        config: SessionConfig,
+        config: SessionOptions,
     ) -> None:
         self.adapter = adapter
         self.tokens = token_service

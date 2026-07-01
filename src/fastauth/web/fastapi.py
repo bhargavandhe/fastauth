@@ -29,6 +29,12 @@ from fastauth.flows.credentials import (
     SignInUsernameRequest,
     SignUpEmailRequest,
 )
+from fastauth.flows.credentials import (
+    sign_in_email as sign_in_email_flow,
+)
+from fastauth.flows.credentials import (
+    sign_up_email as sign_up_email_flow,
+)
 from fastauth.flows.password_reset import (
     ForgotPasswordRequest,
     ResetPasswordRequest,
@@ -234,7 +240,8 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
         response: Response,
     ) -> SessionResponse:
-        result, session_context = await api.sign_up_email(
+        result, session_context = await sign_up_email_flow(
+            context,
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
@@ -258,7 +265,8 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         request: Request,
         response: Response,
     ) -> SessionResponse:
-        result, session_context = await api.sign_in_email(
+        result, session_context = await sign_in_email_flow(
+            context,
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),

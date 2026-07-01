@@ -11,25 +11,25 @@ document for the calling FastAPI app.
 
 ## Config
 
-`OpenApiConfig` exposes the mount `path` (default `/reference`),
+`OpenApiOptions` exposes the mount `path` (default `/reference`),
 Scalar `theme`, an optional CSP `nonce`, the page `title`, and the
 `openapi_version` literal (default `"3.1.0"`).
 
 ## Example
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
-from fastauth.plugins.openapi import OpenApiConfig
+from fastauth.plugins.openapi import OpenApiOptions
 from fastauth.providers import email_password, openapi
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),
         plugins=[
             email_password(),
-            openapi(OpenApiConfig(path="/reference", theme="default")),
+            openapi(OpenApiOptions(path="/reference", theme="default")),
         ],
     )
 )

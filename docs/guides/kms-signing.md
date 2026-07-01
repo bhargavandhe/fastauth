@@ -26,12 +26,12 @@ class CloudKmsSigner:
 Wire the factory into the plugin:
 
 ```python
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.jwt import JwtOptions
 from fastauth.providers import email_password, jwt
 
-auth = fastauth(
+auth = FastAuth(
     FastAuthOptions(
         secret_key="replace-me-with-your-application-secret",
         database=memory(),

@@ -26,19 +26,19 @@ async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
             database=custom(adapter),
-            plugins=[
-                email_password(),
-                JwtPlugin(
-                    JwtOptions(
-                        issuer="http://testserver",
-                        audience="http://testserver",
-                    ),
-                ),
-            ],
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
         ),
+        plugins=[
+            email_password(),
+            JwtPlugin(
+                JwtOptions(
+                    issuer="http://testserver",
+                    audience="http://testserver",
+                ),
+            ),
+        ],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)

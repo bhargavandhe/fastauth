@@ -18,14 +18,11 @@ from fastauth.storage.base import ApiKeyStore, AuditLogStore, BaseDatabaseAdapte
 def options(
     adapter: BaseDatabaseAdapter,
     *,
-    plugins: list[Plugin] | None = None,
     rate_limit: RateLimitOptions | None = None,
 ) -> FastAuthOptions:
-    plugin_list: list[Plugin] = plugins or []
     return FastAuthOptions(
         secret_key=SecretStr("x" * 64),
         database=custom(adapter),
-        plugins=plugin_list,
         rate_limit=rate_limit or RateLimitOptions(),
     )
 
@@ -53,7 +50,7 @@ def test_optional_plugins_require_matching_adapter_capability(
     message: str,
 ) -> None:
     with pytest.raises(ConfigError, match=message):
-        FastAuth(options(BaseDatabaseAdapter(), plugins=[plugin]))
+        FastAuth(options(BaseDatabaseAdapter()), plugins=[plugin])
 
 
 def test_database_rate_limit_storage_requires_matching_adapter_capability() -> None:

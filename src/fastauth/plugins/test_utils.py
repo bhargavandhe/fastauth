@@ -13,16 +13,15 @@ from pydantic import BaseModel, ConfigDict
 
 from fastauth.domain.events import OtpGenerated
 from fastauth.domain.models import User
-from fastauth.plugins.base import EndpointSpec, Plugin
+from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 
-__all__ = ["LoginResult", "TestHelpers", "TestUtilsConfig", "TestUtilsPlugin"]
+__all__ = ["LoginResult", "TestHelpers", "TestUtilsOptions", "TestUtilsPlugin"]
 
 
-class TestUtilsConfig(BaseModel):
+class TestUtilsOptions(PluginOptions):
     """Static configuration for ``TestUtilsPlugin``."""
 
-    model_config = ConfigDict(extra="forbid")
     capture_otp: bool = False
 
 
@@ -120,8 +119,8 @@ class TestUtilsPlugin(Plugin):
 
     id: ClassVar[str] = "fastauth-test-utils"
 
-    def __init__(self, config: TestUtilsConfig | None = None) -> None:
-        self.config = config or TestUtilsConfig()
+    def __init__(self, options: TestUtilsOptions | None = None) -> None:
+        self.options = options or TestUtilsOptions()
         self.context: AuthContext | None = None
         self.helpers: TestHelpers | None = None
 
@@ -130,7 +129,7 @@ class TestUtilsPlugin(Plugin):
         self.context = context
         helpers = TestHelpers(context)
         self.helpers = helpers
-        if self.config.capture_otp:
+        if self.options.capture_otp:
             context.event_bus.subscribe(OtpGenerated, helpers.record_otp)
 
     def endpoints(self) -> Sequence[EndpointSpec]:

@@ -28,7 +28,6 @@ def build_options(adapter: InMemoryAdapter, **refresh_overrides: object) -> Fast
     return FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
@@ -47,6 +46,7 @@ def adapter() -> InMemoryAdapter:
 def auth(adapter: InMemoryAdapter) -> FastAuth:
     return FastAuth(
         build_options(adapter),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
 
@@ -113,6 +113,7 @@ async def test_disabled_refresh_tokens_never_issued() -> None:
     adapter = InMemoryAdapter()
     auth = FastAuth(
         build_options(adapter, enabled=False),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
@@ -214,6 +215,7 @@ async def test_refresh_endpoint_disabled_returns_400() -> None:
     adapter = InMemoryAdapter()
     auth = FastAuth(
         build_options(adapter, enabled=False),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
@@ -237,6 +239,7 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
     adapter = InMemoryAdapter()
     auth = FastAuth(
         build_options(adapter, absolute_max_age=timedelta(seconds=1)),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)

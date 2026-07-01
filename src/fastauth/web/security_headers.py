@@ -16,14 +16,14 @@ recommendation for a typical SaaS web application:
 * ``Permissions-Policy`` (off by default — application-specific).
 * ``Content-Security-Policy`` (off by default — application-specific).
 
-Set any header field to ``None`` in :class:`SecurityHeadersConfig` to omit it.
+Set any header field to ``None`` in :class:`SecurityHeadersOptions` to omit it.
 """
 
 from __future__ import annotations
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from fastauth.config import SecurityHeadersConfig
+from fastauth.options import SecurityHeadersOptions
 
 __all__ = ["SecurityHeadersMiddleware"]
 
@@ -31,7 +31,7 @@ __all__ = ["SecurityHeadersMiddleware"]
 class SecurityHeadersMiddleware:
     """ASGI middleware that injects configured security headers on every response."""
 
-    def __init__(self, app: ASGIApp, *, config: SecurityHeadersConfig) -> None:
+    def __init__(self, app: ASGIApp, *, config: SecurityHeadersOptions) -> None:
         self.app = app
         self.config = config
         # Pre-compute the header bytes to avoid encoding on every request.

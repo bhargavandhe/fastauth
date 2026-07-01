@@ -18,12 +18,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from fastapi import Request, Response
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import Field, SecretStr
 
 from fastauth.domain.enums import JwtAlgorithm
 from fastauth.domain.models import User, WireModel
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
-from fastauth.plugins.base import EndpointSpec, Plugin
+from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.jwt import JwksDocument, JwksRegistry, KmsSigner, LocalKmsSigner
 from fastauth.storage.base import JwksKeyStore
@@ -40,10 +40,8 @@ PayloadBuilder = Callable[[User], dict[str, Any]]
 SignerFactory = Callable[[JwksRegistry], KmsSigner]
 
 
-class JwtOptions(BaseModel):
+class JwtOptions(PluginOptions):
     """Static configuration for ``JwtPlugin``."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     alg: JwtAlgorithm = JwtAlgorithm.EDDSA
     expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
@@ -106,7 +104,6 @@ class JwtPlugin(Plugin):
         signer_factory: SignerFactory | None = None,
     ) -> None:
         self.options = options or JwtOptions()
-        self.config = self.options
         self.payload_builder: PayloadBuilder = payload_builder or default_payload_builder
         self.signer_factory: SignerFactory = signer_factory or LocalKmsSigner
         self.context: AuthContext | None = None
@@ -117,7 +114,7 @@ class JwtPlugin(Plugin):
         return [
             EndpointSpec(
                 method="POST",
-                path=self.config.token_path,
+                path=self.options.token_path,
                 name="auth_token",
                 tags=["Jwt"],
                 handler=self.token_handler,
@@ -125,7 +122,7 @@ class JwtPlugin(Plugin):
             ),
             EndpointSpec(
                 method="GET",
-                path=self.config.jwks_path,
+                path=self.options.jwks_path,
                 name="auth_jwks",
                 tags=["Jwt"],
                 handler=self.jwks_handler,
@@ -170,10 +167,10 @@ class JwtPlugin(Plugin):
                 adapter=adapter,
                 secret_key=secret_key_value,
                 secret_key_rotation=secret_key_rotation,
-                alg=self.config.alg,
-                rotation_interval_seconds=self.config.rotation_interval_seconds,
-                grace_period_seconds=self.config.grace_period_seconds,
-                encrypt_private_keys=not self.config.disable_private_key_encryption,
+                alg=self.options.alg,
+                rotation_interval_seconds=self.options.rotation_interval_seconds,
+                grace_period_seconds=self.options.grace_period_seconds,
+                encrypt_private_keys=not self.options.disable_private_key_encryption,
             )
         if self.signer is None:
             self.signer = self.signer_factory(self.registry)
@@ -194,23 +191,23 @@ class JwtPlugin(Plugin):
         """Sign a JWT for ``user`` using the plugin's configured signer."""
         context, _registry, signer = self.assert_bound()
         now = datetime.now(UTC)
-        issuer = self.config.issuer or context.config.app.base_url
-        audience = self.config.audience or context.config.app.base_url
+        issuer = self.options.issuer or context.config.app.base_url
+        audience = self.options.audience or context.config.app.base_url
         payload: dict[str, Any] = {
             "iss": issuer,
             "aud": audience,
             "sub": user.id,
             "iat": int(now.timestamp()),
-            "exp": int((now + self.config.expires_in).timestamp()),
+            "exp": int((now + self.options.expires_in).timestamp()),
             **self.payload_builder(user),
         }
         return await signer.sign(
-            header={"alg": self.config.alg.value, "typ": "JWT"},
+            header={"alg": self.options.alg.value, "typ": "JWT"},
             payload=payload,
         )
 
     async def extend_session_response(self, user: User, response: Response) -> None:
-        if self.config.disable_setting_jwt_header:
+        if self.options.disable_setting_jwt_header:
             return
         response.headers["set-auth-jwt"] = await self.issue_token_for(user)
 

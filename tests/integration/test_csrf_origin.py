@@ -19,7 +19,6 @@ def csrf_options(adapter: InMemoryAdapter) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=True, trusted_origins=("http://trusted.test",)),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
@@ -30,7 +29,7 @@ def csrf_options(adapter: InMemoryAdapter) -> FastAuthOptions:
 async def csrf_client() -> AsyncIterator[httpx.AsyncClient]:
     adapter = InMemoryAdapter()
     sender = ConsoleEmailSender()
-    auth = FastAuth(csrf_options(adapter), email_sender=sender)
+    auth = FastAuth(csrf_options(adapter), plugins=[email_password()], email_sender=sender)
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)
     async with httpx.AsyncClient(

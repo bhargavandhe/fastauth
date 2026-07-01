@@ -21,11 +21,11 @@ MEMORY_AUTH_SCAFFOLD = '''\
 
 This scaffold demonstrates explicit dependency injection. Build your
 ``FastAuthOptions`` in your application code, then pass it to
-``fastauth(options)``. fastauth never reads process-level configuration.
+``FastAuth``. fastauth never reads process-level configuration.
 """
 from __future__ import annotations
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.providers import email_password
 
@@ -34,12 +34,11 @@ def create_options(secret_key: str) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=secret_key,
         database=memory(),
-        plugins=[email_password()],
     )
 
 
 def create_auth(secret_key: str):
-    return fastauth(create_options(secret_key))
+    return FastAuth(create_options(secret_key), plugins=[email_password()])
 '''
 
 
@@ -57,7 +56,7 @@ from typing import Any
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
 from fastauth.providers import email_password
 from fastauth.storage.beanie import init_beanie_documents
@@ -85,12 +84,11 @@ def create_options(
             collection_prefix=collection_prefix,
             collection_suffix=collection_suffix,
         ),
-        plugins=[email_password()],
     )
 
 
 def create_auth(options: FastAuthOptions):
-    return fastauth(options)
+    return FastAuth(options, plugins=[email_password()])
 
 
 async def init_auth_database(
@@ -118,7 +116,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
 from fastauth.providers import email_password
 
@@ -137,12 +135,11 @@ def create_options(
             table_prefix=table_prefix,
             table_suffix=table_suffix,
         ),
-        plugins=[email_password()],
     )
 
 
 def create_app(options: FastAuthOptions) -> FastAPI:
-    auth = fastauth(options)
+    auth = FastAuth(options, plugins=[email_password()])
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)
     return app

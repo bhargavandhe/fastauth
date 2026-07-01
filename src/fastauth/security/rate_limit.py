@@ -7,9 +7,9 @@ import ipaddress
 import time
 from typing import Protocol, runtime_checkable
 
-from fastauth.config import AdvancedConfig, RateLimitConfig
 from fastauth.domain.models import RateLimit
 from fastauth.exceptions import RateLimitError
+from fastauth.options import AdvancedOptions, RateLimitOptions
 from fastauth.plugins.base import RateLimitRule
 from fastauth.storage.base import RateLimitStore
 
@@ -160,8 +160,8 @@ class RateLimiter:
     def __init__(
         self,
         *,
-        config: RateLimitConfig,
-        advanced: AdvancedConfig,
+        config: RateLimitOptions,
+        advanced: AdvancedOptions,
         storage: RateLimitStorage,
         plugin_rules: list[RateLimitRule],
     ) -> None:

@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr, ValidationError
 
-from fastauth import FastAuthOptions, fastauth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.messaging.email import EmailMessage
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
@@ -20,13 +20,13 @@ class FakeEmailSender:
         self.message = message
 
 
-def test_fastauth_factory_builds_auth_from_pydantic_options() -> None:
-    auth = fastauth(
+def test_fastauth_class_builds_auth_from_pydantic_options() -> None:
+    auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
             database=memory(),
-            plugins=[email_password()],
         ),
+        plugins=[email_password()],
     )
 
     assert auth.options.database.kind == "memory"
@@ -36,12 +36,12 @@ def test_fastauth_factory_builds_auth_from_pydantic_options() -> None:
 def test_fastauth_factory_accepts_dependency_overrides() -> None:
     sender = FakeEmailSender()
 
-    auth = fastauth(
+    auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
             database=memory(),
-            plugins=[email_password()],
         ),
+        plugins=[email_password()],
         email_sender=sender,
     )
 
@@ -61,15 +61,15 @@ def test_options_reject_old_adapter_style() -> None:
 
 
 async def test_mount_installs_email_password_plugin_routes() -> None:
-    auth = fastauth(
+    auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("b" * 64),
             database=memory(),
-            plugins=[email_password()],
             cookie=CookieOptions(secure=False),
             csrf=CsrfOptions(enabled=False),
             rate_limit=RateLimitOptions(enabled=False),
         ),
+        plugins=[email_password()],
     )
     app = FastAPI(lifespan=auth.lifespan)
     auth.mount(app)
@@ -88,11 +88,10 @@ async def test_mount_installs_email_password_plugin_routes() -> None:
 
 
 async def test_email_password_routes_are_not_core_routes() -> None:
-    auth = fastauth(
+    auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("c" * 64),
             database=memory(),
-            plugins=[],
             cookie=CookieOptions(secure=False),
             csrf=CsrfOptions(enabled=False),
             rate_limit=RateLimitOptions(enabled=False),
@@ -117,11 +116,12 @@ def test_public_plugins_are_factories_with_pydantic_options() -> None:
     plugin = openapi()
 
     assert plugin.id == "fastauth-openapi"
-    assert hasattr(plugin.config, "model_dump")
+    assert hasattr(plugin.options, "model_dump")
+    assert not hasattr(plugin, "config")
 
 
 def test_old_config_names_are_not_exported() -> None:
     import fastauth
 
     assert not hasattr(fastauth, "FastAuthConfig")
-    assert not hasattr(fastauth, "FastAuth")
+    assert hasattr(fastauth, "FastAuth")

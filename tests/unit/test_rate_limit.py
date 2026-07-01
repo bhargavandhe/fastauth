@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import time
+from datetime import timedelta
 
 import pytest
 
-from fastauth.config import AdvancedConfig, RateLimitConfig
 from fastauth.exceptions import RateLimitError
+from fastauth.options import AdvancedOptions, RateLimitOptions
 from fastauth.security.rate_limit import (
     DatabaseRateLimitStorage,
     MemoryRateLimitStorage,
@@ -47,8 +48,8 @@ async def test_database_storage_persists() -> None:
 
 async def test_limiter_blocks_after_threshold() -> None:
     limiter = RateLimiter(
-        config=RateLimitConfig(window_seconds=10, max_requests=2, enabled=True),
-        advanced=AdvancedConfig(),
+        config=RateLimitOptions(window=timedelta(seconds=10), max_requests=2, enabled=True),
+        advanced=AdvancedOptions(),
         storage=MemoryRateLimitStorage(),
         plugin_rules=[],
     )
@@ -60,8 +61,8 @@ async def test_limiter_blocks_after_threshold() -> None:
 
 async def test_limiter_uses_strict_default_for_sign_in() -> None:
     limiter = RateLimiter(
-        config=RateLimitConfig(window_seconds=60, max_requests=100, enabled=True),
-        advanced=AdvancedConfig(),
+        config=RateLimitOptions(window=timedelta(seconds=60), max_requests=100, enabled=True),
+        advanced=AdvancedOptions(),
         storage=MemoryRateLimitStorage(),
         plugin_rules=[],
     )
@@ -73,8 +74,8 @@ async def test_limiter_uses_strict_default_for_sign_in() -> None:
 
 async def test_disabled_limiter_never_blocks() -> None:
     limiter = RateLimiter(
-        config=RateLimitConfig(enabled=False),
-        advanced=AdvancedConfig(),
+        config=RateLimitOptions(enabled=False),
+        advanced=AdvancedOptions(),
         storage=MemoryRateLimitStorage(),
         plugin_rules=[],
     )

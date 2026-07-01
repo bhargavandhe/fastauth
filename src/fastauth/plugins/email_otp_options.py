@@ -4,38 +4,24 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from fastauth.plugins.base import PluginOptions
 
 __all__ = ["EmailChangeOtpOptions", "EmailOtpOptions"]
 
 
-class EmailChangeOtpOptions(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="always",
-    )
-
+class EmailChangeOtpOptions(PluginOptions):
     enabled: bool = False
     verify_current_email: bool = False
 
 
-class EmailOtpOptions(BaseModel):
+class EmailOtpOptions(PluginOptions):
     """Tunables for the email-OTP plugin.
 
     Defaults match better-auth: 6 digits, 5-minute expiry, 3 attempts per
     OTP. Auto-sign-up on first sign-in is enabled by default.
     """
-
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        strict=True,
-        validate_default=True,
-        revalidate_instances="always",
-    )
 
     code_length: int = Field(default=6, ge=4, le=10)
     expires_in: timedelta = Field(

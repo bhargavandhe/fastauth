@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from fastauth.config import PasswordConfig
+from fastauth.options import PasswordOptions
 from fastauth.security.passwords import Argon2idHasher
 
 
 def test_hash_and_verify_round_trip() -> None:
-    hasher = Argon2idHasher(PasswordConfig())
+    hasher = Argon2idHasher(PasswordOptions())
     hashed = hasher.hash("correct horse battery staple")
     assert hashed != "correct horse battery staple"
     assert hasher.verify("correct horse battery staple", hashed) is True
@@ -13,7 +13,7 @@ def test_hash_and_verify_round_trip() -> None:
 
 
 def test_hash_is_random_per_call() -> None:
-    hasher = Argon2idHasher(PasswordConfig())
+    hasher = Argon2idHasher(PasswordOptions())
     first = hasher.hash("same")
     second = hasher.hash("same")
     assert first != second
@@ -22,8 +22,8 @@ def test_hash_is_random_per_call() -> None:
 
 
 def test_needs_rehash_when_config_changes() -> None:
-    weak = Argon2idHasher(PasswordConfig(argon2_time_cost=1, argon2_memory_cost_kib=8192))
-    strong = Argon2idHasher(PasswordConfig(argon2_time_cost=3, argon2_memory_cost_kib=65536))
+    weak = Argon2idHasher(PasswordOptions(argon2_time_cost=1, argon2_memory_cost_kib=8192))
+    strong = Argon2idHasher(PasswordOptions(argon2_time_cost=3, argon2_memory_cost_kib=65536))
     legacy = weak.hash("hello")
     assert strong.needs_rehash(legacy) is True
     assert strong.needs_rehash(strong.hash("hello")) is False

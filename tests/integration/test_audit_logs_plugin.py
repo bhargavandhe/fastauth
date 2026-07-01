@@ -7,13 +7,13 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from fastauth.plugins.audit_logs import AuditLogsConfig, AuditLogsPlugin
+from fastauth.plugins.audit_logs import AuditLogsOptions, AuditLogsPlugin
 from fastauth.runtime.auth import FastAuth
 
 
 @pytest.fixture
 def auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
-    return auth_factory(plugins=[AuditLogsPlugin(AuditLogsConfig())])
+    return auth_factory(plugins=[AuditLogsPlugin(AuditLogsOptions())])
 
 
 async def test_sign_up_writes_audit_event(client: httpx.AsyncClient) -> None:

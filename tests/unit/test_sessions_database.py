@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from fastauth.config import SessionConfig
 from fastauth.domain.models import User
+from fastauth.options import SessionOptions
 from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext
 from fastauth.security.tokens import TokenService
 from fastauth.storage.memory import InMemoryAdapter
@@ -14,7 +14,7 @@ from fastauth.storage.memory import InMemoryAdapter
 @pytest.fixture
 async def strategy() -> DatabaseSessionStrategy:
     adapter = InMemoryAdapter()
-    return DatabaseSessionStrategy(adapter, TokenService(), SessionConfig())
+    return DatabaseSessionStrategy(adapter, TokenService(), SessionOptions())
 
 
 @pytest.fixture

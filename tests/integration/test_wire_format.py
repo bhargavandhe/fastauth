@@ -21,7 +21,6 @@ def make_options(adapter: InMemoryAdapter) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         database=custom(adapter),
-        plugins=[email_password()],
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
@@ -33,6 +32,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     adapter = InMemoryAdapter()
     auth = FastAuth(
         make_options(adapter),
+        plugins=[email_password()],
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)

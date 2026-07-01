@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastauth.options import CustomDatabase, MemoryDatabase, MongoDatabase, PostgresDatabase
+from fastauth.options import (
+    CustomDatabaseOptions,
+    MemoryDatabaseOptions,
+    MongoDatabaseOptions,
+    PostgresDatabaseOptions,
+)
 from fastauth.storage.base import DatabaseAdapter
 
 __all__ = ["custom", "memory", "mongo", "postgres"]
 
 
-def memory() -> MemoryDatabase:
-    return MemoryDatabase()
+def memory() -> MemoryDatabaseOptions:
+    return MemoryDatabaseOptions()
 
 
 def mongo(
@@ -19,8 +24,8 @@ def mongo(
     *,
     collection_prefix: str = "",
     collection_suffix: str = "",
-) -> MongoDatabase:
-    return MongoDatabase(
+) -> MongoDatabaseOptions:
+    return MongoDatabaseOptions(
         database=database,
         collection_prefix=collection_prefix,
         collection_suffix=collection_suffix,
@@ -33,8 +38,8 @@ def postgres(
     table_prefix: str = "fastauth_",
     table_suffix: str = "",
     migration_mode: Literal["apply", "check", "disabled"] = "apply",
-) -> PostgresDatabase:
-    return PostgresDatabase.model_validate(
+) -> PostgresDatabaseOptions:
+    return PostgresDatabaseOptions.model_validate(
         {
             "kind": "postgres",
             "url": url,
@@ -45,5 +50,5 @@ def postgres(
     )
 
 
-def custom(adapter: DatabaseAdapter) -> CustomDatabase:
-    return CustomDatabase(adapter=adapter)
+def custom(adapter: DatabaseAdapter) -> CustomDatabaseOptions:
+    return CustomDatabaseOptions(adapter=adapter)
