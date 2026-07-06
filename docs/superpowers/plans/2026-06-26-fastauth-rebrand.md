@@ -103,12 +103,8 @@ Expected: the quickstart imports the renamed public API and no longer mentions F
 ### Task 3: Rewrite tests for the renamed API and namespace
 
 **Files:**
-- Modify: `tests/unit/test_config.py`
-- Modify: `tests/unit/test_fastauth_defaults.py`
-- Modify: `tests/unit/test_exceptions.py`
-- Modify: `tests/unit/test_docs_contract.py`
-- Modify: `tests/unit/test_plugin_registry.py`
-- Modify: `tests/integration/test_*`
+- Modify: `tests/unit/**/test_*.py`
+- Modify: `tests/integration/**/test_*.py`
 - Modify: `tests/adapters/test_*`
 - Modify: `examples/quickstart/tests/test_end_to_end.py`
 
@@ -156,4 +152,3 @@ uv run pyright
 ```
 
 Expected: no import-path or symbol-name regressions remain.
-

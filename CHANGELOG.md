@@ -4,6 +4,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-07-06
+
+### Changed
+
+- Reorganized unit and integration tests into domain-focused folders and added
+  shared path helpers for repository-relative test contracts.
+
 ## [0.4.1] — 2026-07-06
 
 ### Fixed
@@ -434,7 +441,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/bhargavandhe/fastauth/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/bhargavandhe/fastauth/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/bhargavandhe/fastauth/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/bhargavandhe/fastauth/releases/tag/v0.3.4

@@ -5,7 +5,9 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tests.support.paths import PROJECT_ROOT
+
+ROOT = PROJECT_ROOT
 
 
 def read_project_file(path: str) -> str:

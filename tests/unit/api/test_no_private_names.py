@@ -7,6 +7,8 @@ import pathlib
 
 import pytest
 
+from tests.support.paths import PROJECT_ROOT
+
 ALLOWED_DUNDER = {
     "__init__",
     "__all__",
@@ -16,7 +18,7 @@ ALLOWED_DUNDER = {
     "__doc__",
     "__call__",
 }
-SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "fastauth"
+SOURCE_ROOT = PROJECT_ROOT / "src" / "fastauth"
 
 
 def collect_python_files() -> list[pathlib.Path]:
