@@ -647,7 +647,7 @@ class BeanieAdapter:
                             "$cond": [
                                 {
                                     "$lte": [
-                                        {"$ifNull": ["$last_request_ms", 0]},
+                                        {"$ifNull": ["$last_request_ms", threshold_ms]},
                                         threshold_ms,
                                     ],
                                 },
@@ -659,7 +659,7 @@ class BeanieAdapter:
                             "$cond": [
                                 {
                                     "$lte": [
-                                        {"$ifNull": ["$last_request_ms", 0]},
+                                        {"$ifNull": ["$last_request_ms", threshold_ms]},
                                         threshold_ms,
                                     ],
                                 },

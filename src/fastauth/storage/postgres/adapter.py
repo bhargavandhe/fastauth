@@ -27,6 +27,7 @@ from fastauth.domain.models import (
     Session,
     User,
     Verification,
+    new_id,
 )
 from fastauth.exceptions import DuplicateError, NotFoundError
 from fastauth.storage.base import (
@@ -773,7 +774,7 @@ class PostgresAdapter(
         threshold_ms = now_ms - window_ms
         statement = (
             postgres_insert(self.schema.rate_limits)
-            .values(key=key, count=1, last_request_ms=now_ms)
+            .values(id=new_id(), key=key, count=1, last_request_ms=now_ms)
             .on_conflict_do_update(
                 index_elements=[self.schema.rate_limits.c.key],
                 set_={

@@ -4,6 +4,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-06
+
+### Fixed
+
+- Fixed adapter-backed rate-limit bucket creation for Beanie and Postgres when
+  the first request starts a new fixed window.
+
 ## [0.4.0] — 2026-07-06
 
 ### Added
@@ -427,7 +434,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/bhargavandhe/fastauth/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/bhargavandhe/fastauth/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/bhargavandhe/fastauth/releases/tag/v0.3.4
 [0.1.0]: https://github.com/bhargavandhe/fastauth/releases/tag/v0.1.0
