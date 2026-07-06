@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 
 from fastauth.plugins.api_key import ApiKeyOptions, ApiKeyPlugin
 from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
@@ -69,6 +71,16 @@ async def test_list_and_delete(client: httpx.AsyncClient) -> None:
     assert listed_again["total"] == 2
 
 
+async def test_list_rejects_invalid_pagination(client: httpx.AsyncClient) -> None:
+    await signed_in_client(client)
+
+    negative_offset = await client.get("/auth/api-key/list", params={"offset": -1})
+    zero_limit = await client.get("/auth/api-key/list", params={"limit": 0})
+
+    assert negative_offset.status_code == 422
+    assert zero_limit.status_code == 422
+
+
 async def test_remaining_decrements(client: httpx.AsyncClient) -> None:
     await signed_in_client(client)
     created = await client.post(
@@ -83,6 +95,53 @@ async def test_remaining_decrements(client: httpx.AsyncClient) -> None:
     assert second.json()["valid"] is True
     assert third.json()["valid"] is False
     assert third.json()["error"]["code"] == "API_KEY_EXHAUSTED"
+
+
+async def test_refill_restores_remaining_quota(
+    client: httpx.AsyncClient,
+    adapter: InMemoryAdapter,
+) -> None:
+    await signed_in_client(client)
+    created = await client.post(
+        "/auth/api-key/create",
+        json={
+            "name": "refill",
+            "remaining": 1,
+            "refillAmount": 1,
+            "refillInterval": "PT1S",
+        },
+    )
+    body = created.json()
+    plain_key = body["key"]
+    api_key_id = body["apiKey"]["id"]
+    first = await client.post("/auth/api-key/verify", json={"key": plain_key})
+    second = await client.post("/auth/api-key/verify", json={"key": plain_key})
+    assert first.json()["valid"] is True
+    assert second.json()["valid"] is False
+    assert second.json()["error"]["code"] == "API_KEY_EXHAUSTED"
+
+    stored = adapter.api_keys[api_key_id]
+    assert stored.last_refill_at is not None
+    stored.last_refill_at = datetime.now(UTC) - timedelta(seconds=2)
+    await adapter.update_api_key(stored)
+
+    third = await client.post("/auth/api-key/verify", json={"key": plain_key})
+    assert third.json()["valid"] is True
+
+
+async def test_rate_limit_is_enforced(client: httpx.AsyncClient) -> None:
+    await signed_in_client(client)
+    created = await client.post(
+        "/auth/api-key/create",
+        json={"name": "limited", "rateLimitMax": 1, "rateLimitWindow": "PT1M"},
+    )
+    plain_key = created.json()["key"]
+    first = await client.post("/auth/api-key/verify", json={"key": plain_key})
+    second = await client.post("/auth/api-key/verify", json={"key": plain_key})
+
+    assert first.json()["valid"] is True
+    assert second.json()["valid"] is False
+    assert second.json()["error"]["code"] == "API_KEY_RATE_LIMITED"
 
 
 async def test_insufficient_permission_does_not_consume_remaining_quota(
@@ -137,6 +196,34 @@ async def test_create_with_expires_in_one_hour_is_valid(
     body = response.json()
     assert body["valid"] is True, body
     assert body["error"] is None
+
+
+async def test_update_rejects_empty_name(client: httpx.AsyncClient) -> None:
+    await signed_in_client(client)
+    created = (await client.post("/auth/api-key/create", json={"name": "ci"})).json()
+    response = await client.post(
+        "/auth/api-key/update",
+        json={"id": created["apiKey"]["id"], "name": ""},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"name": "bad", "refillAmount": 1},
+        {"name": "bad", "refillInterval": "PT1M"},
+        {"name": "bad", "rateLimitMax": 10},
+        {"name": "bad", "rateLimitWindow": "PT1M"},
+    ],
+)
+async def test_create_rejects_incomplete_paired_options(
+    client: httpx.AsyncClient,
+    payload: dict[str, object],
+) -> None:
+    await signed_in_client(client)
+    response = await client.post("/auth/api-key/create", json=payload)
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(

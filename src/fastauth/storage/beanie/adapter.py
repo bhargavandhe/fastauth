@@ -162,6 +162,8 @@ class BeanieAdapter:
     # ----- User -----
     async def create_user(self, user: User) -> User:
         normalise_datetimes(user)
+        if user.username is not None and await self.get_user_by_username(user.username) is not None:
+            raise DuplicateError(resource="user", field="username")
         # Drop the domain-side ``id`` (UUID-hex from ``new_id()``) so Beanie generates
         # a fresh ObjectId. The new id is written back into the input model below.
         doc = from_user(user, include_id=False)
@@ -653,7 +655,18 @@ class BeanieAdapter:
                                 {"$add": [{"$ifNull": ["$count", 0]}, 1]},
                             ],
                         },
-                        "last_request_ms": now_ms,
+                        "last_request_ms": {
+                            "$cond": [
+                                {
+                                    "$lte": [
+                                        {"$ifNull": ["$last_request_ms", 0]},
+                                        threshold_ms,
+                                    ],
+                                },
+                                now_ms,
+                                "$last_request_ms",
+                            ],
+                        },
                     },
                 },
             ],
@@ -662,7 +675,7 @@ class BeanieAdapter:
         )
         if row is None:
             raise RuntimeError("rate-limit increment failed")
-        return int(row["count"]), int(row["last_request_ms"]) - window_ms
+        return int(row["count"]), int(row["last_request_ms"])
 
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
         doc = await self.rate_limit_doc.find_one({"key": rate_limit.key})

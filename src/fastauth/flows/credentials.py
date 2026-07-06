@@ -31,7 +31,8 @@ from fastauth.domain.events import (
 )
 from fastauth.domain.models import Account, User, WireModel
 from fastauth.domain.value_objects import normalize_email
-from fastauth.exceptions import InvalidCredentialsError, InvalidRequestError
+from fastauth.exceptions import EmailNotVerifiedError, InvalidCredentialsError, InvalidRequestError
+from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 
@@ -86,6 +87,16 @@ async def maybe_issue_refresh_token(
         return None
     _record, plain = issued
     return plain
+
+
+def validate_email_password_delivery(context: AuthContext, delivery: CredentialDelivery) -> None:
+    options = email_password_options(context)
+    if (
+        options is not None
+        and not options.allow_bearer_tokens
+        and isinstance(delivery, BearerCredentialDelivery)
+    ):
+        raise InvalidRequestError(message="bearer token delivery is disabled")
 
 
 async def record_failure_and_maybe_emit(
@@ -183,6 +194,7 @@ async def sign_up_email(
     ip: str | None,
     user_agent: str | None,
 ) -> tuple[SessionResponse, SessionContext]:
+    validate_email_password_delivery(context, request.delivery)
     user = User(
         email=request.email,
         name=request.name,
@@ -293,6 +305,7 @@ async def complete_sign_in(
 ) -> tuple[SessionResponse, SessionContext]:
     if delivery is None:
         delivery = CookieCredentialDelivery()
+    validate_email_password_delivery(context, delivery)
 
     # Lockout check: if too many recent failures for this identifier, reject
     # before examining any password material.
@@ -309,6 +322,13 @@ async def complete_sign_in(
     if stored is None or not context.password_hasher.verify(password.get_secret_value(), stored):
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
+
+    options = email_password_options(context)
+    if (
+        context.config.email_verification.require_verified_for_sign_in
+        or (options is not None and options.require_email_verification)
+    ) and not user.email_verified:
+        raise EmailNotVerifiedError()
 
     # Successful sign-in: clear the failure counter so future attempts have
     # a clean slate.
@@ -356,6 +376,7 @@ async def sign_out(context: AuthContext, token: str | None) -> EmptyResponse:
     found = await context.session_strategy.read(token)
     await context.session_strategy.revoke(token)
     if found is not None:
+        await context.refresh_token_service.revoke_for_user(found.user.id)
         await context.event_bus.publish(UserSignedOut(user_id=found.user.id))
         await context.event_bus.publish(
             SessionRevoked(user_id=found.user.id, session_id=found.session.id),

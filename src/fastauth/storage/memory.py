@@ -40,6 +40,10 @@ class InMemoryAdapter:
         async with self.lock:
             if any(existing.email == user.email for existing in self.users.values()):
                 raise DuplicateError(resource="user", field="email")
+            if user.username is not None and any(
+                existing.username == user.username for existing in self.users.values()
+            ):
+                raise DuplicateError(resource="user", field="username")
             self.users[user.id] = user
             return user
 
@@ -394,16 +398,16 @@ class InMemoryAdapter:
     ) -> tuple[int, int]:
         async with self.lock:
             existing = self.rate_limits.get(key)
-            if existing is None or existing.last_request_ms <= now_ms - window_ms:
+            if existing is None or existing.last_request_ms + window_ms <= now_ms:
                 updated = RateLimit(key=key, count=1, last_request_ms=now_ms)
             else:
                 updated = RateLimit(
                     key=key,
                     count=existing.count + 1,
-                    last_request_ms=now_ms,
+                    last_request_ms=existing.last_request_ms,
                 )
             self.rate_limits[key] = updated
-            return updated.count, updated.last_request_ms - window_ms
+            return updated.count, updated.last_request_ms
 
     async def get_rate_limit(self, key: str) -> RateLimit | None:
         return self.rate_limits.get(key)

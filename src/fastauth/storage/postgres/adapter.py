@@ -288,10 +288,7 @@ class PostgresAdapter(
     ) -> T:
         async with self.engine.begin() as connection:
             result = await connection.execute(
-                update(table)
-                .where(table.c.id == row_id)
-                .values(**data)
-                .returning(*table.c),
+                update(table).where(table.c.id == row_id).values(**data).returning(*table.c),
             )
             row = result.mappings().one_or_none()
         if row is None:
@@ -299,6 +296,8 @@ class PostgresAdapter(
         return converter(row)
 
     async def create_user(self, user: User) -> User:
+        if user.username is not None and await self.get_user_by_username(user.username) is not None:
+            raise DuplicateError(resource="user", field="username")
         return await self.insert_row(
             self.schema.users,
             model_data(user),
@@ -644,7 +643,9 @@ class PostgresAdapter(
     ) -> tuple[list[ApiKey], int]:
         async with self.engine.begin() as connection:
             total_result = await connection.execute(
-                select(func.count()).select_from(self.schema.api_keys).where(
+                select(func.count())
+                .select_from(self.schema.api_keys)
+                .where(
                     self.schema.api_keys.c.user_id == user_id,
                 ),
             )
@@ -783,7 +784,13 @@ class PostgresAdapter(
                         ),
                         else_=self.schema.rate_limits.c.count + 1,
                     ),
-                    "last_request_ms": now_ms,
+                    "last_request_ms": case(
+                        (
+                            self.schema.rate_limits.c.last_request_ms <= threshold_ms,
+                            now_ms,
+                        ),
+                        else_=self.schema.rate_limits.c.last_request_ms,
+                    ),
                 },
             )
             .returning(
@@ -794,7 +801,7 @@ class PostgresAdapter(
         async with self.engine.begin() as connection:
             result = await connection.execute(statement)
             row = result.mappings().one()
-        return int(row["count"]), int(row["last_request_ms"]) - window_ms
+        return int(row["count"]), int(row["last_request_ms"])
 
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
         statement = (

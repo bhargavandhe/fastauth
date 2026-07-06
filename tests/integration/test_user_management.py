@@ -109,6 +109,94 @@ async def test_set_password_for_passwordless_user_allows_credential_sign_in(
     assert response.status_code == 200, response.text
 
 
+async def test_set_password_revokes_existing_refresh_tokens(
+    client: httpx.AsyncClient,
+    adapter: InMemoryAdapter,
+) -> None:
+    response = await client.post(
+        "/auth/sign-up/email",
+        json={**SIGNUP, "delivery": {"kind": "bearer"}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    user_id = str(body["user"]["id"])
+    refresh_token = body["credentials"]["refreshToken"]
+    access_token = body["credentials"]["token"]
+    account = await adapter.get_account_for_user(user_id, ProviderId.CREDENTIAL)
+    assert account is not None
+    account.password = None
+    await adapter.update_account(account)
+
+    set_password = await client.post(
+        "/auth/set-password",
+        headers={"authorization": f"Bearer {access_token}"},
+        json={"new_password": "new-secret-42-aaa"},
+    )
+    assert set_password.status_code == 200
+
+    refresh = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": refresh_token, "delivery": {"kind": "bearer"}},
+    )
+    assert refresh.status_code == 400
+    assert refresh.json()["code"] == "TOKEN_INVALID"
+
+
+async def test_set_password_clears_lockout_for_email_and_username(
+    client: httpx.AsyncClient,
+    adapter: InMemoryAdapter,
+) -> None:
+    payload = {
+        "email": "alice@example.com",
+        "username": "alice",
+        "password": "correct-horse-staple",
+    }
+    sign_up_response = await client.post("/auth/sign-up/email", json=payload)
+    assert sign_up_response.status_code == 200
+    user_id = sign_up_response.json()["user"]["id"]
+
+    account = await adapter.get_account_for_user(user_id, ProviderId.CREDENTIAL)
+    assert account is not None
+    account.password = None
+    await adapter.update_account(account)
+
+    email_attempt: httpx.Response | None = None
+    username_attempt: httpx.Response | None = None
+    for _ in range(6):
+        email_attempt = await client.post(
+            "/auth/sign-in/email",
+            json={"email": payload["email"], "password": "wrong-password"},
+        )
+        username_attempt = await client.post(
+            "/auth/sign-in/username",
+            json={"username": payload["username"], "password": "wrong-password"},
+        )
+    assert email_attempt is not None
+    assert username_attempt is not None
+    assert email_attempt.status_code == 423
+    assert username_attempt.status_code == 423
+
+    set_password = await client.post(
+        "/auth/set-password",
+        json={"new_password": "new-secret-42-aaa"},
+    )
+    assert set_password.status_code == 200
+
+    client.cookies.clear()
+    email_sign_in = await client.post(
+        "/auth/sign-in/email",
+        json={"email": payload["email"], "password": "new-secret-42-aaa"},
+    )
+    assert email_sign_in.status_code == 200
+
+    client.cookies.clear()
+    username_sign_in = await client.post(
+        "/auth/sign-in/username",
+        json={"username": payload["username"], "password": "new-secret-42-aaa"},
+    )
+    assert username_sign_in.status_code == 200
+
+
 async def test_verify_password_success_and_lockout(
     client: httpx.AsyncClient,
 ) -> None:

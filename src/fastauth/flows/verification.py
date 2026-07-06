@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
+from datetime import UTC, datetime
+from urllib.parse import urlencode
 
-from pydantic import ConfigDict, EmailStr, SecretStr
+from pydantic import ConfigDict, EmailStr, SecretStr, field_validator
 
 from fastauth.api.responses import authentication_response
 from fastauth.domain.enums import EmailMessageKind, VerificationPurpose
 from fastauth.domain.events import EmailVerificationSent, OtpGenerated, UserEmailVerified
 from fastauth.domain.models import EmailMessage, Verification, WireModel
+from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import TokenExpiredError, TokenInvalidError
 from fastauth.flows.credentials import EmptyResponse, SessionResponse
+from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 
@@ -29,11 +31,21 @@ class SendVerificationEmailRequest(WireModel):
     email: EmailStr
     redirect_url: str | None = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
 
 class VerifyEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
     token: SecretStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
 
 
 async def send_verification_email(
@@ -50,13 +62,19 @@ async def send_verification_email(
         return EmptyResponse(success=True)
 
     pair = context.token_service.generate_pair()
-    ttl_minutes = context.config.email_verification.token_ttl_minutes
+    options = email_password_options(context)
+    expires_in = (
+        options.email_verification_expires_in
+        if options is not None
+        else context.config.email_verification.expires_in
+    )
+    ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     await context.adapter.create_verification(
         Verification(
             identifier=user.email,
             value_hash=pair.hashed,
             purpose=VerificationPurpose.EMAIL_VERIFICATION,
-            expires_at=datetime.now(UTC) + timedelta(minutes=ttl_minutes),
+            expires_at=datetime.now(UTC) + expires_in,
         ),
     )
     await context.event_bus.publish(
@@ -67,10 +85,10 @@ async def send_verification_email(
         ),
     )
 
-    verify_url = (
-        str(context.config.email_verification.base_verify_url)
-        + f"?token={quote(pair.plain)}&email={quote(user.email)}"
-    )
+    params = {"token": pair.plain, "email": user.email}
+    if request.redirect_url is not None:
+        params["redirect_url"] = request.redirect_url
+    verify_url = str(context.config.email_verification.base_verify_url) + "?" + urlencode(params)
     html, text = context.template_renderer.render(
         "verification",
         {

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 from pydantic import ConfigDict, SecretStr, model_validator
@@ -30,6 +30,7 @@ from fastauth.flows.credentials import (
     record_failure_and_maybe_emit,
     validate_password_policy,
 )
+from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -147,6 +148,9 @@ async def set_password(
         validate_password_policy(context, request.new_password),
     )
     await context.adapter.update_account(account)
+    await context.lockout_tracker.reset(user.email)
+    if user.username is not None:
+        await context.lockout_tracker.reset(user.username)
 
     revoked = 0
     if request.revoke_other_sessions:
@@ -154,6 +158,7 @@ async def set_password(
             user.id,
             except_session_id=current_session_id,
         )
+    await context.refresh_token_service.revoke_for_user(user.id)
 
     await context.event_bus.publish(
         PasswordChanged(user_id=user.id, ip_address=ip, user_agent=user_agent),
@@ -209,14 +214,20 @@ async def request_delete_account(
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
-    ttl_minutes = context.config.delete_account.token_ttl_minutes
+    options = email_password_options(context)
+    expires_in = (
+        options.delete_account_expires_in
+        if options is not None
+        else context.config.delete_account.expires_in
+    )
+    ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     pair = context.token_service.generate_pair()
     await context.adapter.create_verification(
         Verification(
             identifier=user.email,
             value_hash=pair.hashed,
             purpose=VerificationPurpose.ACCOUNT_DELETION,
-            expires_at=datetime.now(UTC) + timedelta(minutes=ttl_minutes),
+            expires_at=datetime.now(UTC) + expires_in,
         ),
     )
     await context.event_bus.publish(

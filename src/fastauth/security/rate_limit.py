@@ -58,7 +58,7 @@ class RateLimitStorage(Protocol):
 
     Three operations are required:
 
-    * :meth:`increment` records a hit and returns the current window counter.
+    * :meth:`increment` records a hit and returns the current fixed-window counter.
     * :meth:`get` reads the current bucket state without mutating, used by
       consumers (e.g. ``AccountLockoutTracker``) that need to know "is this
       key currently over the threshold?" without incrementing.
@@ -81,8 +81,8 @@ class RateLimitStorage(Protocol):
         """Return the current bucket state for ``key``, or ``None`` if absent.
 
         Unlike :meth:`increment`, this does not record a hit. The returned
-        ``count`` reflects the absolute number of hits in the most-recent
-        window; ``last_request_ms`` is the timestamp of the most recent hit.
+        ``count`` reflects the number of hits in the current fixed window;
+        ``last_request_ms`` stores the current bucket's window start.
         """
         ...
 
@@ -95,7 +95,7 @@ class MemoryRateLimitStorage:
     """Dict-backed, asyncio-Lock-guarded rate-limit storage."""
 
     def __init__(self) -> None:
-        self.state: dict[str, list[int]] = {}
+        self.state: dict[str, RateLimit] = {}
         self.lock = asyncio.Lock()
 
     async def increment(
@@ -106,16 +106,20 @@ class MemoryRateLimitStorage:
         now_ms: int,
     ) -> tuple[int, int]:
         async with self.lock:
-            timestamps = [ts for ts in self.state.get(key, []) if ts > now_ms - window_ms]
-            timestamps.append(now_ms)
-            self.state[key] = timestamps
-            return len(timestamps), timestamps[0]
+            existing = self.state.get(key)
+            if existing is None or existing.last_request_ms + window_ms <= now_ms:
+                updated = RateLimit(key=key, count=1, last_request_ms=now_ms)
+            else:
+                updated = RateLimit(
+                    key=key,
+                    count=existing.count + 1,
+                    last_request_ms=existing.last_request_ms,
+                )
+            self.state[key] = updated
+            return updated.count, updated.last_request_ms
 
     async def get(self, key: str) -> RateLimit | None:
-        timestamps = self.state.get(key)
-        if not timestamps:
-            return None
-        return RateLimit(key=key, count=len(timestamps), last_request_ms=timestamps[-1])
+        return self.state.get(key)
 
     async def delete(self, key: str) -> None:
         async with self.lock:

@@ -37,6 +37,14 @@ async def test_memory_storage_increments() -> None:
     assert count == 2
 
 
+async def test_memory_storage_resets_from_original_window_start() -> None:
+    storage = MemoryRateLimitStorage()
+
+    assert await storage.increment("k", window_ms=10_000, now_ms=0) == (1, 0)
+    assert await storage.increment("k", window_ms=10_000, now_ms=5_000) == (2, 0)
+    assert await storage.increment("k", window_ms=10_000, now_ms=11_000) == (1, 11_000)
+
+
 async def test_database_storage_persists() -> None:
     adapter = InMemoryAdapter()
     storage = DatabaseRateLimitStorage(adapter)
@@ -59,7 +67,7 @@ async def test_database_storage_uses_adapter_atomic_increment() -> None:
             now_ms: int,
         ) -> tuple[int, int]:
             self.count += 1
-            return self.count, now_ms - window_ms
+            return self.count, now_ms
 
         async def get_rate_limit(self, key: str):  # type: ignore[no-untyped-def]
             raise AssertionError("increment must not use read-before-write")
@@ -73,8 +81,16 @@ async def test_database_storage_uses_adapter_atomic_increment() -> None:
     storage = DatabaseRateLimitStorage(AtomicOnlyStore())
     now = int(time.time() * 1000)
 
-    assert await storage.increment("k", window_ms=60_000, now_ms=now) == (1, now - 60_000)
-    assert await storage.increment("k", window_ms=60_000, now_ms=now) == (2, now - 60_000)
+    assert await storage.increment("k", window_ms=60_000, now_ms=now) == (1, now)
+    assert await storage.increment("k", window_ms=60_000, now_ms=now) == (2, now)
+
+
+async def test_database_storage_resets_from_original_window_start() -> None:
+    storage = DatabaseRateLimitStorage(InMemoryAdapter())
+
+    assert await storage.increment("k", window_ms=10_000, now_ms=0) == (1, 0)
+    assert await storage.increment("k", window_ms=10_000, now_ms=5_000) == (2, 0)
+    assert await storage.increment("k", window_ms=10_000, now_ms=11_000) == (1, 11_000)
 
 
 async def test_limiter_blocks_after_threshold() -> None:

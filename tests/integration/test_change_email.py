@@ -74,6 +74,71 @@ async def test_change_email_round_trip(
     assert persisted.email == "alice2@example.com"
 
 
+async def test_change_email_round_trip_normalizes_mixed_case_new_email(
+    client: httpx.AsyncClient,
+    email_outbox: ConsoleEmailSender,
+    adapter: InMemoryAdapter,
+) -> None:
+    sign_up = await client.post("/auth/sign-up/email", json=SIGNUP)
+    assert sign_up.status_code == 200
+    user_id = sign_up.json()["user"]["id"]
+
+    request = await client.post(
+        "/auth/change-email/request",
+        json={"new_email": "Alice2@Example.COM", "password": SIGNUP["password"]},
+    )
+    assert request.status_code == 200
+    assert email_outbox.outbox[0].to == "alice2@example.com"
+    token, new_email = extract_change_email_token(email_outbox.outbox[0].text)
+    assert new_email == "alice2@example.com"
+
+    confirm = await client.post(
+        "/auth/change-email/confirm",
+        json={"new_email": "Alice2@Example.COM", "token": token},
+    )
+    assert confirm.status_code == 200
+
+    persisted = await adapter.get_user_by_id(user_id)
+    assert persisted is not None
+    assert persisted.email == "alice2@example.com"
+    assert persisted.pending_email_change is None
+
+
+async def test_change_email_confirm_clears_lockout_for_new_email(
+    client: httpx.AsyncClient,
+    email_outbox: ConsoleEmailSender,
+) -> None:
+    locked: httpx.Response | None = None
+    for _ in range(6):
+        locked = await client.post(
+            "/auth/sign-in/email",
+            json={"email": "alice2@example.com", "password": "wrong-password"},
+        )
+    assert locked is not None
+    assert locked.status_code == 423
+
+    await client.post("/auth/sign-up/email", json=SIGNUP)
+    request = await client.post(
+        "/auth/change-email/request",
+        json={"new_email": "alice2@example.com", "password": SIGNUP["password"]},
+    )
+    assert request.status_code == 200
+    token, new_email = extract_change_email_token(email_outbox.outbox[0].text)
+
+    confirm = await client.post(
+        "/auth/change-email/confirm",
+        json={"new_email": new_email, "token": token},
+    )
+    assert confirm.status_code == 200
+
+    client.cookies.clear()
+    sign_in = await client.post(
+        "/auth/sign-in/email",
+        json={"email": "alice2@example.com", "password": SIGNUP["password"]},
+    )
+    assert sign_in.status_code == 200
+
+
 async def test_change_email_requires_password(
     client: httpx.AsyncClient,
 ) -> None:

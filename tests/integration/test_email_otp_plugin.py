@@ -7,7 +7,12 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from pydantic import SecretStr
 
+from fastauth.database import custom
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions, EmailOtpPlugin
 from fastauth.plugins.test_utils import TestHelpers, TestUtilsOptions, TestUtilsPlugin
 from fastauth.runtime.auth import FastAuth
@@ -372,6 +377,158 @@ async def test_password_reset_round_trip(
     assert sign_in.status_code == 200
 
 
+async def test_password_reset_with_otp_revokes_refresh_tokens(
+    client: httpx.AsyncClient,
+    auth: FastAuth,
+) -> None:
+    helpers = get_helpers(auth)
+    sign_up = await client.post(
+        "/auth/sign-up/email",
+        json={
+            "email": "otp-reset-refresh@example.com",
+            "password": "oldpassword1",
+            "delivery": {"kind": "bearer"},
+        },
+    )
+    assert sign_up.status_code == 200
+    refresh_token = sign_up.json()["credentials"]["refreshToken"]
+
+    await client.post(
+        "/auth/email-otp/request-password-reset",
+        json={"email": "otp-reset-refresh@example.com"},
+    )
+    otp = helpers.get_otp("otp-reset-refresh@example.com")
+    assert otp is not None
+    reset = await client.post(
+        "/auth/email-otp/reset-password",
+        json={
+            "email": "otp-reset-refresh@example.com",
+            "otp": otp,
+            "password": "brand-new-pw-1",
+        },
+    )
+    assert reset.status_code == 200
+
+    refresh = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": refresh_token, "delivery": {"kind": "bearer"}},
+    )
+    assert refresh.status_code == 400
+    assert refresh.json()["code"] == "TOKEN_INVALID"
+
+
+async def test_otp_only_auth_mounts_shared_session_routes() -> None:
+    adapter = MemoryAdapter()
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(adapter),
+            csrf=CsrfOptions(enabled=False),
+            cookie=CookieOptions(secure=False),
+            rate_limit=RateLimitOptions(enabled=False),
+        ),
+        plugins=[
+            EmailOtpPlugin(),
+            TestUtilsPlugin(TestUtilsOptions(capture_otp=True)),
+        ],
+        email_sender=ConsoleEmailSender(),
+    )
+    helpers = get_helpers(auth)
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as otp_client:
+        anonymous = await otp_client.get("/auth/get-session")
+        assert anonymous.status_code == 204
+        await otp_client.post(
+            "/auth/email-otp/send-verification-otp",
+            json={"email": "otp-only@example.com", "purpose": "sign-in"},
+        )
+        otp = helpers.get_otp("otp-only@example.com")
+        assert otp is not None
+        sign_in = await otp_client.post(
+            "/auth/sign-in/email-otp",
+            json={"email": "otp-only@example.com", "otp": otp},
+        )
+        assert sign_in.status_code == 200
+        assert (await otp_client.get("/auth/get-session")).status_code == 200
+        sessions = await otp_client.get("/auth/sessions")
+        assert sessions.status_code == 200
+        assert len(sessions.json()["sessions"]) == 1
+        revoke_others = await otp_client.delete("/auth/sessions")
+        assert revoke_others.status_code == 200
+        assert revoke_others.json() == {"revoked": 0}
+        assert (await otp_client.post("/auth/sign-out")).status_code == 200
+        assert (await otp_client.get("/auth/get-session")).status_code == 204
+
+
+async def test_password_reset_clears_username_lockout(
+    client: httpx.AsyncClient,
+    auth: FastAuth,
+) -> None:
+    helpers = get_helpers(auth)
+    user = helpers.create_user(
+        email="reset-lockout@example.com",
+        username="reset-lockout",
+        email_verified=True,
+    )
+    await helpers.save_user(user)
+
+    from fastauth.domain.enums import ProviderId
+    from fastauth.domain.models import Account
+
+    await auth.context.adapter.create_account(
+        Account(
+            user_id=user.id,
+            provider_id=ProviderId.CREDENTIAL,
+            account_id=user.id,
+            password=auth.context.password_hasher.hash("oldpassword1"),
+        ),
+    )
+
+    email_attempt: httpx.Response | None = None
+    username_attempt: httpx.Response | None = None
+    for _ in range(6):
+        email_attempt = await client.post(
+            "/auth/sign-in/email",
+            json={"email": "reset-lockout@example.com", "password": "wrong-password"},
+        )
+        username_attempt = await client.post(
+            "/auth/sign-in/username",
+            json={"username": "reset-lockout", "password": "wrong-password"},
+        )
+    assert email_attempt is not None
+    assert username_attempt is not None
+    assert email_attempt.status_code == 423
+    assert username_attempt.status_code == 423
+
+    request = await client.post(
+        "/auth/email-otp/request-password-reset",
+        json={"email": "reset-lockout@example.com"},
+    )
+    assert request.status_code == 200
+    otp = helpers.get_otp("reset-lockout@example.com")
+    assert otp is not None
+
+    reset = await client.post(
+        "/auth/email-otp/reset-password",
+        json={
+            "email": "reset-lockout@example.com",
+            "otp": otp,
+            "password": "brand-new-pw-1",
+        },
+    )
+    assert reset.status_code == 200
+
+    username_sign_in = await client.post(
+        "/auth/sign-in/username",
+        json={"username": "reset-lockout", "password": "brand-new-pw-1"},
+    )
+    assert username_sign_in.status_code == 200
+
+
 async def test_password_reset_anti_enumeration(
     client: httpx.AsyncClient,
     auth: FastAuth,
@@ -412,6 +569,37 @@ async def test_change_email_round_trip(
         headers=headers,
     )
     assert confirm.status_code == 200
+    refreshed = await auth.context.adapter.get_user_by_id(saved.id)
+    assert refreshed is not None
+    assert refreshed.email == "new@example.com"
+
+
+async def test_change_email_normalizes_mixed_case_new_email(
+    client: httpx.AsyncClient,
+    auth: FastAuth,
+) -> None:
+    helpers = get_helpers(auth)
+    user = helpers.create_user(email="old@example.com", email_verified=True)
+    saved = await helpers.save_user(user)
+    login = await helpers.login(saved.id)
+    headers = {"authorization": f"Bearer {login.token}"}
+
+    request = await client.post(
+        "/auth/email-otp/request-email-change",
+        json={"new_email": "New@Example.COM"},
+        headers=headers,
+    )
+    assert request.status_code == 200
+    otp = helpers.get_otp("new@example.com")
+    assert otp is not None
+
+    confirm = await client.post(
+        "/auth/email-otp/change-email",
+        json={"new_email": "New@Example.COM", "otp": otp},
+        headers=headers,
+    )
+    assert confirm.status_code == 200
+
     refreshed = await auth.context.adapter.get_user_by_id(saved.id)
     assert refreshed is not None
     assert refreshed.email == "new@example.com"

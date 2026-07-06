@@ -8,12 +8,13 @@ updating, and revoking API keys backed by the ``ApiKey`` model.
 from __future__ import annotations
 
 import secrets
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar
+from typing import Annotated, ClassVar, Self
 
-from fastapi import Request
-from pydantic import ConfigDict, Field, SecretStr
+from fastapi import Query, Request
+from pydantic import ConfigDict, Field, SecretStr, model_validator
 
 from fastauth.api.responses import ApiKeyView, api_key_view
 from fastauth.domain.events import ApiKeyCreated, ApiKeyRevoked, ApiKeyVerifyFailed
@@ -56,6 +57,14 @@ class ApiKeyOptions(PluginOptions):
     default_rate_limit_window: timedelta | None = Field(default=None, gt=timedelta(0))
     default_expires_in: timedelta | None = Field(default=None, gt=timedelta(0))
 
+    @model_validator(mode="after")
+    def validate_rate_limit_pair(self) -> Self:
+        if (self.default_rate_limit_max is None) != (self.default_rate_limit_window is None):
+            raise ValueError(
+                "default_rate_limit_max and default_rate_limit_window must be set together",
+            )
+        return self
+
 
 class CreateApiKeyRequest(WireModel):
     """Request body for ``POST /auth/api-key/create``.
@@ -74,6 +83,14 @@ class CreateApiKeyRequest(WireModel):
     rate_limit_window: timedelta | None = Field(default=None, gt=timedelta(0))
     metadata: ApiKeyMetadata = Field(default_factory=lambda: ApiKeyMetadata({}))
     permissions: PermissionSet = Field(default_factory=lambda: PermissionSet({}))
+
+    @model_validator(mode="after")
+    def validate_option_pairs(self) -> Self:
+        if (self.refill_amount is None) != (self.refill_interval is None):
+            raise ValueError("refill_amount and refill_interval must be set together")
+        if (self.rate_limit_max is None) != (self.rate_limit_window is None):
+            raise ValueError("rate_limit_max and rate_limit_window must be set together")
+        return self
 
 
 class CreateApiKeyResponse(WireModel):
@@ -101,7 +118,7 @@ class VerifyApiKeyResponse(WireModel):
 class UpdateApiKeyRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     id: ApiKeyId
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=128)
     enabled: bool | None = None
     metadata: ApiKeyMetadata | None = None
     permissions: PermissionSet | None = None
@@ -251,6 +268,7 @@ class ApiKeyPlugin(Plugin):
         rate_limit_max = body.rate_limit_max or self.options.default_rate_limit_max
         rate_limit_window = body.rate_limit_window or self.options.default_rate_limit_window
         expires_in = body.expires_in or self.options.default_expires_in
+        now = datetime.now(UTC)
         api_key = ApiKey(
             user_id=user_id,
             name=body.name,
@@ -272,10 +290,9 @@ class ApiKeyPlugin(Plugin):
                 else None
             ),
             rate_limit_enabled=bool(rate_limit_max),
-            expires_at=(
-                datetime.now(UTC) + expires_in
-                if expires_in is not None
-                else None
+            expires_at=(now + expires_in if expires_in is not None else None),
+            last_refill_at=(
+                now if body.refill_amount is not None and body.refill_interval is not None else None
             ),
             metadata=body.metadata.model_dump(mode="json"),
             permissions=body.permissions.model_dump(mode="json"),
@@ -321,6 +338,31 @@ class ApiKeyPlugin(Plugin):
                 valid=False,
                 error=VerifyApiKeyError(code="API_KEY_EXPIRED", message="expired"),
             )
+
+        if (
+            api_key.rate_limit_enabled
+            and api_key.rate_limit_max is not None
+            and api_key.rate_limit_window_ms is not None
+        ):
+            count, _window_start_ms = await context.rate_limiter.storage.increment(
+                f"api-key:{api_key.id}",
+                window_ms=api_key.rate_limit_window_ms,
+                now_ms=int(time.time() * 1000),
+            )
+            if count > api_key.rate_limit_max:
+                api_key.request_count += 1
+                api_key.last_request_at = now
+                await store.update_api_key(api_key)
+                await context.event_bus.publish(
+                    ApiKeyVerifyFailed(identifier=key_identifier),
+                )
+                return VerifyApiKeyResponse(
+                    valid=False,
+                    error=VerifyApiKeyError(
+                        code="API_KEY_RATE_LIMITED",
+                        message="rate limit exceeded",
+                    ),
+                )
 
         # Refill remaining quota if the refill interval has elapsed.
         if (
@@ -378,8 +420,8 @@ class ApiKeyPlugin(Plugin):
     async def list_handler(
         self,
         request: Request,
-        limit: int = 50,
-        offset: int = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
     ) -> ListApiKeysResponse:
         self.assert_bound()
         store = self.assert_store()

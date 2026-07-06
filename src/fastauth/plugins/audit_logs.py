@@ -14,16 +14,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from fastapi import Request
+from fastapi import Query, Request
 from pydantic import Field
 
 from fastauth.domain.enums import AuditEventType
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.models import AuditLog, WireModel
 from fastauth.domain.value_objects import AuditEventData
-from fastauth.exceptions import ConfigError, CsrfError, InvalidCredentialsError
+from fastauth.exceptions import ConfigError, CsrfError, InvalidCredentialsError, InvalidRequestError
 from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.storage.base import AuditLogStore
@@ -70,6 +70,15 @@ def audit_log_view(event: AuditLog) -> AuditLogView:
         event_data=AuditEventData.model_validate(event.event_data),
         created_at=event.created_at,
     )
+
+
+def parse_event_type(value: str | None) -> AuditEventType | None:
+    if value is None:
+        return None
+    try:
+        return AuditEventType(value)
+    except ValueError as exc:
+        raise InvalidRequestError(message="invalid event_type") from exc
 
 
 class AuditLogsPlugin(Plugin):
@@ -176,14 +185,14 @@ class AuditLogsPlugin(Plugin):
         request: Request,
         event_type: str | None = None,
         identifier: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
     ) -> AuditLogsResponse:
         """``GET /auth/audit-logs`` — list rows for the current session's user."""
         self.assert_bound()
         store = self.assert_store()
         user_id = await self.current_user_id(request)
-        parsed_event_type = AuditEventType(event_type) if event_type else None
+        parsed_event_type = parse_event_type(event_type)
         events, total = await store.list_audit_logs(
             user_id=user_id,
             event_type=parsed_event_type,
@@ -204,8 +213,8 @@ class AuditLogsPlugin(Plugin):
         event_type: str | None = None,
         identifier: str | None = None,
         user_id: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
     ) -> AuditLogsResponse:
         """``GET /auth/audit-logs/all`` — admin-only, unrestricted query."""
         self.assert_bound()
@@ -216,7 +225,7 @@ class AuditLogsPlugin(Plugin):
             # as the project's canonical 403 carrier until a dedicated
             # ``ForbiddenError`` is introduced.
             raise CsrfError(message="admin access required")
-        parsed_event_type = AuditEventType(event_type) if event_type else None
+        parsed_event_type = parse_event_type(event_type)
         events, total = await store.list_audit_logs(
             user_id=user_id,
             event_type=parsed_event_type,

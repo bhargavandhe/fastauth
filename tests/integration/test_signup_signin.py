@@ -2,8 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import httpx
 import pytest
+from fastapi import FastAPI
+from pydantic import SecretStr
+
+from fastauth.database import custom
+from fastauth.messaging.email import ConsoleEmailSender
+from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.plugins.email_password import EmailPasswordOptions
+from fastauth.providers import email_password
+from fastauth.runtime.auth import FastAuth
+from fastauth.storage.memory import InMemoryAdapter
 
 
 @pytest.fixture
@@ -30,6 +42,29 @@ async def test_sign_up_rejects_duplicate_email(
     first = await client.post("/auth/sign-up/email", json=signup_payload)
     assert first.status_code == 200
     second = await client.post("/auth/sign-up/email", json=signup_payload)
+    assert second.status_code == 409
+    assert second.json()["code"] == "DUPLICATE"
+
+
+async def test_sign_up_rejects_duplicate_username(client: httpx.AsyncClient) -> None:
+    first = await client.post(
+        "/auth/sign-up/email",
+        json={
+            "email": "alice@example.com",
+            "username": "shared",
+            "password": "correct-horse-staple",
+        },
+    )
+    assert first.status_code == 200
+    client.cookies.clear()
+    second = await client.post(
+        "/auth/sign-up/email",
+        json={
+            "email": "bob@example.com",
+            "username": "shared",
+            "password": "correct-horse-staple",
+        },
+    )
     assert second.status_code == 409
     assert second.json()["code"] == "DUPLICATE"
 
@@ -229,3 +264,86 @@ async def test_sign_in_username_returns_token_when_requested(
     )
     assert response.status_code == 200
     assert isinstance(response.json()["credentials"]["token"], str)
+
+
+def build_custom_auth(options: EmailPasswordOptions) -> FastAuth:
+    adapter = InMemoryAdapter()
+    return FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(adapter),
+            csrf=CsrfOptions(enabled=False),
+            cookie=CookieOptions(secure=False),
+            rate_limit=RateLimitOptions(enabled=False),
+        ),
+        plugins=[email_password(options)],
+        email_sender=ConsoleEmailSender(),
+    )
+
+
+async def client_for_auth(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http:
+        yield http
+
+
+async def test_email_password_option_can_disable_username_sign_in() -> None:
+    auth = build_custom_auth(EmailPasswordOptions(allow_username_sign_in=False))
+    async for http in client_for_auth(auth):
+        await http.post(
+            "/auth/sign-up/email",
+            json={
+                "email": "u@example.com",
+                "password": "correct-horse-staple",
+                "username": "u123",
+            },
+        )
+        response = await http.post(
+            "/auth/sign-in/username",
+            json={"username": "u123", "password": "correct-horse-staple"},
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.parametrize("endpoint", ["/auth/sign-up/email", "/auth/sign-in/email"])
+async def test_email_password_option_can_disable_bearer_delivery(endpoint: str) -> None:
+    auth = build_custom_auth(EmailPasswordOptions(allow_bearer_tokens=False))
+    async for http in client_for_auth(auth):
+        if endpoint.endswith("sign-in/email"):
+            created = await http.post(
+                "/auth/sign-up/email",
+                json={"email": "u@example.com", "password": "correct-horse-staple"},
+            )
+            assert created.status_code == 200
+            http.cookies.clear()
+        response = await http.post(
+            endpoint,
+            json={
+                "email": "u@example.com",
+                "password": "correct-horse-staple",
+                "delivery": {"kind": "bearer"},
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["code"] == "INVALID_REQUEST"
+
+
+async def test_email_password_option_can_require_verified_email_for_sign_in() -> None:
+    auth = build_custom_auth(EmailPasswordOptions(require_email_verification=True))
+    async for http in client_for_auth(auth):
+        created = await http.post(
+            "/auth/sign-up/email",
+            json={"email": "u@example.com", "password": "correct-horse-staple"},
+        )
+        assert created.status_code == 200
+        http.cookies.clear()
+        response = await http.post(
+            "/auth/sign-in/email",
+            json={"email": "u@example.com", "password": "correct-horse-staple"},
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "EMAIL_NOT_VERIFIED"

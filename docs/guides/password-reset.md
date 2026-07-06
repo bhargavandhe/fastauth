@@ -1,8 +1,8 @@
 # Password reset
 
 The password-reset flow is constant-time and revokes every existing session
-for the affected user on success — a compromised cookie cannot survive a
-password change.
+and every refresh token for the affected user on success. Compromised cookies
+or refresh tokens cannot survive a password change.
 
 ## Flow
 
@@ -24,12 +24,12 @@ password change.
 
     ```http
     POST /auth/reset-password
-    {"token": "...", "password": "new-correct-horse-staple"}
+    {"email": "alice@example.com", "token": "...", "newPassword": "new-correct-horse-staple"}
     ```
 
 4. On success fastauth re-hashes the password, deletes the verification row,
-   and calls `session_strategy.revoke_all(user_id)` — every other session is
-   killed.
+   calls `session_strategy.revoke_all(user_id)`, and revokes every refresh
+   token for that user.
 
 ## Configuration
 

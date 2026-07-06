@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
+from datetime import UTC, datetime
+from urllib.parse import urlencode
 
-from pydantic import ConfigDict, EmailStr, SecretStr
+from pydantic import ConfigDict, EmailStr, SecretStr, field_validator
 
 from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
 from fastauth.domain.events import (
@@ -16,8 +16,10 @@ from fastauth.domain.events import (
     SessionsRevokedAll,
 )
 from fastauth.domain.models import EmailMessage, Verification, WireModel
+from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import TokenExpiredError, TokenInvalidError
 from fastauth.flows.credentials import EmptyResponse, validate_password_policy
+from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -33,12 +35,22 @@ class ForgotPasswordRequest(WireModel):
     email: EmailStr
     redirect_url: str | None = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
 
 class ResetPasswordRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
     token: SecretStr
     new_password: SecretStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
 
 
 async def forgot_password(
@@ -52,16 +64,29 @@ async def forgot_password(
     user = await context.adapter.get_user_by_email(request.email)
     if user is None:
         # Anti-enumeration: do not reveal account existence.
+        await context.event_bus.publish(
+            PasswordResetRequested(
+                identifier=request.email,
+                ip_address=ip,
+                user_agent=user_agent,
+            ),
+        )
         return EmptyResponse(success=True)
 
     pair = context.token_service.generate_pair()
-    ttl_minutes = context.config.password_reset.token_ttl_minutes
+    options = email_password_options(context)
+    expires_in = (
+        options.password_reset_expires_in
+        if options is not None
+        else context.config.password_reset.expires_in
+    )
+    ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     await context.adapter.create_verification(
         Verification(
             identifier=user.email,
             value_hash=pair.hashed,
             purpose=VerificationPurpose.PASSWORD_RESET,
-            expires_at=datetime.now(UTC) + timedelta(minutes=ttl_minutes),
+            expires_at=datetime.now(UTC) + expires_in,
         ),
     )
     await context.event_bus.publish(
@@ -72,10 +97,10 @@ async def forgot_password(
         ),
     )
 
-    reset_url = (
-        str(context.config.password_reset.base_reset_url)
-        + f"?token={quote(pair.plain)}&email={quote(user.email)}"
-    )
+    params = {"token": pair.plain, "email": user.email}
+    if request.redirect_url is not None:
+        params["redirect_url"] = request.redirect_url
+    reset_url = str(context.config.password_reset.base_reset_url) + "?" + urlencode(params)
     html, text = context.template_renderer.render(
         "reset",
         {
@@ -135,10 +160,14 @@ async def reset_password(
     await context.adapter.update_account(account)
 
     revoked = await context.session_strategy.revoke_all(user.id)
+    await context.refresh_token_service.revoke_for_user(user.id)
     await context.adapter.delete_verifications_for_identifier(
         request.email,
         VerificationPurpose.PASSWORD_RESET,
     )
+    await context.lockout_tracker.reset(user.email)
+    if user.username is not None:
+        await context.lockout_tracker.reset(user.username)
 
     await context.event_bus.publish(
         PasswordChanged(

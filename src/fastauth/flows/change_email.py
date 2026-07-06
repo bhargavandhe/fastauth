@@ -22,14 +22,15 @@ user can try a different address.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from urllib.parse import quote
 
-from pydantic import ConfigDict, EmailStr, SecretStr
+from pydantic import ConfigDict, EmailStr, SecretStr, field_validator
 
 from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
 from fastauth.domain.events import UserEmailChanged, UserEmailChangeRequested
 from fastauth.domain.models import EmailMessage, User, Verification, WireModel
+from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import (
     DuplicateError,
     InvalidCredentialsError,
@@ -38,6 +39,7 @@ from fastauth.exceptions import (
     TokenInvalidError,
 )
 from fastauth.flows.credentials import EmptyResponse
+from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -55,6 +57,11 @@ class RequestEmailChangeRequest(WireModel):
     new_email: EmailStr
     password: SecretStr
 
+    @field_validator("new_email", mode="before")
+    @classmethod
+    def normalize_new_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
 
 class ConfirmEmailChangeRequest(WireModel):
     """Token-based request to finalise the email change."""
@@ -62,6 +69,11 @@ class ConfirmEmailChangeRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     new_email: EmailStr
     token: SecretStr
+
+    @field_validator("new_email", mode="before")
+    @classmethod
+    def normalize_new_email_value(cls, value: object) -> object:
+        return normalize_email(value)
 
 
 async def request_email_change(
@@ -96,14 +108,20 @@ async def request_email_change(
 
     # Create the verification record keyed by the NEW email so the confirm
     # endpoint can look it up.
-    ttl_minutes = context.config.email_change.token_ttl_minutes
+    options = email_password_options(context)
+    expires_in = (
+        options.email_change_expires_in
+        if options is not None
+        else context.config.email_change.expires_in
+    )
+    ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     pair = context.token_service.generate_pair()
     await context.adapter.create_verification(
         Verification(
             identifier=request.new_email,
             value_hash=pair.hashed,
             purpose=VerificationPurpose.EMAIL_CHANGE,
-            expires_at=datetime.now(UTC) + timedelta(minutes=ttl_minutes),
+            expires_at=datetime.now(UTC) + expires_in,
         ),
     )
 
@@ -190,6 +208,7 @@ async def confirm_email_change(
         request.new_email,
         VerificationPurpose.EMAIL_CHANGE,
     )
+    await context.lockout_tracker.reset(request.new_email)
 
     await context.event_bus.publish(
         UserEmailChanged(

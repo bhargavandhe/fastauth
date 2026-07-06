@@ -71,8 +71,7 @@ def test_installation_docs_describe_explicit_config_construction() -> None:
     text = read_project_file("docs/installation.md")
 
     assert (
-        "Configuration is loaded from environment variables prefixed with `FASTAUTH_`"
-        not in text
+        "Configuration is loaded from environment variables prefixed with `FASTAUTH_`" not in text
     )
     assert "fastauth never reads environment" in text
     assert "variables directly" in text
@@ -149,6 +148,28 @@ def test_session_docs_do_not_claim_unused_rotation_option() -> None:
     assert "sliding rotation" not in text.lower()
 
 
+def test_password_reset_docs_match_current_request_and_revocation_behavior() -> None:
+    text = read_project_file("docs/guides/password-reset.md")
+
+    assert '{"email": "alice@example.com", "token": "...", "newPassword": ' in text
+    assert '{"token": "...", "password": ' not in text
+    assert "refresh tokens" in text
+
+
+def test_email_verification_docs_match_current_request_shape() -> None:
+    text = read_project_file("docs/guides/email-verification.md")
+
+    assert '{"email": "alice@example.com", "token": "..."}' in text
+    assert '{"token": "..."}' not in text
+
+
+def test_jwt_docs_explain_stateless_revocation_limit() -> None:
+    text = read_project_file("docs/plugins/jwt.md")
+
+    assert "JWT access tokens remain valid until they expire" in text
+    assert "server-side denylist" in text
+
+
 def test_source_tree_does_not_contain_generated_python_caches() -> None:
     tracked_files = subprocess.run(
         ["git", "ls-files", "src/fastauth"],
@@ -204,6 +225,6 @@ def test_readme_no_longer_calls_docs_under_construction() -> None:
 def test_ci_checks_supported_python_and_package_build() -> None:
     workflow = read_project_file(".github/workflows/ci.yml")
 
-    assert "python-version: [\"3.11\", \"3.12\"]" in workflow
+    assert 'python-version: ["3.11", "3.12"]' in workflow
     assert "uv build" in workflow
     assert "twine check" in workflow

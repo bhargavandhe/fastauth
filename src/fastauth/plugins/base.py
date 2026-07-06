@@ -216,12 +216,22 @@ class PluginRegistry:
     def __init__(self, plugins: Sequence[Plugin]) -> None:
         self.plugins = list(plugins)
         self.by_id: dict[str, Plugin] = {}
+        routes: dict[tuple[str, str], str] = {}
         for plugin in self.plugins:
             if not plugin.id:
                 raise ValueError(f"plugin {plugin.__class__.__name__} must set 'id'")
             if plugin.id in self.by_id:
                 raise ValueError(f"duplicate plugin id: {plugin.id}")
             self.by_id[plugin.id] = plugin
+            for endpoint in plugin.endpoints():
+                route_key = (endpoint.method, endpoint.path)
+                if route_key in routes:
+                    raise ValueError(
+                        "duplicate plugin endpoint "
+                        f"{endpoint.method} {endpoint.path} "
+                        f"from {routes[route_key]} and {plugin.id}",
+                    )
+                routes[route_key] = plugin.id
 
     def all_endpoints(self) -> list[EndpointSpec]:
         return [spec for plugin in self.plugins for spec in plugin.endpoints()]

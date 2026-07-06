@@ -6,4 +6,4 @@ from fastauth.options import FastAuthOptions
 from fastauth.runtime.auth import FastAuth
 
 __all__ = ["FastAuth", "FastAuthOptions", "__version__"]
-__version__ = "0.3.4"
+__version__ = "0.4.0"

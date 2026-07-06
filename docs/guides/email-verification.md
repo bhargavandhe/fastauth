@@ -24,7 +24,7 @@ parsing email bodies.
 
     ```http
     POST /auth/verify-email
-    {"token": "..."}
+    {"email": "alice@example.com", "token": "..."}
     ```
 
 4. On success the response sets a fresh session cookie — the verification

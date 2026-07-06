@@ -3,11 +3,11 @@
 Reuses the existing :class:`RateLimitStorage` machinery — both memory- and
 DB-backed implementations work without changes. Lockout state is encoded as a
 :class:`RateLimit` row keyed by ``"lockout:<identifier>"``: ``count`` is the
-number of failures within the rolling window, ``last_request_ms`` is the
-timestamp of the most recent failure. The window doubles as the lockout
-duration — once ``count`` exceeds ``max_failures``, the identifier stays
-locked until ``last_request_ms + window_seconds * 1000``, after which the
-counter naturally rolls off and a new sign-in attempt is permitted.
+number of failures within the fixed window, ``last_request_ms`` stores the
+window start. The window doubles as the lockout duration — once ``count``
+exceeds ``max_failures``, the identifier stays locked until
+``last_request_ms + window_seconds * 1000``, after which the counter naturally
+rolls off and a new sign-in attempt is permitted.
 
 This keeps the implementation single-storage (no new collection) and inherits
 the IPv6 / Redis future-compatibility work from the rate-limiter design.
@@ -78,14 +78,15 @@ class AccountLockoutTracker:
             return None
         window_ms = self.config.window_seconds * 1000
         now = self.now_ms()
-        count, _start = await self.storage.increment(
+        count, window_start_ms = await self.storage.increment(
             lockout_key(identifier),
             window_ms=window_ms,
             now_ms=now,
         )
         if count <= self.config.max_failures:
             return None
-        return self.config.window_seconds
+        retry_after = max(1, (window_start_ms + window_ms - now) // 1000)
+        return int(retry_after)
 
     async def reset(self, identifier: str) -> None:
         """Clear the failure counter for ``identifier`` (successful sign-in)."""

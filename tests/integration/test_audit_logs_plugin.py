@@ -50,6 +50,43 @@ async def test_filter_by_event_type(client: httpx.AsyncClient) -> None:
     assert body["events"][0]["eventType"] == "user_signed_up"
 
 
+async def test_invalid_event_type_filter_returns_invalid_request(client: httpx.AsyncClient) -> None:
+    await client.post(
+        "/auth/sign-up/email",
+        json={"email": "bad-filter@example.com", "password": "correct-horse-staple"},
+    )
+    response = await client.get(
+        "/auth/audit-logs",
+        params={"event_type": "not_a_real_event"},
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "INVALID_REQUEST"
+
+
+async def test_list_rejects_invalid_pagination(client: httpx.AsyncClient) -> None:
+    await client.post(
+        "/auth/sign-up/email",
+        json={"email": "paging@example.com", "password": "correct-horse-staple"},
+    )
+
+    negative_offset = await client.get("/auth/audit-logs", params={"offset": -1})
+    zero_limit = await client.get("/auth/audit-logs", params={"limit": 0})
+
+    assert negative_offset.status_code == 422
+    assert zero_limit.status_code == 422
+
+
+async def test_admin_list_rejects_invalid_pagination(client: httpx.AsyncClient) -> None:
+    await client.post(
+        "/auth/sign-up/email",
+        json={"email": "admin-paging@example.com", "password": "correct-horse-staple"},
+    )
+
+    response = await client.get("/auth/audit-logs/all", params={"limit": 0})
+
+    assert response.status_code == 422
+
+
 async def test_admin_endpoint_requires_admin(client: httpx.AsyncClient) -> None:
     await client.post(
         "/auth/sign-up/email",

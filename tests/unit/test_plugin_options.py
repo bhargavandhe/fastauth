@@ -15,10 +15,12 @@ def test_api_key_options_are_strict_frozen_and_duration_native() -> None:
     options = ApiKeyOptions(
         default_prefix="svc_",
         default_remaining=10,
+        default_rate_limit_max=100,
         default_rate_limit_window=timedelta(minutes=1),
         default_expires_in=timedelta(days=30),
     )
 
+    assert options.default_rate_limit_max == 100
     assert options.default_rate_limit_window == timedelta(minutes=1)
     assert options.default_expires_in == timedelta(days=30)
 
@@ -28,6 +30,10 @@ def test_api_key_options_are_strict_frozen_and_duration_native() -> None:
         ApiKeyOptions(default_prefix="")
     with pytest.raises(ValidationError):
         ApiKeyOptions(default_rate_limit_window=timedelta(0))
+    with pytest.raises(ValidationError):
+        ApiKeyOptions(default_rate_limit_max=10)
+    with pytest.raises(ValidationError):
+        ApiKeyOptions(default_rate_limit_window=timedelta(minutes=1))
     with pytest.raises(ValidationError):
         ApiKeyOptions(unknown=True)  # pyright: ignore[reportCallIssue]
     with pytest.raises(ValidationError):

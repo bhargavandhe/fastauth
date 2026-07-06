@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Annotated, ClassVar, Self
+from typing import TYPE_CHECKING, Annotated, ClassVar, Self
 
 from pydantic import Field, TypeAdapter, model_validator
 
 from fastauth.plugins.base import Plugin, PluginOptions
 
-__all__ = ["EmailPasswordOptions", "EmailPasswordPlugin", "PasswordPolicy"]
+if TYPE_CHECKING:
+    from fastauth.runtime.context import AuthContext
+
+__all__ = [
+    "EmailPasswordOptions",
+    "EmailPasswordPlugin",
+    "PasswordPolicy",
+    "email_password_options",
+]
 
 
 class PasswordPolicy(PluginOptions):
@@ -55,3 +63,10 @@ class EmailPasswordPlugin(Plugin):
 
     def __init__(self, options: EmailPasswordOptions | None = None) -> None:
         self.options = options or EmailPasswordOptions()
+
+
+def email_password_options(context: AuthContext) -> EmailPasswordOptions | None:
+    for plugin in context.plugins.plugins:
+        if isinstance(plugin, EmailPasswordPlugin):
+            return plugin.options
+    return None

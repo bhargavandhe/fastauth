@@ -10,6 +10,14 @@ when installed, injects a `set-auth-jwt` response header on
   (default expiry 15 minutes).
 - `GET /auth/jwks` — public JWKS document used to verify those tokens.
 
+## Revocation
+
+JWT access tokens remain valid until they expire because they are stateless.
+`/auth/sign-out`, password reset, and session revocation clear database
+sessions and refresh tokens, but they cannot invalidate already-issued JWT
+access tokens without adding a server-side denylist. Keep `expires_in` short
+for JWTs that grant direct API access.
+
 ## Options
 
 `JwtOptions` covers algorithm choice (`alg`, default `EdDSA`),

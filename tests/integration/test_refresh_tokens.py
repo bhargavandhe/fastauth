@@ -150,6 +150,20 @@ async def test_refresh_returns_new_session_and_rotated_token(
     assert body["credentials"]["refreshToken"] != refresh
 
 
+async def test_sign_out_revokes_refresh_tokens(client: httpx.AsyncClient) -> None:
+    access, refresh = await sign_up_with_tokens(client)
+    client.cookies.clear()
+    signed_out = await client.post("/auth/sign-out", headers={"authorization": f"Bearer {access}"})
+    assert signed_out.status_code == 200
+
+    response = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "TOKEN_INVALID"
+
+
 async def test_refresh_unknown_token_returns_400(client: httpx.AsyncClient) -> None:
     response = await client.post(
         "/auth/refresh",

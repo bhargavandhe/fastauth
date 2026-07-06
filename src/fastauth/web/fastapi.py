@@ -56,6 +56,7 @@ from fastauth.flows.verification import (
     SendVerificationEmailRequest,
     VerifyEmailRequest,
 )
+from fastauth.plugins.base import EndpointSpec
 from fastauth.runtime.api import AuthApi, HealthResponse, RouterAuthApi
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
@@ -191,9 +192,45 @@ def rate_limit_dependency(
     return dependency
 
 
+def prefixed_plugin_path(router: APIRouter, path: str) -> str:
+    if not router.prefix:
+        return path
+    return f"{router.prefix}{path}"
+
+
+def existing_route_keys(router: APIRouter) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    for route in router.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        for method in route.methods or set():
+            keys.add((method, route.path))
+    return keys
+
+
+def add_plugin_route(router: APIRouter, spec: EndpointSpec) -> None:
+    if spec.handler is None:
+        return
+    route_key = (spec.method, prefixed_plugin_path(router, spec.path))
+    if route_key in existing_route_keys(router):
+        method, path = route_key
+        raise ValueError(
+            f"plugin endpoint {method} {spec.path} collides with existing auth route {path}",
+        )
+    router.add_api_route(
+        path=spec.path,
+        endpoint=spec.handler,
+        methods=[spec.method],
+        name=spec.name,
+        tags=list(spec.tags),
+        response_model=spec.response_model,
+        response_class=JSONResponse,
+    )
+
+
 def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     """Build the fastauth ``APIRouter`` with health + credentials flow endpoints."""
-    from fastauth.plugins.email_password import EmailPasswordPlugin
+    from fastauth.plugins.email_password import EmailPasswordPlugin, email_password_options
 
     internal_api = RouterAuthApi(context)
 
@@ -214,22 +251,110 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         return await api.health()
 
     email_password_enabled = any(
-        isinstance(plugin, EmailPasswordPlugin)
-        for plugin in context.plugins.plugins
+        isinstance(plugin, EmailPasswordPlugin) for plugin in context.plugins.plugins
     )
     if not email_password_enabled:
+
+        @router.post(
+            "/refresh",
+            name="refresh_session",
+            response_model=SessionResponse,
+        )
+        async def refresh_session_handler(  # pyright: ignore[reportUnusedFunction]
+            body: RefreshTokenRequest,
+            request: Request,
+            response: Response,
+        ) -> SessionResponse:
+            result, session_context = await internal_api.internal_refresh_session(
+                body,
+                ip=client_ip(request, context),
+                user_agent=request.headers.get("user-agent"),
+            )
+            if isinstance(body.delivery, CookieCredentialDelivery):
+                set_session_cookie(
+                    response,
+                    context,
+                    session_context.token,
+                    context.config.session.max_age_seconds,
+                )
+            return result
+
+        @router.post("/sign-out", name="sign_out", response_model=EmptyResponse)
+        async def sign_out_handler(  # pyright: ignore[reportUnusedFunction]
+            request: Request,
+            response: Response,
+        ) -> EmptyResponse:
+            token = extract_session_token(request, context)
+            await internal_api.internal_sign_out(token)
+            clear_session_cookie(response, context)
+            return EmptyResponse(success=True)
+
+        @router.get("/get-session", name="get_session", response_model=SessionResponse)
+        async def get_session_handler(  # pyright: ignore[reportUnusedFunction]
+            request: Request,
+            response: Response,
+        ) -> SessionResponse | Response:
+            token = extract_session_token(request, context)
+            if token is None:
+                return Response(status_code=204)
+            session_context = await context.session_strategy.read(token)
+            if session_context is None:
+                return Response(status_code=204)
+            session_response = authentication_response(
+                user=session_context.user,
+                session=session_context.session,
+            )
+            for plugin in context.plugins.plugins:
+                await plugin.extend_session_response(session_context.user, response)
+            return session_response
+
+        @router.get(
+            "/sessions",
+            name="list_sessions",
+            response_model=ListSessionsResponse,
+        )
+        async def list_sessions_handler(  # pyright: ignore[reportUnusedFunction]
+            request: Request,
+        ) -> ListSessionsResponse:
+            session_ctx = await require_session(request, context)
+            return await internal_api.internal_list_sessions(
+                session_ctx.user,
+                current_session_id=session_ctx.session.id,
+            )
+
+        @router.delete(
+            "/sessions/{session_id}",
+            name="revoke_session",
+            response_model=RevokeSessionsResponse,
+        )
+        async def revoke_session_handler(  # pyright: ignore[reportUnusedFunction]
+            session_id: str,
+            request: Request,
+        ) -> RevokeSessionsResponse:
+            session_ctx = await require_session(request, context)
+            return await internal_api.internal_revoke_session(
+                session_ctx.user,
+                session_id=session_id,
+            )
+
+        @router.delete(
+            "/sessions",
+            name="revoke_other_sessions",
+            response_model=RevokeSessionsResponse,
+        )
+        async def revoke_other_sessions_handler(  # pyright: ignore[reportUnusedFunction]
+            request: Request,
+        ) -> RevokeSessionsResponse:
+            session_ctx = await require_session(request, context)
+            return await internal_api.internal_revoke_other_sessions(
+                session_ctx.user,
+                current_session_id=session_ctx.session.id,
+            )
+
         for spec in context.plugins.all_endpoints():
             if spec.handler is None:
                 continue
-            router.add_api_route(
-                path=spec.path,
-                endpoint=spec.handler,
-                methods=[spec.method],
-                name=spec.name,
-                tags=list(spec.tags),
-                response_model=spec.response_model,
-                response_class=JSONResponse,
-            )
+            add_plugin_route(router, spec)
         return router
 
     @router.post(
@@ -282,29 +407,32 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
             )
         return result
 
-    @router.post(
-        "/sign-in/username",
-        name="sign_in_username",
-        response_model=SessionResponse,
-    )
-    async def sign_in_username_handler(  # pyright: ignore[reportUnusedFunction]
-        body: SignInUsernameRequest,
-        request: Request,
-        response: Response,
-    ) -> SessionResponse:
-        result, session_context = await internal_api.internal_sign_in_username(
-            body,
-            ip=client_ip(request, context),
-            user_agent=request.headers.get("user-agent"),
+    options = email_password_options(context)
+    if options is None or options.allow_username_sign_in:
+
+        @router.post(
+            "/sign-in/username",
+            name="sign_in_username",
+            response_model=SessionResponse,
         )
-        if isinstance(body.delivery, CookieCredentialDelivery):
-            set_session_cookie(
-                response,
-                context,
-                session_context.token,
-                context.config.session.max_age_seconds,
+        async def sign_in_username_handler(  # pyright: ignore[reportUnusedFunction]
+            body: SignInUsernameRequest,
+            request: Request,
+            response: Response,
+        ) -> SessionResponse:
+            result, session_context = await internal_api.internal_sign_in_username(
+                body,
+                ip=client_ip(request, context),
+                user_agent=request.headers.get("user-agent"),
             )
-        return result
+            if isinstance(body.delivery, CookieCredentialDelivery):
+                set_session_cookie(
+                    response,
+                    context,
+                    session_context.token,
+                    context.config.session.max_age_seconds,
+                )
+            return result
 
     @router.post(
         "/refresh",
@@ -630,15 +758,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     for spec in context.plugins.all_endpoints():
         if spec.handler is None:
             continue
-        router.add_api_route(
-            path=spec.path,
-            endpoint=spec.handler,
-            methods=[spec.method],
-            name=spec.name,
-            tags=list(spec.tags),
-            response_model=spec.response_model,
-            response_class=JSONResponse,
-        )
+        add_plugin_route(router, spec)
     return router
 
 

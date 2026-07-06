@@ -66,6 +66,14 @@ class AdapterContract:
         with pytest.raises(DuplicateError):
             await adapter.create_user(User(email="bob@example.com"))
 
+    async def test_user_username_is_unique(self, adapter: ContractAdapter) -> None:
+        from fastauth.exceptions import DuplicateError
+
+        await adapter.create_user(User(email="bob@example.com", username="shared"))
+        with pytest.raises(DuplicateError) as exc_info:
+            await adapter.create_user(User(email="alice@example.com", username="shared"))
+        assert exc_info.value.message == "user with duplicate username"
+
     async def test_find_user_by_pending_email_change(
         self,
         adapter: ContractAdapter,
@@ -174,10 +182,13 @@ class AdapterContract:
         assert await adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL) is None
         assert await adapter.get_session_by_token_hash(session.token_hash) is None
         assert await adapter.get_refresh_token_by_hash("delete-refresh") is None
-        assert await adapter.get_active_verification(
-            user.email,
-            VerificationPurpose.ACCOUNT_DELETION,
-        ) is None
+        assert (
+            await adapter.get_active_verification(
+                user.email,
+                VerificationPurpose.ACCOUNT_DELETION,
+            )
+            is None
+        )
         _api_keys, api_key_total = await adapter.list_api_keys_for_user(user.id)
         assert api_key_total == 0
         audit_logs, audit_total = await adapter.list_audit_logs(
@@ -309,6 +320,20 @@ class AdapterContract:
         rl = await adapter.get_rate_limit("k")
         assert rl is not None
         assert rl.count == 2
+
+    async def test_rate_limit_increment_uses_original_window_start(
+        self,
+        adapter: ContractAdapter,
+    ) -> None:
+        assert await adapter.increment_rate_limit("k", window_ms=10_000, now_ms=0) == (1, 0)
+        assert await adapter.increment_rate_limit("k", window_ms=10_000, now_ms=5_000) == (
+            2,
+            0,
+        )
+        assert await adapter.increment_rate_limit("k", window_ms=10_000, now_ms=11_000) == (
+            1,
+            11_000,
+        )
 
     async def test_refresh_token_rotation_contract(self, adapter: ContractAdapter) -> None:
         user = await adapter.create_user(User(email="refresh-contract@example.com"))

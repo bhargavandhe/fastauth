@@ -28,7 +28,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import EmailStr, Field, SecretStr
+from pydantic import EmailStr, Field, SecretStr, field_validator
 
 from fastauth.api.commands import (
     BearerCredentialDelivery,
@@ -61,6 +61,7 @@ from fastauth.domain.events import (
     UserSignedUp,
 )
 from fastauth.domain.models import Account, EmailMessage, User, Verification, WireModel
+from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import (
     InvalidCredentialsError,
     NotFoundError,
@@ -119,46 +120,57 @@ def purpose_for_kind(kind: EmailOtpPurpose) -> VerificationPurpose:
     return mapping[kind]
 
 
-class SendOtpRequest(WireModel):
+class EmailRequest(WireModel):
     email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
+
+class NewEmailRequest(WireModel):
+    new_email: EmailStr
+
+    @field_validator("new_email", mode="before")
+    @classmethod
+    def normalize_new_email_value(cls, value: object) -> object:
+        return normalize_email(value)
+
+
+class SendOtpRequest(EmailRequest):
     purpose: EmailOtpPurpose
 
 
-class CheckOtpRequest(WireModel):
-    email: EmailStr
+class CheckOtpRequest(EmailRequest):
     purpose: EmailOtpPurpose
     otp: SecretStr
 
 
-class SignInOtpRequest(WireModel):
-    email: EmailStr
+class SignInOtpRequest(EmailRequest):
     otp: SecretStr
     name: str | None = None
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
 
-class VerifyEmailOtpRequest(WireModel):
-    email: EmailStr
+class VerifyEmailOtpRequest(EmailRequest):
     otp: SecretStr
 
 
-class RequestPasswordResetOtpRequest(WireModel):
-    email: EmailStr
+class RequestPasswordResetOtpRequest(EmailRequest):
+    pass
 
 
-class ResetPasswordOtpRequest(WireModel):
-    email: EmailStr
+class ResetPasswordOtpRequest(EmailRequest):
     otp: SecretStr
     password: SecretStr
 
 
-class RequestEmailChangeOtpRequest(WireModel):
-    new_email: EmailStr
+class RequestEmailChangeOtpRequest(NewEmailRequest):
     otp_for_current: SecretStr | None = None
 
 
-class ChangeEmailOtpRequest(WireModel):
-    new_email: EmailStr
+class ChangeEmailOtpRequest(NewEmailRequest):
     otp: SecretStr
 
 
@@ -667,6 +679,10 @@ async def reset_password_with_otp(
         account.password = new_hash
         await context.adapter.update_account(account)
     revoked = await context.session_strategy.revoke_all(user.id)
+    await context.refresh_token_service.revoke_for_user(user.id)
+    await context.lockout_tracker.reset(user.email)
+    if user.username is not None:
+        await context.lockout_tracker.reset(user.username)
     await context.event_bus.publish(
         PasswordChanged(user_id=user.id, ip_address=ip, user_agent=user_agent),
     )
@@ -788,6 +804,7 @@ async def change_email_with_otp(
     user.email_verified = True
     user.pending_email_change = None
     await context.adapter.update_user(user)
+    await context.lockout_tracker.reset(request.new_email)
     await context.event_bus.publish(
         UserEmailChanged(
             user_id=user.id,

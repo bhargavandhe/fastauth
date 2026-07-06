@@ -37,6 +37,48 @@ class HelloAgain(Plugin):
         return []
 
 
+class CollisionPlugin(Plugin):
+    id = "collision-plugin"
+
+    def endpoints(self) -> list[EndpointSpec]:
+        return [
+            EndpointSpec.get(
+                "/same",
+                name="same_a",
+                handler=None,
+            )
+        ]
+
+
+class CollisionAgain(Plugin):
+    id = "collision-again"
+
+    def endpoints(self) -> list[EndpointSpec]:
+        return [
+            EndpointSpec.get(
+                "/same",
+                name="same_b",
+                handler=None,
+            )
+        ]
+
+
+class CoreCollisionPlugin(Plugin):
+    id = "core-collision"
+
+    def endpoints(self) -> list[EndpointSpec]:
+        async def handler() -> dict[str, bool]:
+            return {"ok": True}
+
+        return [
+            EndpointSpec.post(
+                "/sign-out",
+                name="colliding_sign_out",
+                handler=handler,
+            )
+        ]
+
+
 def test_registry_records_endpoints() -> None:
     registry = PluginRegistry([HelloPlugin()])
     assert "hello-plugin" in registry.by_id
@@ -46,6 +88,11 @@ def test_registry_records_endpoints() -> None:
 def test_registry_rejects_duplicate_ids() -> None:
     with pytest.raises(ValueError, match="duplicate plugin id"):
         PluginRegistry([HelloPlugin(), HelloAgain()])
+
+
+def test_registry_rejects_duplicate_plugin_endpoint_routes() -> None:
+    with pytest.raises(ValueError, match="duplicate plugin endpoint"):
+        PluginRegistry([CollisionPlugin(), CollisionAgain()])
 
 
 def test_endpoint_spec_convenience_constructors() -> None:
@@ -96,3 +143,14 @@ async def test_plugin_base_requires_session_from_request() -> None:
 
     with pytest.raises(InvalidCredentialsError):
         await plugin.require_session(request)
+
+
+def test_fastauth_rejects_plugin_endpoint_that_collides_with_core_route() -> None:
+    with pytest.raises(ValueError, match="collides with existing auth route"):
+        FastAuth(
+            FastAuthOptions(
+                secret_key=SecretStr("a" * 64),
+                database=custom(InMemoryAdapter()),
+            ),
+            plugins=[CoreCollisionPlugin()],
+        )

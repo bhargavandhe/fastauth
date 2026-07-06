@@ -4,6 +4,41 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-06
+
+### Added
+
+- Mounted shared session routes (`/auth/get-session`, `/auth/sign-out`,
+  `/auth/refresh`, and `/auth/sessions`) for OTP-only plugin configurations.
+- Added API-key per-key rate-limit enforcement and validation coverage.
+
+### Changed
+
+- Rate-limit storage now uses a consistent fixed-window bucket contract across
+  memory, Beanie, and Postgres adapters.
+- Plugin route registration now rejects duplicate plugin routes and plugin
+  routes that collide with built-in auth routes.
+- API-key and audit-log list endpoints now validate pagination query
+  parameters (`limit >= 1`, `offset >= 0`).
+- Email/password plugin options are now enforced consistently for bearer
+  delivery, username sign-in routes, verification requirements, and TTLs.
+
+### Fixed
+
+- Password reset, password change, set-password, sign-out, email change, and
+  OTP password reset now revoke refresh tokens where applicable.
+- Password reset/change/set/email-change flows now clear relevant lockout
+  counters.
+- Password reset now publishes `PasswordResetRequested` for unknown emails
+  while preserving anti-enumeration responses.
+- Email identifiers are normalized consistently across reset, verification,
+  email-change, OTP, and sign-in flows.
+- Username uniqueness is enforced across first-party adapters.
+- API-key creation now rejects incomplete paired options for refill and
+  rate-limit settings.
+- JWT, password-reset, and email-verification documentation now match current
+  runtime behavior.
+
 ## [0.3.4] — 2026-07-01
 
 ### Fixed
@@ -392,5 +427,7 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/bhargavandhe/fastauth/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/bhargavandhe/fastauth/releases/tag/v0.3.4
 [0.1.0]: https://github.com/bhargavandhe/fastauth/releases/tag/v0.1.0

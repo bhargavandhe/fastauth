@@ -44,6 +44,87 @@ async def test_change_password_round_trip(signed_in: httpx.AsyncClient) -> None:
     assert good.status_code == 200
 
 
+async def test_change_password_revokes_existing_refresh_tokens(
+    client: httpx.AsyncClient,
+) -> None:
+    sign_up = await client.post(
+        "/auth/sign-up/email",
+        json={**SIGNUP, "delivery": {"kind": "bearer"}},
+    )
+    assert sign_up.status_code == 200
+    body = sign_up.json()
+    refresh_token = body["credentials"]["refreshToken"]
+    access_token = body["credentials"]["token"]
+
+    change = await client.post(
+        "/auth/change-password",
+        headers={"authorization": f"Bearer {access_token}"},
+        json={
+            "current_password": SIGNUP["password"],
+            "new_password": "new-secret-42-aaa",
+        },
+    )
+    assert change.status_code == 200
+
+    refresh = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": refresh_token, "delivery": {"kind": "bearer"}},
+    )
+    assert refresh.status_code == 400
+    assert refresh.json()["code"] == "TOKEN_INVALID"
+
+
+async def test_change_password_clears_lockout_for_email_and_username(
+    client: httpx.AsyncClient,
+) -> None:
+    payload = {
+        "email": "alice@example.com",
+        "username": "alice",
+        "password": "correct-horse-staple",
+    }
+    sign_up = await client.post("/auth/sign-up/email", json=payload)
+    assert sign_up.status_code == 200
+
+    email_attempt: httpx.Response | None = None
+    username_attempt: httpx.Response | None = None
+    for _ in range(6):
+        email_attempt = await client.post(
+            "/auth/sign-in/email",
+            json={"email": payload["email"], "password": "wrong-password"},
+        )
+        username_attempt = await client.post(
+            "/auth/sign-in/username",
+            json={"username": payload["username"], "password": "wrong-password"},
+        )
+    assert email_attempt is not None
+    assert username_attempt is not None
+    assert email_attempt.status_code == 423
+    assert username_attempt.status_code == 423
+
+    change = await client.post(
+        "/auth/change-password",
+        json={
+            "current_password": payload["password"],
+            "new_password": "new-secret-42-aaa",
+        },
+    )
+    assert change.status_code == 200
+
+    client.cookies.clear()
+    email_sign_in = await client.post(
+        "/auth/sign-in/email",
+        json={"email": payload["email"], "password": "new-secret-42-aaa"},
+    )
+    assert email_sign_in.status_code == 200
+
+    client.cookies.clear()
+    username_sign_in = await client.post(
+        "/auth/sign-in/username",
+        json={"username": payload["username"], "password": "new-secret-42-aaa"},
+    )
+    assert username_sign_in.status_code == 200
+
+
 async def test_change_password_rejects_wrong_current_password(
     signed_in: httpx.AsyncClient,
 ) -> None:

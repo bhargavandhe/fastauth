@@ -61,6 +61,9 @@ async def change_password(
         validate_password_policy(context, request.new_password),
     )
     await context.adapter.update_account(account)
+    await context.lockout_tracker.reset(user.email)
+    if user.username is not None:
+        await context.lockout_tracker.reset(user.username)
 
     revoked = 0
     if request.revoke_other_sessions:
@@ -69,6 +72,7 @@ async def change_password(
             if session.id != current_session_id:
                 await context.adapter.delete_session(session.id)
                 revoked += 1
+    await context.refresh_token_service.revoke_for_user(user.id)
 
     await context.event_bus.publish(
         PasswordChanged(user_id=user.id, ip_address=ip, user_agent=user_agent),
