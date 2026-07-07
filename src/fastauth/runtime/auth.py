@@ -6,14 +6,13 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import cast
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
-from fastapi.exception_handlers import http_exception_handler
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.models import User
-from fastauth.exceptions import ConfigError, InvalidCredentialsError
+from fastauth.exceptions import ConfigError, FastAuthDependencyError, FastAuthError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
 from fastauth.options import (
     FastAuthOptions,
@@ -35,31 +34,23 @@ from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, 
 from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import JwksKeyStore, RateLimitStore
 from fastauth.web.csrf import CsrfMiddleware
-from fastauth.web.fastapi import build_router, extract_session_token
+from fastauth.web.fastapi import build_router, extract_session_token, http_status_for
 from fastauth.web.security_headers import SecurityHeadersMiddleware
 
 __all__ = ["FastAuth"]
 
 
-async def fastauth_http_exception_handler(
+async def fastauth_error_handler(
     request: Request,
     exc: Exception,
 ) -> Response:
-    if not isinstance(exc, HTTPException):
+    del request
+    if not isinstance(exc, FastAuthError):
         raise exc
-    detail = exc.detail
-    if isinstance(detail, dict):
-        typed_detail = cast(dict[str, object], detail)
-        if isinstance(typed_detail.get("code"), str) and isinstance(
-            typed_detail.get("message"),
-            str,
-        ):
-            return JSONResponse(
-                status_code=exc.status_code,
-                content=typed_detail,
-                headers=exc.headers,
-            )
-    return await http_exception_handler(request, exc)
+    return JSONResponse(
+        status_code=http_status_for(exc),
+        content={"code": exc.code, "message": exc.message},
+    )
 
 
 class FastAuth:
@@ -216,7 +207,8 @@ class FastAuth:
 
     def mount(self, app: FastAPI) -> None:
         """Mount fastauth routes and middleware on an existing ``FastAPI`` app."""
-        app.add_exception_handler(HTTPException, fastauth_http_exception_handler)
+        if FastAuthError not in app.exception_handlers:
+            app.add_exception_handler(FastAuthError, fastauth_error_handler)
         app.include_router(self.router)
         app.add_middleware(
             CsrfMiddleware,
@@ -233,12 +225,22 @@ class FastAuth:
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
         """ASGI lifespan for storage bootstrap plus plugin startup/shutdown hooks."""
         app_instance = app or FastAPI()
-        async with AsyncExitStack() as stack:
-            await stack.enter_async_context(
-                self.database_runtime.lifespan(self, app_instance),
-            )
-            await stack.enter_async_context(self.plugin_lifespan())
-            yield
+        try:
+            async with AsyncExitStack() as stack:
+                await stack.enter_async_context(
+                    self.database_runtime.lifespan(self, app_instance),
+                )
+                await stack.enter_async_context(self.plugin_lifespan())
+                yield
+        except BaseExceptionGroup:
+            raise
+        except BaseException as exc:
+            if exc.__context__ is not None:
+                raise BaseExceptionGroup(
+                    "fastauth lifespan failed",
+                    [exc.__context__, exc],
+                ) from exc.__context__
+            raise
 
     @asynccontextmanager
     async def plugin_lifespan(self) -> AsyncGenerator[None, None]:
@@ -288,19 +290,12 @@ class FastAuth:
 
         Use as a FastAPI dependency with
         ``Annotated[SessionContext, Depends(auth.get_current_session)]``. Raises
-        ``fastapi.HTTPException(401)`` with the
-        ``InvalidCredentialsError.default_code`` (``"INVALID_CREDENTIALS"``) so
-        the response shape matches the rest of the library.
+        ``FastAuthDependencyError`` so mounted applications get the canonical
+        FastAuth error DTO without replacing their own HTTPException handler.
         """
         session = await self.get_optional_current_session(request)
         if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "code": InvalidCredentialsError.default_code,
-                    "message": "authentication required",
-                },
-            )
+            raise FastAuthDependencyError()
         return session
 
     async def get_optional_current_session(

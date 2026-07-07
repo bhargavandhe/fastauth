@@ -11,15 +11,12 @@ from pydantic import (
     Field,
     SecretStr,
     field_validator,
-    model_validator,
 )
 from pydantic.alias_generators import to_camel
 
-from fastauth.domain.models import User
 from fastauth.domain.value_objects import UserMetadata, Username, normalize_email
 
 __all__ = [
-    "AuthPrincipal",
     "BearerCredentialDelivery",
     "ChangePasswordCommand",
     "ConfirmEmailChangeCommand",
@@ -37,12 +34,14 @@ __all__ = [
     "ResetPasswordCommand",
     "RevokeOtherSessionsCommand",
     "RevokeSessionCommand",
+    "SessionPrincipal",
     "SetPasswordCommand",
     "SignInEmailCommand",
     "SignInUsernameCommand",
     "SignOutCommand",
     "SignUpEmailCommand",
     "UpdateUserCommand",
+    "UserPrincipal",
     "VerifyPasswordCommand",
 ]
 
@@ -77,22 +76,12 @@ class RequestContext(CommandModel):
     user_agent: str | None = None
 
 
-class AuthPrincipal(CommandModel):
+class UserPrincipal(CommandModel):
     user_id: str = Field(min_length=1)
-    session_id: str | None = Field(default=None, min_length=1)
 
 
-class PrincipalCommand(CommandModel):
-    principal: AuthPrincipal | None = None
-    user: User | None = None
-
-    @model_validator(mode="after")
-    def require_single_principal_source(self) -> PrincipalCommand:
-        if self.principal is None and self.user is None:
-            raise ValueError("principal is required")
-        if self.principal is not None and self.user is not None:
-            raise ValueError("provide either principal or user, not both")
-        return self
+class SessionPrincipal(UserPrincipal):
+    session_id: str = Field(min_length=1)
 
 
 class SignInEmailCommand(CommandModel):
@@ -142,20 +131,21 @@ class RefreshSessionCommand(CommandModel):
     delivery: CredentialDelivery = Field(default_factory=BearerCredentialDelivery)
 
 
-class ListSessionsCommand(PrincipalCommand):
-    current_session_id: str | None = None
+class ListSessionsCommand(CommandModel):
+    principal: UserPrincipal
 
 
-class RevokeSessionCommand(PrincipalCommand):
+class RevokeSessionCommand(CommandModel):
+    principal: UserPrincipal
     session_id: str
 
 
-class RevokeOtherSessionsCommand(PrincipalCommand):
-    current_session_id: str | None = None
+class RevokeOtherSessionsCommand(CommandModel):
+    principal: SessionPrincipal
 
 
-class ChangePasswordCommand(PrincipalCommand):
-    current_session_id: str | None = None
+class ChangePasswordCommand(CommandModel):
+    principal: SessionPrincipal
     current_password: SecretStr
     new_password: SecretStr
     revoke_other_sessions: bool = True
@@ -185,40 +175,46 @@ class ResetPasswordCommand(CommandModel):
         return normalize_email(value)
 
 
-class UpdateUserCommand(PrincipalCommand):
+class UpdateUserCommand(CommandModel):
+    principal: UserPrincipal
     name: str | None = None
     image: str | None = None
     metadata: UserMetadata | None = None
     context: RequestContext = Field(default_factory=RequestContext)
 
 
-class SetPasswordCommand(PrincipalCommand):
-    current_session_id: str | None = None
+class SetPasswordCommand(CommandModel):
+    principal: SessionPrincipal
     new_password: SecretStr
     revoke_other_sessions: bool = True
     context: RequestContext = Field(default_factory=RequestContext)
 
 
-class VerifyPasswordCommand(PrincipalCommand):
+class VerifyPasswordCommand(CommandModel):
+    principal: UserPrincipal
     password: SecretStr
     context: RequestContext = Field(default_factory=RequestContext)
 
 
-class DeleteUserCommand(PrincipalCommand):
+class DeleteUserCommand(CommandModel):
+    principal: UserPrincipal
     password: SecretStr
     context: RequestContext = Field(default_factory=RequestContext)
 
 
-class RequestUserDeletionCommand(PrincipalCommand):
+class RequestUserDeletionCommand(CommandModel):
+    principal: UserPrincipal
     context: RequestContext = Field(default_factory=RequestContext)
 
 
-class ConfirmUserDeletionCommand(PrincipalCommand):
+class ConfirmUserDeletionCommand(CommandModel):
+    principal: UserPrincipal
     token: SecretStr
     context: RequestContext = Field(default_factory=RequestContext)
 
 
-class RequestEmailChangeCommand(PrincipalCommand):
+class RequestEmailChangeCommand(CommandModel):
+    principal: UserPrincipal
     new_email: EmailStr
     password: SecretStr
     context: RequestContext = Field(default_factory=RequestContext)

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
+from fastapi import FastAPI
 from pydantic import SecretStr, ValidationError
 
+from fastauth.database import custom
 from fastauth.domain.enums import DatabaseBackendKind, SessionStrategyKind
 from fastauth.options import (
     AdvancedOptions,
@@ -118,6 +122,31 @@ def test_production_options_reject_custom_memory_database() -> None:
             database=CustomDatabaseOptions(adapter=InMemoryAdapter()),
             app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
         )
+
+
+def test_custom_database_factory_accepts_backend_and_lifespan() -> None:
+    def lifespan(auth: object):
+        del auth
+
+        def app_lifespan(app: FastAPI):
+            del app
+
+            @asynccontextmanager
+            async def context() -> AsyncGenerator[None, None]:
+                yield
+
+            return context()
+
+        return app_lifespan
+
+    options = custom(
+        InMemoryAdapter(),
+        backend=DatabaseBackendKind.POSTGRES,
+        lifespan=lifespan,
+    )
+
+    assert options.backend is DatabaseBackendKind.POSTGRES
+    assert options.lifespan is lifespan
 
 
 def test_production_options_reject_insecure_cookies() -> None:

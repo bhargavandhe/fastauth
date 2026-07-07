@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
+from fastauth.domain.enums import DatabaseBackendKind
 from fastauth.options import (
     CustomDatabaseOptions,
+    DatabaseLifespanFactory,
     MemoryDatabaseOptions,
     MongoDatabaseOptions,
     PostgresDatabaseOptions,
@@ -50,5 +52,10 @@ def postgres(
     )
 
 
-def custom(adapter: DatabaseAdapter) -> CustomDatabaseOptions:
-    return CustomDatabaseOptions(adapter=adapter)
+def custom(
+    adapter: DatabaseAdapter,
+    *,
+    backend: DatabaseBackendKind = DatabaseBackendKind.MEMORY,
+    lifespan: DatabaseLifespanFactory | None = None,
+) -> CustomDatabaseOptions:
+    return CustomDatabaseOptions(adapter=adapter, backend=backend, lifespan=lifespan)

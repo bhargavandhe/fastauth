@@ -130,8 +130,8 @@ v2 + async-only + MongoDB or Postgres persistence:
   variants, both `Depends(...)` and `Annotated[...]` calling styles
   documented.
 - **Explicit storage wiring** — choose `memory()`, `mongo(database)`,
-  `postgres(url)`, or `custom(adapter)`. Fastauth never reads storage settings
-  from the process environment.
+  `postgres(url)`, or `custom(adapter, backend=...)`. Fastauth never reads
+  storage settings from the process environment.
 - **`auth.mount(app)`** — install routes, CSRF, and security headers on your
   FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
   when you want fastauth mounted separately.
@@ -264,7 +264,7 @@ fastauth/
 
 ## Status
 
-**v0.6.0** — current release. Coverage spans unit tests, adapter-contract
+**v0.7.0** — current release. Coverage spans unit tests, adapter-contract
 tests, integration flows, CLI behavior, and the quickstart example.
 `pyright --strict` is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed
 feature list.

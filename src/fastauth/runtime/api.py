@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from fastauth.api import legacy as legacy_commands
 from fastauth.api.commands import (
     ChangePasswordCommand,
     ConfirmEmailChangeCommand,
@@ -13,7 +14,6 @@ from fastauth.api.commands import (
     DeleteUserCommand,
     GetSessionCommand,
     ListSessionsCommand,
-    PrincipalCommand,
     RefreshSessionCommand,
     RequestEmailChangeCommand,
     RequestPasswordResetCommand,
@@ -21,12 +21,14 @@ from fastauth.api.commands import (
     ResetPasswordCommand,
     RevokeOtherSessionsCommand,
     RevokeSessionCommand,
+    SessionPrincipal,
     SetPasswordCommand,
     SignInEmailCommand,
     SignInUsernameCommand,
     SignOutCommand,
     SignUpEmailCommand,
     UpdateUserCommand,
+    UserPrincipal,
     VerifyPasswordCommand,
 )
 from fastauth.api.responses import AuthenticationResponse, UserView, user_view
@@ -142,36 +144,78 @@ class HealthResponse(WireModel):
     name: str
 
 
-async def resolve_command_user(context: AuthContext, command: PrincipalCommand) -> User:
-    if command.user is not None:
-        return command.user
-    if command.principal is None:
-        raise InvalidCredentialsError()
-    user = await context.adapter.get_user_by_id(command.principal.user_id)
+PrincipalCommandInput = (
+    ListSessionsCommand
+    | RevokeSessionCommand
+    | RevokeOtherSessionsCommand
+    | ChangePasswordCommand
+    | UpdateUserCommand
+    | SetPasswordCommand
+    | VerifyPasswordCommand
+    | DeleteUserCommand
+    | RequestUserDeletionCommand
+    | ConfirmUserDeletionCommand
+    | RequestEmailChangeCommand
+    | legacy_commands.ListSessionsCommand
+    | legacy_commands.RevokeSessionCommand
+    | legacy_commands.RevokeOtherSessionsCommand
+    | legacy_commands.ChangePasswordCommand
+    | legacy_commands.UpdateUserCommand
+    | legacy_commands.SetPasswordCommand
+    | legacy_commands.VerifyPasswordCommand
+    | legacy_commands.DeleteUserCommand
+    | legacy_commands.RequestUserDeletionCommand
+    | legacy_commands.ConfirmUserDeletionCommand
+    | legacy_commands.RequestEmailChangeCommand
+)
+
+
+def command_user_id(command: PrincipalCommandInput) -> str:
+    principal = getattr(command, "principal", None)
+    if isinstance(principal, UserPrincipal):
+        return principal.user_id
+    user = getattr(command, "user", None)
+    if isinstance(user, User):
+        return user.id
+    raise InvalidCredentialsError()
+
+
+async def resolve_command_user(context: AuthContext, command: PrincipalCommandInput) -> User:
+    user = await context.adapter.get_user_by_id(command_user_id(command))
     if user is None:
         raise InvalidCredentialsError()
     return user
 
 
 def command_session_id(
-    command: PrincipalCommand,
-    explicit_session_id: str | None,
+    command: PrincipalCommandInput,
 ) -> str | None:
-    if explicit_session_id is not None:
-        return explicit_session_id
-    if command.principal is not None:
-        return command.principal.session_id
+    principal = getattr(command, "principal", None)
+    if isinstance(principal, SessionPrincipal):
+        return principal.session_id
+    legacy_session_id = getattr(command, "current_session_id", None)
+    if isinstance(legacy_session_id, str):
+        return legacy_session_id
     return None
 
 
-def require_command_session_id(
-    command: PrincipalCommand,
-    explicit_session_id: str | None,
-) -> str:
-    session_id = command_session_id(command, explicit_session_id)
+def require_command_session_id(command: PrincipalCommandInput) -> str:
+    session_id = command_session_id(command)
     if session_id is None:
         raise InvalidRequestError(message="session_id is required")
     return session_id
+
+
+async def resolve_session_command_user(
+    context: AuthContext,
+    command: PrincipalCommandInput,
+) -> User:
+    user = await resolve_command_user(context, command)
+    session_id = require_command_session_id(command)
+    sessions = await context.adapter.list_sessions_for_user(user.id)
+    if not any(session.id == session_id for session in sessions):
+        raise InvalidCredentialsError()
+    return user
 
 
 class RouterAuthApi:
@@ -565,15 +609,21 @@ class SessionApi:
         )
         return response
 
-    async def list(self, command: ListSessionsCommand) -> ListSessionsResponse:
+    async def list(
+        self,
+        command: ListSessionsCommand | legacy_commands.ListSessionsCommand,
+    ) -> ListSessionsResponse:
         user = await resolve_command_user(self._api.context, command)
         return await list_sessions_flow(
             self._api.context,
             user=user,
-            current_session_id=command_session_id(command, command.current_session_id),
+            current_session_id=command_session_id(command),
         )
 
-    async def revoke(self, command: RevokeSessionCommand) -> RevokeSessionsResponse:
+    async def revoke(
+        self,
+        command: RevokeSessionCommand | legacy_commands.RevokeSessionCommand,
+    ) -> RevokeSessionsResponse:
         user = await resolve_command_user(self._api.context, command)
         return await revoke_session_flow(
             self._api.context,
@@ -583,13 +633,13 @@ class SessionApi:
 
     async def revoke_other(
         self,
-        command: RevokeOtherSessionsCommand,
+        command: RevokeOtherSessionsCommand | legacy_commands.RevokeOtherSessionsCommand,
     ) -> RevokeSessionsResponse:
-        user = await resolve_command_user(self._api.context, command)
+        user = await resolve_session_command_user(self._api.context, command)
         return await revoke_other_sessions_flow(
             self._api.context,
             user=user,
-            current_session_id=command_session_id(command, command.current_session_id),
+            current_session_id=require_command_session_id(command),
         )
 
 
@@ -597,13 +647,16 @@ class PasswordApi:
     def __init__(self, api: AuthApi) -> None:
         self._api = api
 
-    async def change(self, command: ChangePasswordCommand) -> EmptyResponse:
+    async def change(
+        self,
+        command: ChangePasswordCommand | legacy_commands.ChangePasswordCommand,
+    ) -> EmptyResponse:
         require_email_password(self._api.context)
-        user = await resolve_command_user(self._api.context, command)
+        user = await resolve_session_command_user(self._api.context, command)
         return await change_password_flow(
             self._api.context,
             user,
-            current_session_id=require_command_session_id(command, command.current_session_id),
+            current_session_id=require_command_session_id(command),
             request=ChangePasswordRequest(
                 current_password=command.current_password,
                 new_password=command.new_password,
@@ -643,7 +696,10 @@ class UserApi:
     def __init__(self, api: AuthApi) -> None:
         self._api = api
 
-    async def update(self, command: UpdateUserCommand) -> UserView:
+    async def update(
+        self,
+        command: UpdateUserCommand | legacy_commands.UpdateUserCommand,
+    ) -> UserView:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         payload = command.model_dump(
@@ -659,13 +715,16 @@ class UserApi:
         )
         return user_view(updated)
 
-    async def set_password(self, command: SetPasswordCommand) -> EmptyResponse:
+    async def set_password(
+        self,
+        command: SetPasswordCommand | legacy_commands.SetPasswordCommand,
+    ) -> EmptyResponse:
         require_email_password(self._api.context)
-        user = await resolve_command_user(self._api.context, command)
+        user = await resolve_session_command_user(self._api.context, command)
         return await set_password_flow(
             self._api.context,
             user,
-            current_session_id=require_command_session_id(command, command.current_session_id),
+            current_session_id=require_command_session_id(command),
             request=SetPasswordRequest(
                 new_password=command.new_password,
                 revoke_other_sessions=command.revoke_other_sessions,
@@ -674,7 +733,10 @@ class UserApi:
             user_agent=command.context.user_agent,
         )
 
-    async def verify_password(self, command: VerifyPasswordCommand) -> VerifyPasswordResponse:
+    async def verify_password(
+        self,
+        command: VerifyPasswordCommand | legacy_commands.VerifyPasswordCommand,
+    ) -> VerifyPasswordResponse:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         return await verify_password_flow(
@@ -685,7 +747,10 @@ class UserApi:
             user_agent=command.context.user_agent,
         )
 
-    async def delete(self, command: DeleteUserCommand) -> EmptyResponse:
+    async def delete(
+        self,
+        command: DeleteUserCommand | legacy_commands.DeleteUserCommand,
+    ) -> EmptyResponse:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         return await delete_account_with_password_flow(
@@ -696,7 +761,10 @@ class UserApi:
             user_agent=command.context.user_agent,
         )
 
-    async def request_delete(self, command: RequestUserDeletionCommand) -> EmptyResponse:
+    async def request_delete(
+        self,
+        command: RequestUserDeletionCommand | legacy_commands.RequestUserDeletionCommand,
+    ) -> EmptyResponse:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         return await request_delete_account_flow(
@@ -706,7 +774,10 @@ class UserApi:
             user_agent=command.context.user_agent,
         )
 
-    async def confirm_delete(self, command: ConfirmUserDeletionCommand) -> EmptyResponse:
+    async def confirm_delete(
+        self,
+        command: ConfirmUserDeletionCommand | legacy_commands.ConfirmUserDeletionCommand,
+    ) -> EmptyResponse:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         return await confirm_delete_account_flow(
@@ -717,7 +788,10 @@ class UserApi:
             user_agent=command.context.user_agent,
         )
 
-    async def change_email(self, command: RequestEmailChangeCommand) -> EmptyResponse:
+    async def change_email(
+        self,
+        command: RequestEmailChangeCommand | legacy_commands.RequestEmailChangeCommand,
+    ) -> EmptyResponse:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         return await request_email_change_flow(

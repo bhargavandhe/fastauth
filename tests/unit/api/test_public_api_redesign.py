@@ -9,17 +9,19 @@ from pydantic import SecretStr, ValidationError
 
 from fastauth import AuthenticationResponse, FastAuth, FastAuthOptions, SessionView, UserView
 from fastauth.api.commands import (
-    AuthPrincipal,
     ChangePasswordCommand,
     GetSessionCommand,
     ListSessionsCommand,
+    SessionPrincipal,
     SignInUsernameCommand,
     SignOutCommand,
     SignUpEmailCommand,
     UpdateUserCommand,
+    UserPrincipal,
 )
+from fastauth.api.legacy import UpdateUserCommand as LegacyUpdateUserCommand
 from fastauth.database import memory
-from fastauth.exceptions import FeatureNotEnabledError
+from fastauth.exceptions import FeatureNotEnabledError, InvalidCredentialsError
 from fastauth.messaging.email import EmailMessage
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
 from fastauth.plugins.email_password import EmailPasswordOptions
@@ -272,11 +274,68 @@ async def test_session_api_accepts_immutable_principal() -> None:
 
     result = await auth.api.session.list(
         ListSessionsCommand(
-            principal=AuthPrincipal(user_id=signed_up.user.id.root),
-            current_session_id=signed_up.session.id.root,
+            principal=UserPrincipal(user_id=signed_up.user.id.root),
         )
     )
 
     assert len(result.sessions) == 1
     with pytest.raises(ValidationError):
-        AuthPrincipal(user_id="")
+        UserPrincipal(user_id="")
+
+
+def test_canonical_principal_commands_do_not_expose_legacy_identity_fields() -> None:
+    assert "user" not in ListSessionsCommand.model_fields
+    assert "current_session_id" not in ChangePasswordCommand.model_fields
+    assert "principal" in ChangePasswordCommand.model_fields
+    assert ChangePasswordCommand.model_fields["principal"].annotation is SessionPrincipal
+
+
+async def test_legacy_user_commands_emit_deprecation_warning() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("j" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+    signed_up = await auth.api.sign_up.email(
+        SignUpEmailCommand(
+            email="legacy@example.com",
+            password=SecretStr("correct-horse-battery"),
+        )
+    )
+    user = await auth.context.adapter.get_user_by_id(signed_up.user.id.root)
+    assert user is not None
+
+    with pytest.warns(DeprecationWarning, match="fastauth.api.legacy"):
+        command = LegacyUpdateUserCommand(user=user, name="Legacy")
+
+    assert command.user.id == signed_up.user.id.root
+
+
+async def test_session_principal_rejects_mismatched_user_and_session() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("j" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+    first = await auth.api.sign_up.email(
+        SignUpEmailCommand(
+            email="first@example.com",
+            password=SecretStr("correct-horse-battery"),
+        )
+    )
+    second = await auth.api.sign_up.email(
+        SignUpEmailCommand(
+            email="second@example.com",
+            password=SecretStr("correct-horse-battery"),
+        )
+    )
+
+    with pytest.raises(InvalidCredentialsError):
+        await auth.api.password.change(
+            ChangePasswordCommand(
+                principal=SessionPrincipal(
+                    user_id=first.user.id.root,
+                    session_id=second.session.id.root,
+                ),
+                current_password=SecretStr("correct-horse-battery"),
+                new_password=SecretStr("new-correct-horse-battery"),
+            )
+        )

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
+from fastauth.domain.models import Session
 from fastauth.exceptions import RefreshTokenReuseError
 from fastauth.options import RefreshTokenOptions
 from fastauth.security.refresh_tokens import RefreshTokenService
+from fastauth.storage.base import RevokedRefreshFamily
 from fastauth.storage.memory import InMemoryAdapter
 
 
@@ -27,6 +30,21 @@ class RaceyRefreshTokenAdapter(InMemoryAdapter):
             self.both_read.set()
         await self.both_read.wait()
         return token.model_copy(deep=True)
+
+
+class AtomicFamilyRevocationAdapter(InMemoryAdapter):
+    async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
+        revoked = await super().delete_refresh_token_family(family_id)
+        for session_id in revoked.session_ids:
+            self.sessions.pop(session_id, None)
+        return RevokedRefreshFamily(
+            deleted_tokens=revoked.deleted_tokens,
+            deleted_sessions=len(revoked.session_ids),
+            session_ids=revoked.session_ids,
+        )
+
+    async def delete_session(self, session_id: str) -> None:
+        raise AssertionError(f"delete_session should not be called for {session_id}")
 
 
 async def test_concurrent_refresh_rotation_has_single_winner_and_revokes_family() -> None:
@@ -50,3 +68,25 @@ async def test_concurrent_refresh_rotation_has_single_winner_and_revokes_family(
     assert len(successes) == 1
     assert len(reuse_errors) == 1
     assert adapter.refresh_tokens == {}
+
+
+async def test_revoke_family_uses_adapter_level_session_revocation() -> None:
+    adapter = AtomicFamilyRevocationAdapter()
+    service = RefreshTokenService(
+        adapter=adapter,
+        config=RefreshTokenOptions(enabled=True),
+    )
+    issued = await service.issue(user_id="user-1", session_id="session-1")
+    assert issued is not None
+    adapter.sessions["session-1"] = Session(
+        user_id="user-1",
+        token_hash="hash",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    revoked = await service.revoke_family(next(iter(adapter.refresh_tokens.values())).family_id)
+
+    assert revoked.deleted_tokens == 1
+    assert revoked.deleted_sessions == 1
+    assert adapter.refresh_tokens == {}
+    assert adapter.sessions == {}

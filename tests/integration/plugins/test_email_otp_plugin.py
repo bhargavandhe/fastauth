@@ -459,7 +459,11 @@ async def test_otp_only_auth_mounts_shared_session_routes() -> None:
         assert len(sessions.json()["sessions"]) == 1
         revoke_others = await otp_client.delete("/auth/sessions")
         assert revoke_others.status_code == 200
-        assert revoke_others.json() == {"revoked": 0}
+        assert revoke_others.json() == {
+            "revoked": 0,
+            "revokedSessions": 0,
+            "revokedRefreshTokens": 0,
+        }
         assert (await otp_client.post("/auth/sign-out")).status_code == 200
         assert (await otp_client.get("/auth/get-session")).status_code == 204
 

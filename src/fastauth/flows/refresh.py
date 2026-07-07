@@ -73,7 +73,11 @@ async def refresh_session(
         await context.adapter.delete_session(session_context.session.id)
         raise TokenInvalidError()
     if existing.session_id != session_context.session.id:
-        await context.adapter.delete_session(existing.session_id)
+        try:
+            await context.adapter.delete_session(existing.session_id)
+        except Exception:
+            await context.refresh_token_service.revoke_family(existing.family_id)
+            raise
     return (
         authentication_response(
             user=user,

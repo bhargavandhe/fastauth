@@ -47,6 +47,8 @@ class ListSessionsResponse(WireModel):
 
 class RevokeSessionsResponse(WireModel):
     revoked: int
+    revoked_sessions: int
+    revoked_refresh_tokens: int
 
 
 async def list_sessions_for_user(
@@ -99,8 +101,12 @@ async def revoke_session(
     if target is None:
         raise NotFoundError(resource="session")
     await context.adapter.delete_session(target.id)
-    await context.refresh_token_service.revoke_for_session(target.id)
-    return RevokeSessionsResponse(revoked=1)
+    revoked_refresh_tokens = await context.refresh_token_service.revoke_for_session(target.id)
+    return RevokeSessionsResponse(
+        revoked=1,
+        revoked_sessions=1,
+        revoked_refresh_tokens=revoked_refresh_tokens,
+    )
 
 
 async def revoke_other_sessions(
@@ -118,4 +124,8 @@ async def revoke_other_sessions(
         user.id,
         current_session_id,
     )
-    return RevokeSessionsResponse(revoked=max(revoked_sessions, revoked_refresh_tokens))
+    return RevokeSessionsResponse(
+        revoked=revoked_sessions,
+        revoked_sessions=revoked_sessions,
+        revoked_refresh_tokens=revoked_refresh_tokens,
+    )
