@@ -186,9 +186,27 @@ class InMemoryAdapter:
         async with self.lock:
             self.refresh_tokens.pop(token_id, None)
 
-    async def delete_refresh_tokens_for_user(self, user_id: str) -> int:
+    async def delete_refresh_tokens_for_user(
+        self,
+        user_id: str,
+        *,
+        except_session_id: str | None = None,
+    ) -> int:
         async with self.lock:
-            doomed = [tid for tid, tok in self.refresh_tokens.items() if tok.user_id == user_id]
+            doomed = [
+                tid
+                for tid, tok in self.refresh_tokens.items()
+                if tok.user_id == user_id and tok.session_id != except_session_id
+            ]
+            for tid in doomed:
+                del self.refresh_tokens[tid]
+            return len(doomed)
+
+    async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
+        async with self.lock:
+            doomed = [
+                tid for tid, tok in self.refresh_tokens.items() if tok.session_id == session_id
+            ]
             for tid in doomed:
                 del self.refresh_tokens[tid]
             return len(doomed)

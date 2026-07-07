@@ -99,6 +99,7 @@ async def revoke_session(
     if target is None:
         raise NotFoundError(resource="session")
     await context.adapter.delete_session(target.id)
+    await context.refresh_token_service.revoke_for_session(target.id)
     return RevokeSessionsResponse(revoked=1)
 
 
@@ -109,8 +110,12 @@ async def revoke_other_sessions(
     current_session_id: str | None,
 ) -> RevokeSessionsResponse:
     """Revoke every session for ``user`` except ``current_session_id``."""
-    revoked = await context.session_strategy.revoke_all(
+    revoked_sessions = await context.session_strategy.revoke_all(
         user.id,
         except_session_id=current_session_id,
     )
-    return RevokeSessionsResponse(revoked=revoked)
+    revoked_refresh_tokens = await context.refresh_token_service.revoke_for_user_except_session(
+        user.id,
+        current_session_id,
+    )
+    return RevokeSessionsResponse(revoked=max(revoked_sessions, revoked_refresh_tokens))

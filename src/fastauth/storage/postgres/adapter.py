@@ -480,11 +480,29 @@ class PostgresAdapter(
                 ),
             )
 
-    async def delete_refresh_tokens_for_user(self, user_id: str) -> int:
+    async def delete_refresh_tokens_for_user(
+        self,
+        user_id: str,
+        *,
+        except_session_id: str | None = None,
+    ) -> int:
+        predicate = self.schema.refresh_tokens.c.user_id == user_id
+        if except_session_id is not None:
+            predicate = and_(
+                predicate,
+                self.schema.refresh_tokens.c.session_id != except_session_id,
+            )
+        async with self.engine.begin() as connection:
+            result = await connection.execute(
+                delete(self.schema.refresh_tokens).where(predicate),
+            )
+        return int(result.rowcount or 0)
+
+    async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
         async with self.engine.begin() as connection:
             result = await connection.execute(
                 delete(self.schema.refresh_tokens).where(
-                    self.schema.refresh_tokens.c.user_id == user_id,
+                    self.schema.refresh_tokens.c.session_id == session_id,
                 ),
             )
         return int(result.rowcount or 0)

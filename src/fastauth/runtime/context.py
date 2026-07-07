@@ -10,7 +10,7 @@ from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import PluginRegistry
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks
-from fastauth.security.passwords import PasswordHasher
+from fastauth.security.passwords import CredentialService, PasswordHasher
 from fastauth.security.sessions import SessionStrategy
 from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import DatabaseAdapter
@@ -30,6 +30,7 @@ class AuthContext:
     config: FastAuthOptions
     adapter: DatabaseAdapter
     session_strategy: SessionStrategy
+    credential_service: CredentialService
     password_hasher: PasswordHasher
     token_service: TokenService
     email_sender: EmailSender

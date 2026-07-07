@@ -58,6 +58,7 @@ class RefreshTokenService:
         self,
         *,
         user_id: str,
+        session_id: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> tuple[RefreshToken, str] | None:
@@ -69,7 +70,13 @@ class RefreshTokenService:
             return None
         pair = self.token_service.generate_pair()
         return await self.persist(
-            pair, user_id=user_id, family_id=None, ip_address=ip_address, user_agent=user_agent
+            pair,
+            user_id=user_id,
+            session_id=session_id,
+            family_id=None,
+            family_created_at=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
     async def persist(
@@ -77,20 +84,26 @@ class RefreshTokenService:
         pair: TokenPair,
         *,
         user_id: str,
+        session_id: str,
         family_id: str | None,
+        family_created_at: datetime | None,
         ip_address: str | None = None,
         user_agent: str | None = None,
         expires_at: datetime | None = None,
     ) -> tuple[RefreshToken, str]:
         """Insert a new ``RefreshToken`` row. ``family_id=None`` starts a new chain."""
+        now = datetime.now(UTC)
         token_id = new_id()
         chain_root = family_id or token_id
-        exp = expires_at or datetime.now(UTC) + timedelta(seconds=self.config.max_age_seconds)
+        chain_created_at = family_created_at or now
+        exp = expires_at or self.expiry_for(now, chain_created_at)
         record = RefreshToken(
             id=token_id,
             user_id=user_id,
+            session_id=session_id,
             token_hash=pair.hashed,
             family_id=chain_root,
+            family_created_at=chain_created_at,
             expires_at=exp,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -98,10 +111,37 @@ class RefreshTokenService:
         await self.adapter.create_refresh_token(record)
         return record, pair.plain
 
+    def expiry_for(self, now: datetime, family_created_at: datetime) -> datetime:
+        next_expiry = now + timedelta(seconds=self.config.max_age_seconds)
+        if self.config.absolute_max_age is None:
+            return next_expiry
+        return min(next_expiry, family_created_at + self.config.absolute_max_age)
+
+    async def get_valid(self, plain_token: str) -> RefreshToken:
+        if not self.enabled:
+            raise TokenInvalidError()
+        hashed = self.token_service.hash_only(plain_token)
+        existing = await self.adapter.get_refresh_token_by_hash(hashed)
+        if existing is None:
+            raise TokenInvalidError()
+        if existing.consumed_at is not None:
+            await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
+            raise RefreshTokenReuseError()
+        now = datetime.now(UTC)
+        if existing.expires_at <= now:
+            raise TokenExpiredError()
+        if self.config.absolute_max_age is not None:
+            absolute_deadline = existing.family_created_at + self.config.absolute_max_age
+            if now >= absolute_deadline:
+                await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
+                raise TokenExpiredError()
+        return existing
+
     async def rotate(
         self,
         plain_token: str,
         *,
+        session_id: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
     ) -> tuple[RefreshToken, str]:
@@ -112,45 +152,28 @@ class RefreshTokenService:
         :class:`RefreshTokenReuseError` if it was already consumed — in
         which case the entire family is revoked before raising.
         """
-        if not self.enabled:
-            raise TokenInvalidError()
-        hashed = self.token_service.hash_only(plain_token)
-        existing = await self.adapter.get_refresh_token_by_hash(hashed)
-        if existing is None:
-            raise TokenInvalidError()
-        # Reuse-detection: a token that's already been rotated. Revoke its
-        # whole family — every key in the chain is now considered burned.
-        if existing.consumed_at is not None:
-            await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
-            raise RefreshTokenReuseError()
-        if existing.expires_at <= datetime.now(UTC):
-            raise TokenExpiredError()
-        # Enforce the absolute-max horizon if configured. The chain root's
-        # `created_at` minus now must be < absolute_max_age_seconds.
-        if self.config.absolute_max_age_seconds is not None:
-            age_seconds = (datetime.now(UTC) - existing.created_at).total_seconds()
-            if age_seconds > self.config.absolute_max_age_seconds:
-                # Chain is too old. Revoke the family; user must sign in fresh.
-                await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
-                raise TokenExpiredError()
+        existing = await self.get_valid(plain_token)
         # Atomically mark the old token consumed and mint the new one. Only one
         # caller can win this compare-and-set; a loser means the token was
         # reused and the whole family must be burned.
         new_pair = self.token_service.generate_pair()
         token_id = new_id()
+        now = datetime.now(UTC)
         new_record = RefreshToken(
             id=token_id,
             user_id=existing.user_id,
+            session_id=session_id,
             token_hash=new_pair.hashed,
             family_id=existing.family_id,
-            expires_at=datetime.now(UTC) + timedelta(seconds=self.config.max_age_seconds),
+            family_created_at=existing.family_created_at,
+            expires_at=self.expiry_for(now, existing.family_created_at),
             ip_address=ip_address,
             user_agent=user_agent,
         )
         rotated = await self.adapter.rotate_refresh_token(
             current_token_id=existing.id,
             new_token=new_record,
-            consumed_at=datetime.now(UTC),
+            consumed_at=now,
         )
         if rotated is None:
             await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
@@ -159,3 +182,12 @@ class RefreshTokenService:
 
     async def revoke_for_user(self, user_id: str) -> int:
         return await self.adapter.delete_refresh_tokens_for_user(user_id)
+
+    async def revoke_for_user_except_session(self, user_id: str, session_id: str | None) -> int:
+        return await self.adapter.delete_refresh_tokens_for_user(
+            user_id,
+            except_session_id=session_id,
+        )
+
+    async def revoke_for_session(self, session_id: str) -> int:
+        return await self.adapter.delete_refresh_tokens_for_session(session_id)

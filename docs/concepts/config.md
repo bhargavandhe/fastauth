@@ -17,7 +17,7 @@ final values you pass to the constructor.
 from pydantic import SecretStr
 from datetime import timedelta
 from pymongo import AsyncMongoClient
-from fastauth import FastAuthOptions
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo, postgres
 from fastauth.options import (
     AppOptions,
@@ -39,12 +39,12 @@ options = FastAuthOptions(
         collection_prefix="tenant_",
         collection_suffix="_auth",
     ),
-    plugins=[email_password()],
     app=AppOptions(base_url="https://app.example.com"),
     session=SessionOptions(expires_in=timedelta(days=7)),
     cookie=CookieOptions(same_site="strict"),
     rate_limit=RateLimitOptions(storage="database"),
 )
+auth = FastAuth(options, plugins=[email_password()])
 print(options.database.collection_prefix)
 
 postgres_options = FastAuthOptions(
@@ -54,8 +54,8 @@ postgres_options = FastAuthOptions(
         table_prefix="fastauth_",
         table_suffix="_auth",
     ),
-    plugins=[email_password()],
 )
+postgres_auth = FastAuth(postgres_options, plugins=[email_password()])
 print(postgres_options.database.url)
 print(postgres_options.database.table_suffix)
 ```
@@ -71,7 +71,7 @@ configuration layer and pass the resulting strings into `FastAuthOptions`.
 |---|---|
 | `secret_key`, `secret_key_rotation` | HMAC for signed cookies and KEK for JWKS private keys; rotation list is checked on decrypt. |
 | `app` | Application name, base URL, base path. |
-| `session` | DB-backed vs JWT strategy, expiry, idle timeout, refresh rotation. |
+| `session` | DB-backed vs JWT strategy, expiry, idle timeout. |
 | `cookie` | Cookie name, path, domain, `Secure`/`HttpOnly`/`SameSite` attributes. |
 | `password` | Argon2id memory/time/parallelism, minimum password length. |
 | `email` | From-address, subject lines, optional template directory. |
@@ -83,11 +83,14 @@ configuration layer and pass the resulting strings into `FastAuthOptions`.
 | `csrf` | Trusted origins, relative-path policy, enable/disable. |
 | `lockout` | Account-lockout policy (`max_failures`, `window`). |
 | `database` | Database option object from `memory()`, `mongo(database)`, `postgres(url)`, or `custom(adapter)`. |
-| `plugins` | Provider/plugin list such as `email_password()`, `jwt()`, or `openapi()`. |
-| `advanced` | IP header lookup order, IPv6 subnet bucket size, `__Secure-` cookie prefix flag. |
+| `proxy` | Trusted reverse proxies and the forwarding header to honor for client IP resolution. |
+| `advanced` | IPv6 subnet bucket size and `__Secure-` cookie prefix flag. |
 
 Pass any subset of sections to override the defaults; omitted sections get
 the `BaseModel` `default_factory` values.
+
+Plugins are behavior objects passed to `FastAuth(..., plugins=[...])`, not a
+`FastAuthOptions` field. Plugin presence is the feature switch.
 
 `database` defaults to `memory()`. For persistent deployments, pass
 `mongo(database)` or `postgres(url)` explicitly.
@@ -127,6 +130,6 @@ from pydantic import SecretStr
 options = FastAuthOptions(
     secret_key=SecretStr(app_settings.auth_secret),
     database=mongo(app_settings.mongo_database),
-    plugins=[email_password()],
 )
+auth = FastAuth(options, plugins=[email_password()])
 ```

@@ -44,7 +44,7 @@ async def test_change_password_round_trip(signed_in: httpx.AsyncClient) -> None:
     assert good.status_code == 200
 
 
-async def test_change_password_revokes_existing_refresh_tokens(
+async def test_change_password_keeps_current_refresh_token(
     client: httpx.AsyncClient,
 ) -> None:
     sign_up = await client.post(
@@ -70,8 +70,8 @@ async def test_change_password_revokes_existing_refresh_tokens(
         "/auth/refresh",
         json={"refreshToken": refresh_token, "delivery": {"kind": "bearer"}},
     )
-    assert refresh.status_code == 400
-    assert refresh.json()["code"] == "TOKEN_INVALID"
+    assert refresh.status_code == 200
+    assert refresh.json()["credentials"]["refreshToken"] is not None
 
 
 async def test_change_password_clears_lockout_for_email_and_username(

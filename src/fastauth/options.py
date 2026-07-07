@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal, Protocol, cast
 
 from fastapi import FastAPI
 from pydantic import (
@@ -13,6 +13,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    IPvAnyNetwork,
     PostgresDsn,
     SecretStr,
     field_validator,
@@ -32,7 +33,9 @@ __all__ = [
     "CookieOptions",
     "CsrfOptions",
     "CustomDatabaseOptions",
+    "CustomDatabaseRuntime",
     "DatabaseOptions",
+    "DatabaseRuntime",
     "DeleteAccountOptions",
     "EmailChangeOptions",
     "EmailOptions",
@@ -40,10 +43,14 @@ __all__ = [
     "FastAuthOptions",
     "LockoutOptions",
     "MemoryDatabaseOptions",
+    "MemoryDatabaseRuntime",
     "MongoDatabaseOptions",
+    "MongoDatabaseRuntime",
     "PasswordOptions",
     "PasswordResetOptions",
     "PostgresDatabaseOptions",
+    "PostgresDatabaseRuntime",
+    "ProxyOptions",
     "RateLimitOptions",
     "RefreshTokenOptions",
     "SecurityHeadersOptions",
@@ -129,7 +136,8 @@ class EmailOptions(OptionsSection):
 class EmailVerificationOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
     require_verified_for_sign_in: bool = False
-    base_verify_url: AnyHttpUrl = "http://localhost:8000/auth/verify-email"  # type: ignore[assignment]
+    callback_path: str = Field(default="/auth/verify-email", pattern=r"^/")
+    callback_url_override: AnyHttpUrl | None = None
 
     @property
     def token_ttl_minutes(self) -> int:
@@ -138,7 +146,8 @@ class EmailVerificationOptions(OptionsSection):
 
 class PasswordResetOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=30), gt=timedelta(0))
-    base_reset_url: AnyHttpUrl = "http://localhost:8000/auth/reset-password"  # type: ignore[assignment]
+    callback_path: str = Field(default="/auth/reset-password", pattern=r"^/")
+    callback_url_override: AnyHttpUrl | None = None
 
     @property
     def token_ttl_minutes(self) -> int:
@@ -147,7 +156,8 @@ class PasswordResetOptions(OptionsSection):
 
 class EmailChangeOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
-    base_confirm_url: AnyHttpUrl = "http://localhost:8000/auth/change-email/confirm"  # type: ignore[assignment]
+    callback_path: str = Field(default="/auth/change-email/confirm", pattern=r"^/")
+    callback_url_override: AnyHttpUrl | None = None
     subject: str = Field(default="Confirm your new email address", min_length=1, max_length=200)
 
     @property
@@ -157,7 +167,8 @@ class EmailChangeOptions(OptionsSection):
 
 class DeleteAccountOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
-    base_confirm_url: AnyHttpUrl = "http://localhost:8000/auth/delete-account/confirm"  # type: ignore[assignment]
+    callback_path: str = Field(default="/auth/delete-account/confirm", pattern=r"^/")
+    callback_url_override: AnyHttpUrl | None = None
     subject: str = Field(default="Confirm account deletion", min_length=1, max_length=200)
 
     @property
@@ -220,18 +231,126 @@ class SecurityHeadersOptions(OptionsSection):
 
 
 class AdvancedOptions(OptionsSection):
-    ip_address_headers: tuple[str, ...] = Field(default_factory=lambda: ("x-forwarded-for",))
     ipv6_subnet: int = Field(default=64, ge=1, le=128)
     cookie_secure_prefix: bool = True
+
+
+class ProxyOptions(OptionsSection):
+    trusted_proxies: tuple[IPvAnyNetwork, ...] = Field(default_factory=tuple)
+    forwarded_header: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class DatabaseRuntime(Protocol):
+    @property
+    def adapter(self) -> DatabaseAdapter: ...
+
+    async def startup(self, auth: object, app: FastAPI) -> None: ...
+    async def shutdown(self) -> None: ...
+
+
+class MemoryDatabaseRuntime:
+    def __init__(self) -> None:
+        from fastauth.storage.memory import InMemoryAdapter
+
+        self.adapter = InMemoryAdapter()
+
+    async def startup(self, auth: object, app: FastAPI) -> None:
+        del auth, app
+
+    async def shutdown(self) -> None:
+        return None
+
+
+class MongoDatabaseRuntime:
+    def __init__(
+        self,
+        database: object,
+        *,
+        collection_prefix: str,
+        collection_suffix: str,
+    ) -> None:
+        from fastauth.storage.beanie import BeanieAdapter
+
+        self.database = database
+        self.collection_prefix = collection_prefix
+        self.collection_suffix = collection_suffix
+        self.adapter = BeanieAdapter(
+            database,  # type: ignore[arg-type]
+            collection_prefix=collection_prefix,
+            collection_suffix=collection_suffix,
+        )
+
+    async def startup(self, auth: object, app: FastAPI) -> None:
+        del auth, app
+        from fastauth.storage.beanie.documents import init_beanie_documents
+
+        await init_beanie_documents(
+            self.database,  # type: ignore[arg-type]
+            collection_prefix=self.collection_prefix,
+            collection_suffix=self.collection_suffix,
+        )
+
+    async def shutdown(self) -> None:
+        return None
+
+
+class PostgresDatabaseRuntime:
+    def __init__(
+        self,
+        adapter: DatabaseAdapter,
+        *,
+        migration_mode: Literal["apply", "check", "disabled"],
+    ) -> None:
+        self.adapter = adapter
+        self.migration_mode = migration_mode
+
+    async def startup(self, auth: object, app: FastAPI) -> None:
+        del auth, app
+        if self.migration_mode == "apply":
+            await self.adapter.apply_migrations()  # type: ignore[attr-defined]
+        elif self.migration_mode == "check":
+            await self.adapter.assert_schema_current()  # type: ignore[attr-defined]
+
+    async def shutdown(self) -> None:
+        engine = getattr(self.adapter, "engine", None)
+        if engine is not None:
+            await engine.dispose()
+
+
+class CustomDatabaseRuntime:
+    def __init__(
+        self,
+        adapter: DatabaseAdapter,
+        lifespan: Callable[[object], Callable[[FastAPI], AbstractAsyncContextManager[None]]]
+        | None,
+    ) -> None:
+        self.adapter = adapter
+        self.lifespan = lifespan
+        self.context: AbstractAsyncContextManager[None] | None = None
+
+    async def startup(self, auth: object, app: FastAPI) -> None:
+        if self.lifespan is None:
+            return
+        self.context = self.lifespan(auth)(app)
+        await self.context.__aenter__()
+
+    async def shutdown(self) -> None:
+        if self.context is None:
+            return
+        try:
+            await self.context.__aexit__(None, None, None)
+        finally:
+            self.context = None
 
 
 class MemoryDatabaseOptions(OptionsSection):
     kind: Literal["memory"] = "memory"
 
     def build_adapter(self) -> DatabaseAdapter:
-        from fastauth.storage.memory import InMemoryAdapter
+        return self.build_runtime().adapter
 
-        return InMemoryAdapter()
+    def build_runtime(self) -> DatabaseRuntime:
+        return MemoryDatabaseRuntime()
 
     def backend_kind(self) -> DatabaseBackendKind:
         return DatabaseBackendKind.MEMORY
@@ -251,10 +370,11 @@ class MongoDatabaseOptions(OptionsSection):
         return value
 
     def build_adapter(self) -> DatabaseAdapter:
-        from fastauth.storage.beanie import BeanieAdapter
+        return self.build_runtime().adapter
 
-        return BeanieAdapter(
-            self.database,  # type: ignore[arg-type]
+    def build_runtime(self) -> DatabaseRuntime:
+        return MongoDatabaseRuntime(
+            self.database,
             collection_prefix=self.collection_prefix,
             collection_suffix=self.collection_suffix,
         )
@@ -271,12 +391,18 @@ class PostgresDatabaseOptions(OptionsSection):
     migration_mode: Literal["apply", "check", "disabled"] = "apply"
 
     def build_adapter(self) -> DatabaseAdapter:
+        return self.build_runtime().adapter
+
+    def build_runtime(self) -> DatabaseRuntime:
         from fastauth.storage.postgres import PostgresAdapter
 
-        return PostgresAdapter.from_url(
-            str(self.url),
-            table_prefix=self.table_prefix,
-            table_suffix=self.table_suffix,
+        return PostgresDatabaseRuntime(
+            PostgresAdapter.from_url(
+                str(self.url),
+                table_prefix=self.table_prefix,
+                table_suffix=self.table_suffix,
+            ),
+            migration_mode=self.migration_mode,
         )
 
     def backend_kind(self) -> DatabaseBackendKind:
@@ -302,6 +428,9 @@ class CustomDatabaseOptions(OptionsSection):
 
     def build_adapter(self) -> DatabaseAdapter:
         return self.adapter
+
+    def build_runtime(self) -> DatabaseRuntime:
+        return CustomDatabaseRuntime(self.adapter, self.lifespan)
 
     def backend_kind(self) -> DatabaseBackendKind:
         return self.backend
@@ -338,6 +467,7 @@ class FastAuthOptions(OptionsModel):
         default_factory=lambda: SecurityHeadersOptions(),
     )
     advanced: AdvancedOptions = Field(default_factory=lambda: AdvancedOptions())
+    proxy: ProxyOptions = Field(default_factory=lambda: ProxyOptions())
 
     @field_validator("secret_key", mode="before")
     @classmethod
@@ -352,3 +482,32 @@ class FastAuthOptions(OptionsModel):
         if isinstance(value, list):
             return tuple(cast(list[SecretStr], value))
         return value
+
+    @model_validator(mode="after")
+    def validate_security_configuration(self) -> FastAuthOptions:
+        secret_value = self.secret_key.get_secret_value()
+        if len(secret_value.encode("utf-8")) < 32:
+            raise ValueError("secret_key must contain at least 32 bytes")
+
+        if self.cookie.same_site == "none" and not self.cookie.secure:
+            raise ValueError("SameSite=None requires secure cookies")
+
+        if self.deployment != "production":
+            return self
+
+        if isinstance(self.database, MemoryDatabaseOptions):
+            raise ValueError("memory database is not allowed in production")
+
+        if self.app.base_url.scheme != "https":
+            raise ValueError("production base_url must use HTTPS")
+
+        if not self.cookie.secure:
+            raise ValueError("production cookies must be secure")
+
+        if (
+            isinstance(self.database, PostgresDatabaseOptions)
+            and self.database.migration_mode == "apply"
+        ):
+            raise ValueError("production should use migration_mode='check'")
+
+        return self

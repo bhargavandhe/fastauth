@@ -28,7 +28,7 @@ For example, build config from values your application already owns:
 from pydantic import SecretStr
 from pymongo import AsyncMongoClient
 
-from fastauth import FastAuthOptions
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
 from fastauth.providers import email_password
 
@@ -42,8 +42,8 @@ options = FastAuthOptions(
         collection_prefix="tenant_",
         collection_suffix="_auth",
     ),
-    plugins=[email_password()],
 )
+auth = FastAuth(options, plugins=[email_password()])
 ```
 
 ## Toolchain commands

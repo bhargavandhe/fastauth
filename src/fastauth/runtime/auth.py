@@ -14,10 +14,7 @@ from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
 from fastauth.options import (
-    CustomDatabaseOptions,
     FastAuthOptions,
-    MongoDatabaseOptions,
-    PostgresDatabaseOptions,
 )
 from fastauth.plugins.base import Plugin, PluginRegistry
 from fastauth.runtime.api import AuthApi
@@ -25,7 +22,7 @@ from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks
 from fastauth.security.lockout import AccountLockoutTracker
-from fastauth.security.passwords import Argon2idHasher, PasswordHasher
+from fastauth.security.passwords import Argon2idHasher, CredentialService, PasswordHasher
 from fastauth.security.rate_limit import (
     DatabaseRateLimitStorage,
     MemoryRateLimitStorage,
@@ -58,8 +55,10 @@ class FastAuth:
         self.options = options
         self.plugins = tuple(plugins)
         config = options
-        adapter = options.database.build_adapter()
+        self.database_runtime = options.database.build_runtime()
+        adapter = self.database_runtime.adapter
 
+        credential_service = CredentialService(config.password)
         password_hasher = password_hasher or Argon2idHasher(config.password)
         token_service = token_service or TokenService()
         email_sender = email_sender or ConsoleEmailSender()
@@ -158,6 +157,7 @@ class FastAuth:
             config=config,
             adapter=adapter,
             session_strategy=session_strategy,
+            credential_service=credential_service,
             password_hasher=password_hasher,
             token_service=token_service,
             email_sender=email_sender,
@@ -208,40 +208,43 @@ class FastAuth:
     @asynccontextmanager
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
         """ASGI lifespan for storage bootstrap plus plugin startup/shutdown hooks."""
-        if isinstance(self.options.database, MongoDatabaseOptions):
-            from fastauth.storage.beanie.documents import init_beanie_documents
-
-            await init_beanie_documents(
-                self.options.database.database,  # type: ignore[arg-type]
-                collection_prefix=self.options.database.collection_prefix,
-                collection_suffix=self.options.database.collection_suffix,
-            )
-        if isinstance(self.options.database, PostgresDatabaseOptions):
-            adapter = self.context.adapter
-            if self.options.database.migration_mode == "apply":
-                await adapter.apply_migrations()  # type: ignore[attr-defined]
-            elif self.options.database.migration_mode == "check":
-                await adapter.assert_schema_current()  # type: ignore[attr-defined]
-        if (
-            isinstance(self.options.database, CustomDatabaseOptions)
-            and self.options.database.lifespan
-        ):
-            async with self.options.database.lifespan(self)(app or FastAPI()):
-                async with self.plugin_lifespan():
-                    yield
-            return
-        async with self.plugin_lifespan():
-            yield
+        app_instance = app or FastAPI()
+        await self.database_runtime.startup(self, app_instance)
+        try:
+            async with self.plugin_lifespan():
+                yield
+        finally:
+            await self.database_runtime.shutdown()
 
     @asynccontextmanager
     async def plugin_lifespan(self) -> AsyncGenerator[None, None]:
-        for plugin in self.context.plugins.plugins:
-            await plugin.lifespan_startup()
+        started: list[Plugin] = []
+        primary_error: BaseException | None = None
+        shutdown_errors: list[BaseException] = []
+
         try:
-            yield
-        finally:
             for plugin in self.context.plugins.plugins:
+                await plugin.lifespan_startup()
+                started.append(plugin)
+            yield
+        except BaseException as exc:
+            primary_error = exc
+
+        for plugin in reversed(started):
+            try:
                 await plugin.lifespan_shutdown()
+            except BaseException as exc:
+                shutdown_errors.append(exc)
+
+        if primary_error is not None and shutdown_errors:
+            raise BaseExceptionGroup(
+                "plugin lifespan failed",
+                [primary_error, *shutdown_errors],
+            ) from primary_error
+        if primary_error is not None:
+            raise primary_error
+        if shutdown_errors:
+            raise BaseExceptionGroup("plugin shutdown failed", shutdown_errors)
 
     # --- FastAPI dependency callables ---
     #
@@ -316,3 +319,19 @@ class FastAuth:
         """Return the active user as a safe public DTO, or ``None`` for anonymous requests."""
         user = await self.get_optional_current_user(request)
         return user_view(user) if user is not None else None
+
+    async def require_session(self, request: Request) -> SessionContext:
+        """Alias for ``get_current_session``."""
+        return await self.get_current_session(request)
+
+    async def optional_session(self, request: Request) -> SessionContext | None:
+        """Alias for ``get_optional_current_session``."""
+        return await self.get_optional_current_session(request)
+
+    async def require_user(self, request: Request) -> UserView:
+        """Alias for ``get_current_user_view``."""
+        return await self.get_current_user_view(request)
+
+    async def optional_user(self, request: Request) -> UserView | None:
+        """Alias for ``get_optional_current_user_view``."""
+        return await self.get_optional_current_user_view(request)

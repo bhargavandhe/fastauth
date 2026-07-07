@@ -77,11 +77,15 @@ options = FastAuthOptions(
     secret_key=SecretStr("..."),
     delete_account=DeleteAccountOptions(
         expires_in=timedelta(minutes=15),
-        base_confirm_url="https://app.example.com/account/delete/confirm",
+        callback_path="/account/delete/confirm",
         subject="Confirm account deletion",
     ),
 )
 ```
+
+Delete-account and change-email callback links are derived from
+`FastAuthOptions.app.base_url` plus their configured `callback_path`. Use
+`callback_url_override` only for a different callback origin.
 
 Both deletion paths clear the auth session cookie, delete auth-owned user
 state from the adapter, and preserve audit logs.

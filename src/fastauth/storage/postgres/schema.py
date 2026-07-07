@@ -121,8 +121,15 @@ def build_postgres_schema(
             ForeignKey(f"{users.name}.id", ondelete="CASCADE"),
             nullable=False,
         ),
+        Column(
+            "session_id",
+            String(64),
+            ForeignKey(f"{sessions.name}.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         Column("token_hash", String(255), nullable=False, unique=True),
         Column("family_id", String(64), nullable=False),
+        Column("family_created_at", DateTime(timezone=True), nullable=False),
         Column("expires_at", DateTime(timezone=True), nullable=False),
         Column("consumed_at", DateTime(timezone=True), nullable=True),
         Column("replaced_by", String(64), nullable=True),
@@ -130,6 +137,7 @@ def build_postgres_schema(
         Column("user_agent", Text, nullable=True),
         *timestamp_columns(),
         Index(f"{refresh_tokens_name}_user_id_idx", "user_id"),
+        Index(f"{refresh_tokens_name}_session_id_idx", "session_id"),
         Index(f"{refresh_tokens_name}_family_id_idx", "family_id"),
         Index(f"{refresh_tokens_name}_expires_at_idx", "expires_at"),
     )

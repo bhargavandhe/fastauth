@@ -64,10 +64,10 @@ plus lower-level domain/session dependencies for advanced cases:
 
 | Dependency | Returns | On anonymous request |
 |---|---|---|
-| `auth.get_current_user_view` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
-| `auth.get_optional_current_user_view` | `UserView \| None` | returns `None` (never raises) |
-| `auth.get_current_session` | `SessionContext` | raises HTTP 401 |
-| `auth.get_optional_current_session` | `SessionContext \| None` | returns `None` |
+| `auth.require_user` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
+| `auth.optional_user` | `UserView \| None` | returns `None` (never raises) |
+| `auth.require_session` | `SessionContext` | raises HTTP 401 |
+| `auth.optional_session` | `SessionContext \| None` | returns `None` |
 
 Both cookie and `Authorization: Bearer` transports are honoured automatically.
 
@@ -77,19 +77,19 @@ Both cookie and `Authorization: Bearer` transports are honoured automatically.
 # Style 1 — `Depends` as default value (always works, even with
 # `from __future__ import annotations`):
 from fastapi import Depends
-from fastauth.api.responses import UserView
+from fastauth import UserView
 
 @app.get("/me")
-async def me(user: UserView = Depends(auth.get_current_user_view)) -> UserView:
+async def me(user: UserView = Depends(auth.require_user)) -> UserView:
     return user
 
 # Style 2 — `Annotated` type alias (idiomatic, requires `auth` to be a
 # module-level name so PEP 563 string-annotation resolution can find it):
 from typing import Annotated
 from fastapi import Depends
-from fastauth.api.responses import UserView
+from fastauth import UserView
 
-CurrentUser = Annotated[UserView, Depends(auth.get_current_user_view)]
+CurrentUser = Annotated[UserView, Depends(auth.require_user)]
 
 @app.get("/me")
 async def me(user: CurrentUser) -> UserView:

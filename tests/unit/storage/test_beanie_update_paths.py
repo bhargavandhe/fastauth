@@ -95,8 +95,10 @@ from fastauth.storage.beanie.documents import (
             lambda: RefreshTokenDoc.model_construct(
                 id=ObjectId(),
                 user_id=ObjectId(),
+                session_id=ObjectId(),
                 token_hash="refresh-update",
                 family_id=ObjectId(),
+                family_created_at=datetime.now(UTC) - timedelta(days=1),
                 expires_at=datetime.now(UTC) + timedelta(days=1),
                 consumed_at=None,
                 replaced_by=None,
@@ -108,8 +110,10 @@ from fastauth.storage.beanie.documents import (
             lambda doc: RefreshToken(
                 id=str(doc.id),
                 user_id=str(doc.user_id),
+                session_id=str(doc.session_id),
                 token_hash=doc.token_hash,
                 family_id=str(doc.family_id),
+                family_created_at=doc.family_created_at,
                 expires_at=doc.expires_at,
                 consumed_at=doc.consumed_at,
                 replaced_by=None if doc.replaced_by is None else str(doc.replaced_by),

@@ -128,8 +128,10 @@ class SessionDoc(Document):
 class RefreshTokenDoc(Document):
     id: PydanticObjectId | None = Field(default=None, alias="_id")
     user_id: PydanticObjectId
+    session_id: PydanticObjectId
     token_hash: str
     family_id: PydanticObjectId
+    family_created_at: datetime
     expires_at: datetime
     consumed_at: datetime | None = None
     replaced_by: PydanticObjectId | None = None
@@ -143,6 +145,7 @@ class RefreshTokenDoc(Document):
         indexes: ClassVar[list[IndexModel]] = [
             IndexModel("token_hash", unique=True, name="refresh_tokens_token_hash_unique"),
             IndexModel("user_id", name="refresh_tokens_user_id"),
+            IndexModel("session_id", name="refresh_tokens_session_id"),
             IndexModel("family_id", name="refresh_tokens_family_id"),
             IndexModel("expires_at", expireAfterSeconds=0, name="refresh_tokens_ttl"),
         ]
@@ -432,10 +435,11 @@ def from_refresh_token(
     *,
     include_id: bool = True,
 ) -> RefreshTokenDoc:
-    data = token.model_dump(exclude={"id", "user_id", "family_id", "replaced_by"})
+    data = token.model_dump(exclude={"id", "user_id", "session_id", "family_id", "replaced_by"})
     if include_id:
         data["id"] = document_id(token.id)
     data["user_id"] = require_object_id(token.user_id)
+    data["session_id"] = require_object_id(token.session_id)
     data["family_id"] = require_object_id(token.family_id)
     if token.replaced_by is not None:
         data["replaced_by"] = require_object_id(token.replaced_by)
@@ -512,6 +516,7 @@ def to_refresh_token(doc: RefreshTokenDoc) -> RefreshToken:
     if doc.id is not None:
         data["id"] = str(doc.id)
     data["user_id"] = str(doc.user_id)
+    data["session_id"] = str(doc.session_id)
     data["family_id"] = str(doc.family_id)
     if doc.replaced_by is not None:
         data["replaced_by"] = str(doc.replaced_by)

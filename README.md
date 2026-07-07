@@ -46,10 +46,9 @@ standalone app with the same routes and middleware already installed.
 Built deliberately for the **modern Python web stack** — FastAPI + Pydantic
 v2 + async-only + MongoDB or Postgres persistence:
 
-- **Pydantic v2 everywhere.** Every domain model, every request body, every
-  response is a `BaseModel`. No `dataclass`/`NamedTuple`/`TypedDict` smuggled
-  in. Four documented carve-outs for plain dicts (OpenAPI schema, JWK,
-  JWT payload, HTTP headers); everything else is typed.
+- **Pydantic v2 everywhere.** Every public domain model, request body, and
+  response is a `BaseModel`. Runtime wiring may use ordinary Python types
+  internally, but the API boundary stays Pydantic-native.
 - **Async-only.** No sync wrappers, no thread-pool shims. Your event loop
   doesn't get hijacked.
 - **Strict-typed.** `pyright --strict` passes with **0 errors, 0 warnings**.
@@ -166,10 +165,10 @@ Python 3.11+ required. FastAPI 0.115+, Pydantic 2.8+.
 
 ```python
 from fastapi import Depends
-from fastauth.api.responses import UserView
+from fastauth import UserView
 
 @app.get("/me")
-async def me(user: UserView = Depends(auth.get_current_user_view)) -> UserView:
+async def me(user: UserView = Depends(auth.require_user)) -> UserView:
     return user
 ```
 
@@ -178,9 +177,9 @@ Or with the `Annotated` style (FastAPI's idiom):
 ```python
 from typing import Annotated
 from fastapi import Depends
-from fastauth.api.responses import UserView
+from fastauth import UserView
 
-CurrentUser = Annotated[UserView, Depends(auth.get_current_user_view)]
+CurrentUser = Annotated[UserView, Depends(auth.require_user)]
 
 @app.get("/me")
 async def me(user: CurrentUser) -> UserView:
@@ -188,7 +187,7 @@ async def me(user: CurrentUser) -> UserView:
 ```
 
 Cookie auth and `Authorization: Bearer …` both work — fastauth handles either
-transparently. Use `auth.get_optional_current_user` if anonymous requests
+transparently. Use `auth.optional_user` if anonymous requests
 are allowed.
 
 ## Configuration
@@ -250,14 +249,14 @@ Full docs site: `mkdocs serve` from a checkout.
 
 ```
 fastauth/
-├── config.py / exceptions.py          # top-level
+├── options.py / exceptions.py         # top-level
 ├── domain/        # pure data: enums, models, events
 ├── security/      # auth primitives: passwords, tokens, sessions, jwt,
 │                  #                  refresh_tokens, lockout, rate_limit
 ├── storage/       # Core/optional adapter protocols + InMemory/Beanie/Postgres backends
 ├── messaging/     # email + Jinja2 templates
 ├── flows/         # sign-up, sign-in, verification, refresh, …
-├── plugins/       # api_key, jwt, audit_logs, openapi, test_utils
+├── plugins/       # email_password, email_otp, api_key, jwt, audit_logs, openapi, test_utils
 ├── runtime/       # FastAuth, AuthContext, AuthApi, EventBus, hooks
 ├── web/           # FastAPI integration + CSRF + security headers
 └── cli/           # Typer CLI
@@ -265,11 +264,12 @@ fastauth/
 
 ## Status
 
-**v0.1.0** — first release. Coverage spans unit tests, adapter-contract tests,
-integration flows, CLI behavior, and the quickstart example. `pyright --strict`
-is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed feature list.
+**v0.5.0** — current release. Coverage spans unit tests, adapter-contract
+tests, integration flows, CLI behavior, and the quickstart example.
+`pyright --strict` is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed
+feature list.
 
-**Roadmap** (v0.2+):
+**Roadmap**:
 - OAuth providers (Google → GitHub → Apple → Microsoft)
 - 2FA / TOTP
 - Webhooks

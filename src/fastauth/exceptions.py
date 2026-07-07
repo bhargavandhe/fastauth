@@ -15,6 +15,7 @@ __all__ = [
     "DuplicateError",
     "EmailNotVerifiedError",
     "FastAuthError",
+    "FeatureNotEnabledError",
     "HookAbortError",
     "InvalidCredentialsError",
     "InvalidRequestError",
@@ -86,6 +87,14 @@ class InvalidRequestError(FastAuthError):
 
     def __init__(self, *, message: str) -> None:
         super().__init__(message=message)
+
+
+class FeatureNotEnabledError(FastAuthError):
+    default_code = "FEATURE_NOT_ENABLED"
+
+    def __init__(self, *, feature: str) -> None:
+        super().__init__(message=f"{feature} is not enabled")
+        self.feature = feature
 
 
 class InvalidCredentialsError(AuthenticationError):
@@ -185,6 +194,7 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     NotFoundError: HTTPStatus.NOT_FOUND,
     DuplicateError: HTTPStatus.CONFLICT,
     InvalidRequestError: HTTPStatus.BAD_REQUEST,
+    FeatureNotEnabledError: HTTPStatus.NOT_FOUND,
     PasswordAlreadySetError: HTTPStatus.CONFLICT,
     InvalidCredentialsError: HTTPStatus.UNAUTHORIZED,
     EmailNotVerifiedError: HTTPStatus.FORBIDDEN,

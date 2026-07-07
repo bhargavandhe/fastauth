@@ -33,6 +33,8 @@ signing. Duration options are `datetime.timedelta` values — see the
 ```python
 from datetime import timedelta
 
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.jwt import JwtOptions
@@ -40,16 +42,16 @@ from fastauth.providers import email_password, jwt
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[
-            email_password(),
-            jwt(JwtOptions(
-                issuer="https://app.example.com",
-                audience="https://api.example.com",
-                rotation_interval=timedelta(days=30),
-            )),
-        ],
-    )
+    ),
+    plugins=[
+        email_password(),
+        jwt(JwtOptions(
+            issuer="https://app.example.com",
+            audience="https://api.example.com",
+            rotation_interval=timedelta(days=30),
+        )),
+    ],
 )
 ```

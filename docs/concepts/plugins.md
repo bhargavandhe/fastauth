@@ -8,6 +8,7 @@ the hooks you need:
 from typing import ClassVar
 from collections.abc import Sequence
 from datetime import timedelta
+from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.base import EndpointSpec, Plugin
@@ -31,18 +32,18 @@ class HelloPlugin(Plugin):
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[email_password(), HelloPlugin()],
-    )
+    ),
+    plugins=[email_password(), HelloPlugin()],
 )
 ```
 
 `PluginRegistry` validates ids and aggregates `endpoints()`,
 `event_handlers()`, `trusted_origins()`, and `rate_limit_rules()` across the
 installed plugins. Lifespan hooks (`lifespan_startup`, `lifespan_shutdown`)
-run in registration order — see the JWT plugin for an example that
-provisions the initial JWKS key inside `lifespan_startup`.
+start in registration order and shut down in reverse order. If startup fails,
+already-started plugins are shut down before the error is reported.
 
 `EndpointSpec` is only an HTTP route descriptor: method, path, name, tags,
 handler, and request/response models. It does not declare authentication or

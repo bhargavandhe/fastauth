@@ -41,7 +41,6 @@ from fastauth.plugins.base import PluginOptions
 from fastauth.plugins.email_password import (
     EmailPasswordOptions,
     EmailPasswordPlugin,
-    PasswordPolicy,
 )
 
 
@@ -59,7 +58,6 @@ def test_fastauth_class_is_primary_entrypoint_with_explicit_options() -> None:
                 options=EmailPasswordOptions(
                     require_email_verification=True,
                     allow_username_sign_in=False,
-                    password=PasswordPolicy(min_length=12, max_length=128),
                 ),
             ),
         ),
@@ -67,7 +65,8 @@ def test_fastauth_class_is_primary_entrypoint_with_explicit_options() -> None:
 
     assert auth.options.database.kind == "memory"
     plugin = cast(EmailPasswordPlugin, auth.plugins[0])
-    assert plugin.options.password.min_length == 12
+    assert plugin.options.require_email_verification is True
+    assert plugin.options.allow_username_sign_in is False
 
 
 def test_fastauth_options_reject_plugins_and_database_factories_are_not_primary() -> None:
@@ -108,14 +107,18 @@ def test_database_options_are_explicit_discriminated_models() -> None:
         )
 
 
-def test_plugin_options_share_enabled_and_are_frozen() -> None:
+def test_plugin_options_are_strict_and_frozen_without_enabled_flag() -> None:
     options = EmailPasswordOptions()
 
     assert isinstance(options, PluginOptions)
-    assert options.enabled is True
+    assert "enabled" not in EmailPasswordOptions.model_fields
+    assert "password" not in EmailPasswordOptions.model_fields
 
     with pytest.raises(ValidationError):
         options.allow_username_sign_in = False
+
+    with pytest.raises(ValidationError):
+        EmailPasswordOptions.model_validate({"password": {"min_length": 12}})
 
 
 def test_security_sensitive_value_objects_validate_and_serialize() -> None:

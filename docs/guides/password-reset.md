@@ -42,10 +42,14 @@ options = FastAuthOptions(
     # ...
     password_reset=PasswordResetOptions(
         expires_in=timedelta(minutes=30),
-        base_reset_url="https://app.example.com/reset",
+        callback_path="/reset",
     ),
 )
 ```
+
+Callback URLs are derived from `FastAuthOptions.app.base_url` plus
+`callback_path`. Use `callback_url_override` only when the email link must
+point at a different origin.
 
 ## Events
 

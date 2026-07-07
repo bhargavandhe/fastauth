@@ -4,6 +4,8 @@
 `TestHelpers` surface that test code retrieves from the plugin registry:
 
 ```python
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.test_utils import TestUtilsOptions
@@ -11,10 +13,10 @@ from fastauth.providers import email_password, test_utils
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[email_password(), test_utils(TestUtilsOptions(capture_otp=True))],
-    )
+    ),
+    plugins=[email_password(), test_utils(TestUtilsOptions(capture_otp=True))],
 )
 
 helpers = auth.context.plugins.by_id["fastauth-test-utils"].helpers

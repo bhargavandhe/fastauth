@@ -130,8 +130,10 @@ class RefreshToken(FastAuthModel):
 
     id: NonEmptyString = Field(default_factory=new_id)
     user_id: NonEmptyString
+    session_id: NonEmptyString
     token_hash: NonEmptyString
     family_id: NonEmptyString
+    family_created_at: datetime
     expires_at: datetime
     consumed_at: datetime | None = None
     replaced_by: NonEmptyString | None = None
