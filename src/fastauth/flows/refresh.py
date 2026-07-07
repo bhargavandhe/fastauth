@@ -10,7 +10,11 @@ from fastauth.api.commands import (
 )
 from fastauth.api.responses import authentication_response
 from fastauth.domain.models import WireModel
-from fastauth.exceptions import InvalidRequestError, TokenInvalidError
+from fastauth.exceptions import (
+    InvalidRequestError,
+    RefreshSessionConsistencyError,
+    TokenInvalidError,
+)
 from fastauth.flows.credentials import SessionResponse
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
@@ -66,8 +70,13 @@ async def refresh_session(
             ip_address=ip,
             user_agent=user_agent,
         )
-    except Exception:
-        await context.adapter.delete_session(session_context.session.id)
+    except BaseException:
+        try:
+            await context.adapter.delete_session(session_context.session.id)
+        except BaseException as cleanup_error:
+            cleanup_error.add_note(
+                "replacement session cleanup failed after refresh rotation failed"
+            )
         raise
     if new_record.user_id != user.id:
         await context.adapter.delete_session(session_context.session.id)
@@ -75,9 +84,15 @@ async def refresh_session(
     if existing.session_id != session_context.session.id:
         try:
             await context.adapter.delete_session(existing.session_id)
-        except Exception:
-            await context.refresh_token_service.revoke_family(existing.family_id)
-            raise
+        except BaseException as cleanup_error:
+            try:
+                await context.refresh_token_service.revoke_family(existing.family_id)
+            except BaseException as compensation_error:
+                raise BaseExceptionGroup(
+                    "refresh rotation compensation failed",
+                    [cleanup_error, compensation_error],
+                ) from compensation_error
+            raise RefreshSessionConsistencyError() from cleanup_error
     return (
         authentication_response(
             user=user,

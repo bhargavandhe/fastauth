@@ -434,6 +434,12 @@ class PostgresAdapter(
             row_to_refresh_token,
         )
 
+    async def lock_refresh_family(self, connection: AsyncConnection, family_id: str) -> None:
+        lock_value = f"{self.schema.refresh_tokens.name}:{family_id}"
+        await connection.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(lock_value, 0))),
+        )
+
     async def update_refresh_token(self, token: RefreshToken) -> RefreshToken:
         token.updated_at = current_utc_time()
         return await self.update_row_by_id(
@@ -454,6 +460,7 @@ class PostgresAdapter(
         now = current_utc_time()
         new_token.updated_at = now
         async with self.engine.begin() as connection:
+            await self.lock_refresh_family(connection, new_token.family_id)
             result = await connection.execute(
                 update(self.schema.refresh_tokens)
                 .where(
@@ -513,6 +520,7 @@ class PostgresAdapter(
 
     async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
         async with self.engine.begin() as connection:
+            await self.lock_refresh_family(connection, family_id)
             result = await connection.execute(
                 delete(self.schema.refresh_tokens)
                 .where(

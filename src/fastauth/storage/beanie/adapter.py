@@ -401,8 +401,6 @@ class BeanieAdapter:
             return RevokedRefreshFamily(deleted_tokens=0, session_ids=frozenset())
         docs = await self.refresh_token_doc.find({"family_id": oid}).to_list()
         session_ids = frozenset(str(doc.session_id) for doc in docs)
-        result = await self.refresh_token_doc.find({"family_id": oid}).delete()
-        deleted = int(result.deleted_count) if result and result.deleted_count else 0
         session_oids = [
             session_oid
             for session_id in session_ids
@@ -416,6 +414,8 @@ class BeanieAdapter:
                 if session_result and session_result.deleted_count
                 else 0
             )
+        result = await self.refresh_token_doc.find({"family_id": oid}).delete()
+        deleted = int(result.deleted_count) if result and result.deleted_count else 0
         return RevokedRefreshFamily(
             deleted_tokens=deleted,
             deleted_sessions=deleted_sessions,

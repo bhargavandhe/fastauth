@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 
 import httpx
@@ -19,7 +20,6 @@ from fastauth.api.commands import (
     UpdateUserCommand,
     UserPrincipal,
 )
-from fastauth.api.legacy import UpdateUserCommand as LegacyUpdateUserCommand
 from fastauth.database import memory
 from fastauth.exceptions import FeatureNotEnabledError, InvalidCredentialsError
 from fastauth.messaging.email import EmailMessage
@@ -290,7 +290,12 @@ def test_canonical_principal_commands_do_not_expose_legacy_identity_fields() -> 
     assert ChangePasswordCommand.model_fields["principal"].annotation is SessionPrincipal
 
 
-async def test_legacy_user_commands_emit_deprecation_warning() -> None:
+def test_legacy_user_command_module_is_removed() -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("fastauth.api.legacy")
+
+
+async def test_server_api_requires_canonical_principal_commands() -> None:
     auth = FastAuth(
         FastAuthOptions(secret_key=SecretStr("j" * 64), database=memory()),
         plugins=[email_password()],
@@ -304,10 +309,21 @@ async def test_legacy_user_commands_emit_deprecation_warning() -> None:
     user = await auth.context.adapter.get_user_by_id(signed_up.user.id.root)
     assert user is not None
 
-    with pytest.warns(DeprecationWarning, match="fastauth.api.legacy"):
-        command = LegacyUpdateUserCommand(user=user, name="Legacy")
+    with pytest.raises(ValidationError):
+        UpdateUserCommand.model_validate(
+            {
+                "user": user.model_dump(),
+                "name": "Legacy",
+            }
+        )
 
-    assert command.user.id == signed_up.user.id.root
+    updated = await auth.api.user.update(
+        UpdateUserCommand(
+            principal=UserPrincipal(user_id=signed_up.user.id.root),
+            name="Canonical",
+        )
+    )
+    assert updated.name == "Canonical"
 
 
 async def test_session_principal_rejects_mismatched_user_and_session() -> None:

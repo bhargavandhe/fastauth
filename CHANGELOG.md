@@ -4,21 +4,49 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-08
+
+### Added
+
+- Added a dedicated `RefreshSessionConsistencyError` for refresh rotations
+  that commit a replacement token but require family-wide compensation after
+  previous-session cleanup fails.
+
+### Changed
+
+- Postgres refresh-token rotation and family revocation now acquire the same
+  namespaced transaction advisory lock per family. This serializes rotation
+  against family revocation, but does not claim every bulk refresh-token
+  deletion path is globally race-free.
+- Beanie refresh-family revocation now deletes associated sessions before
+  deleting refresh-token rows, preserving retry state when session deletion
+  fails. MongoDB revocation remains best-effort without transactions.
+- FastAuth lifespan handling now groups body/plugin failures with database
+  shutdown failures only when both occur, and otherwise preserves the original
+  exception or context-manager suppression semantics.
+- Session revocation responses now require explicit `revoked`,
+  `revokedSessions`, and `revokedRefreshTokens` counts and reject inconsistent
+  `revoked`/`revokedSessions` values.
+
+### Removed
+
+- Removed the deprecated `fastauth.api.legacy` command models and all `user=`
+  server API compatibility paths. Server API commands must use
+  `UserPrincipal` or `SessionPrincipal`.
+
 ## [0.7.0] — 2026-07-07
 
 ### Added
 
 - Added `UserPrincipal` and `SessionPrincipal` as the canonical immutable
   server API identity models.
-- Added deprecated `fastauth.api.legacy` command models for temporary `user=`
-  compatibility with `DeprecationWarning`.
 - Added explicit `revokedSessions` and `revokedRefreshTokens` response fields
   to session revocation responses while preserving `revoked`.
 
 ### Changed
 
-- Refresh-token family revocation now happens at the adapter level together
-  with associated database-session revocation.
+- Refresh-token family revocation now happens at the adapter level and revokes
+  associated database sessions where the adapter can do so consistently.
 - Postgres refresh-family deletion now uses `DELETE ... RETURNING session_id`
   to remove the refresh-row race between lookup and deletion.
 - `custom()` now accepts `backend` and `lifespan` keyword arguments.
@@ -540,7 +568,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/bhargavandhe/fastauth/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/bhargavandhe/fastauth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/bhargavandhe/fastauth/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bhargavandhe/fastauth/compare/v0.4.2...v0.5.0

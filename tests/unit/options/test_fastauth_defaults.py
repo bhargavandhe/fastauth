@@ -65,7 +65,7 @@ def test_mongo_database_option_models_collection_affixes() -> None:
             database=database,
             collection_prefix="tenant_",
             collection_suffix="_auth",
-        )
+        ),
     )
 
     assert options.database.kind == "mongo"

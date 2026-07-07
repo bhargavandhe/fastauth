@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from pydantic import model_validator
+
 from fastauth.domain.models import User, WireModel
 from fastauth.exceptions import NotFoundError
 from fastauth.runtime.context import AuthContext
@@ -49,6 +51,12 @@ class RevokeSessionsResponse(WireModel):
     revoked: int
     revoked_sessions: int
     revoked_refresh_tokens: int
+
+    @model_validator(mode="after")
+    def validate_revoked_alias(self) -> RevokeSessionsResponse:
+        if self.revoked != self.revoked_sessions:
+            raise ValueError("revoked must equal revoked_sessions")
+        return self
 
 
 async def list_sessions_for_user(

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from bson import ObjectId
 from pymongo.asynchronous.database import AsyncDatabase
+from pytest import MonkeyPatch
 
 from fastauth.domain.enums import AuditEventType, JwtAlgorithm, ProviderId, VerificationPurpose
 from fastauth.domain.models import (
@@ -60,9 +61,7 @@ class TestBeanieAdapter(AdapterContract):
         custom_user = await beanie_database["tenant_users_auth"].find_one(
             {"_id": ObjectId(user.id)}
         )
-        default_session = await beanie_database["sessions"].find_one(
-            {"_id": ObjectId(session.id)}
-        )
+        default_session = await beanie_database["sessions"].find_one({"_id": ObjectId(session.id)})
         custom_session = await beanie_database["tenant_sessions_auth"].find_one(
             {"_id": ObjectId(session.id)}
         )
@@ -141,6 +140,83 @@ class TestBeanieAdapter(AdapterContract):
         assert audit_doc is not None
         assert isinstance(audit_doc["_id"], ObjectId)
         assert isinstance(audit_doc["user_id"], ObjectId)
+
+    async def test_delete_refresh_token_family_keeps_token_rows_when_session_delete_fails(
+        self,
+        adapter: BeanieAdapter,
+        monkeypatch: MonkeyPatch,
+    ) -> None:
+        user = await adapter.create_user(User(email="family-session-fail@example.com"))
+        session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="family-session-fail-session",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        root_id = new_id()
+        token = await adapter.create_refresh_token(
+            RefreshToken(
+                id=root_id,
+                user_id=user.id,
+                session_id=session.id,
+                token_hash="family-session-fail-root",
+                family_id=root_id,
+                family_created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        original_find = adapter.session_doc.find
+
+        class FailingDeleteQuery:
+            async def delete(self) -> None:
+                raise RuntimeError("session delete failed")
+
+        def failing_find(*args: object, **kwargs: object) -> object:
+            del args, kwargs
+            return FailingDeleteQuery()
+
+        monkeypatch.setattr(adapter.session_doc, "find", failing_find)
+
+        with pytest.raises(RuntimeError, match="session delete failed"):
+            await adapter.delete_refresh_token_family(token.family_id)
+
+        monkeypatch.setattr(adapter.session_doc, "find", original_find)
+        assert await adapter.get_refresh_token_by_hash("family-session-fail-root") is not None
+        assert await adapter.get_session_by_token_hash("family-session-fail-session") is not None
+
+    async def test_delete_refresh_token_family_deletes_sessions_and_tokens(
+        self,
+        adapter: BeanieAdapter,
+    ) -> None:
+        user = await adapter.create_user(User(email="family-delete-success@example.com"))
+        session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="family-delete-success-session",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        root_id = new_id()
+        token = await adapter.create_refresh_token(
+            RefreshToken(
+                id=root_id,
+                user_id=user.id,
+                session_id=session.id,
+                token_hash="family-delete-success-root",
+                family_id=root_id,
+                family_created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+
+        revoked = await adapter.delete_refresh_token_family(token.family_id)
+
+        assert revoked.deleted_tokens == 1
+        assert revoked.deleted_sessions == 1
+        assert revoked.session_ids == frozenset({session.id})
+        assert await adapter.get_refresh_token_by_hash("family-delete-success-root") is None
+        assert await adapter.get_session_by_token_hash("family-delete-success-session") is None
 
     async def test_update_methods_preserve_mongo_objectids(
         self,

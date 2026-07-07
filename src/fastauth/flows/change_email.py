@@ -127,8 +127,7 @@ async def request_email_change(
         override=context.config.email_change.callback_url_override,
     )
     confirm_url = (
-        confirm_base_url
-        + f"?token={quote(pair.plain)}&new_email={quote(request.new_email)}"
+        confirm_base_url + f"?token={quote(pair.plain)}&new_email={quote(request.new_email)}"
     )
     # We reuse the verification template — it shows a verify URL + recipient
     # name and is structurally identical to "click to confirm this email".

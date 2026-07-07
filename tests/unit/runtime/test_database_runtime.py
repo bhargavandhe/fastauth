@@ -174,3 +174,73 @@ async def test_body_and_database_shutdown_failures_are_grouped(
 
     messages = {str(exc) for exc in captured.value.exceptions}
     assert messages == {"body failed", "database shutdown failed"}
+
+
+async def test_chained_body_exception_is_not_grouped_when_database_shutdown_succeeds(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    class SuccessfulShutdownRuntime:
+        adapter = InMemoryAdapter()
+
+        @asynccontextmanager
+        async def lifespan(self, auth: object, app: FastAPI) -> AsyncGenerator[None, None]:
+            del auth, app
+            yield
+
+    def build_runtime(self: MemoryDatabaseOptions) -> SuccessfulShutdownRuntime:
+        del self
+        return SuccessfulShutdownRuntime()
+
+    monkeypatch.setattr(MemoryDatabaseOptions, "build_runtime", build_runtime, raising=False)
+    auth = FastAuth(FastAuthOptions(secret_key=SecretStr("a" * 64)))
+    expected = RuntimeError("outer body failed")
+
+    with pytest.raises(RuntimeError) as captured:
+        async with auth.lifespan(FastAPI()):
+            try:
+                raise ValueError("inner body failed")
+            except ValueError as inner:
+                raise expected from inner
+
+    assert captured.value is expected
+
+
+async def test_database_lifespan_can_suppress_body_exception() -> None:
+    seen: list[tuple[type[BaseException] | None, BaseException | None]] = []
+
+    class SuppressingRuntime:
+        adapter = InMemoryAdapter()
+
+        def lifespan(self, auth: object, app: FastAPI):
+            del auth, app
+
+            class SuppressingContext:
+                async def __aenter__(self) -> None:
+                    return None
+
+                async def __aexit__(
+                    self,
+                    exc_type: type[BaseException] | None,
+                    exc: BaseException | None,
+                    traceback: object | None,
+                ) -> bool:
+                    del traceback
+                    seen.append((exc_type, exc))
+                    return True
+
+            return SuppressingContext()
+
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=CustomDatabaseOptions(adapter=InMemoryAdapter()),
+        )
+    )
+    auth.database_runtime = SuppressingRuntime()
+
+    async with auth.lifespan(FastAPI()):
+        raise ValueError("body failed")
+
+    assert len(seen) == 1
+    assert seen[0][0] is ValueError
+    assert str(seen[0][1]) == "body failed"

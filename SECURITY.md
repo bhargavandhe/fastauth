@@ -8,7 +8,8 @@ We do not accept security disclosures via public GitHub issues.
 
 | Version | Supported |
 |---------|-----------|
-| 0.7.x   | yes       |
+| 0.8.x   | yes       |
+| 0.7.x   | no        |
 | 0.6.x   | no        |
 | 0.5.x   | no        |
 | 0.4.x   | no        |

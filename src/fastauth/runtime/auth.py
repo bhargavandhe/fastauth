@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from typing import cast
 
 from fastapi import FastAPI, Request, Response
@@ -65,7 +65,7 @@ class FastAuth:
         password_hasher: PasswordHasher | None = None,
         session_strategy: SessionStrategy | None = None,
         token_service: TokenService | None = None,
-        ) -> None:
+    ) -> None:
         self.options = options
         self.plugins = tuple(plugins)
         config = options
@@ -225,22 +225,33 @@ class FastAuth:
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
         """ASGI lifespan for storage bootstrap plus plugin startup/shutdown hooks."""
         app_instance = app or FastAPI()
+        database_context = self.database_runtime.lifespan(self, app_instance)
+        await database_context.__aenter__()
+        body_error: BaseException | None = None
         try:
-            async with AsyncExitStack() as stack:
-                await stack.enter_async_context(
-                    self.database_runtime.lifespan(self, app_instance),
-                )
-                await stack.enter_async_context(self.plugin_lifespan())
+            async with self.plugin_lifespan():
                 yield
-        except BaseExceptionGroup:
-            raise
         except BaseException as exc:
-            if exc.__context__ is not None:
+            body_error = exc
+            suppressed = False
+            try:
+                suppressed = bool(
+                    await database_context.__aexit__(
+                        type(exc),
+                        exc,
+                        exc.__traceback__,
+                    )
+                )
+            except BaseException as shutdown_error:
                 raise BaseExceptionGroup(
                     "fastauth lifespan failed",
-                    [exc.__context__, exc],
-                ) from exc.__context__
-            raise
+                    [exc, shutdown_error],
+                ) from shutdown_error
+            if not suppressed:
+                raise
+        finally:
+            if body_error is None:
+                await database_context.__aexit__(None, None, None)
 
     @asynccontextmanager
     async def plugin_lifespan(self) -> AsyncGenerator[None, None]:

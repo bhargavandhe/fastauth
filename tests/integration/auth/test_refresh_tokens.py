@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 
 import httpx
 import pytest
@@ -48,6 +50,12 @@ class FailOnceDeleteSessionAdapter(InMemoryAdapter):
             self.failed_once = True
             raise RuntimeError("old session cleanup failed")
         await super().delete_session(session_id)
+
+
+class FailCompensationAdapter(FailOnceDeleteSessionAdapter):
+    async def delete_refresh_token_family(self, family_id: str):
+        del family_id
+        raise asyncio.CancelledError("family compensation cancelled")
 
 
 @pytest.fixture
@@ -294,15 +302,83 @@ async def test_refresh_revokes_family_when_old_session_cleanup_fails() -> None:
         old_session_id = next(iter(adapter.sessions))
         adapter.fail_session_id = old_session_id
 
-        with pytest.raises(RuntimeError, match="old session cleanup failed"):
+        response = await http.post(
+            "/auth/refresh",
+            json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
+        )
+        assert response.status_code == 500
+        assert response.json()["code"] == "REFRESH_SESSION_CONSISTENCY_ERROR"
+
+    assert adapter.failed_once is True
+    assert adapter.refresh_tokens == {}
+    assert adapter.sessions == {}
+
+
+async def test_refresh_preserves_cleanup_and_compensation_failures() -> None:
+    adapter = FailCompensationAdapter()
+    auth = FastAuth(
+        build_options(adapter),
+        plugins=[email_password()],
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http:
+        _access, refresh = await sign_up_with_tokens(http)
+        adapter.fail_session_id = next(iter(adapter.sessions))
+
+        with pytest.raises(BaseExceptionGroup) as captured:
             await http.post(
                 "/auth/refresh",
                 json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
             )
 
-    assert adapter.failed_once is True
-    assert adapter.refresh_tokens == {}
-    assert adapter.sessions == {}
+    assert type(captured.value) is BaseExceptionGroup
+    assert {str(exc) for exc in captured.value.exceptions} == {
+        "old session cleanup failed",
+        "family compensation cancelled",
+    }
+
+
+async def test_refresh_rotation_cancellation_cleans_replacement_session() -> None:
+    adapter = InMemoryAdapter()
+    auth = FastAuth(
+        build_options(adapter),
+        plugins=[email_password()],
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+
+    async def cancelled_rotate(
+        plain_token: str,
+        *,
+        session_id: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> NoReturn:
+        del plain_token, session_id, ip_address, user_agent
+        raise asyncio.CancelledError()
+
+    auth.context.refresh_token_service.rotate = cancelled_rotate
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http:
+        _access, refresh = await sign_up_with_tokens(http)
+        assert len(adapter.sessions) == 1
+
+        with pytest.raises(asyncio.CancelledError):
+            await http.post(
+                "/auth/refresh",
+                json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
+            )
+
+    assert len(adapter.sessions) == 1
 
 
 async def test_refresh_expired_token_returns_400(

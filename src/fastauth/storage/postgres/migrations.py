@@ -43,10 +43,7 @@ async def add_refresh_token_session_fields(
 ) -> None:
     def load_refresh_token_columns(sync_connection: Connection) -> set[str]:
         inspector = inspect(sync_connection)
-        return {
-            column["name"]
-            for column in inspector.get_columns(schema.refresh_tokens.name)
-        }
+        return {column["name"] for column in inspector.get_columns(schema.refresh_tokens.name)}
 
     existing_columns = await connection.run_sync(load_refresh_token_columns)
     missing_session_id = "session_id" not in existing_columns
@@ -62,8 +59,7 @@ async def add_refresh_token_session_fields(
     if missing_session_id:
         await connection.execute(
             DDL(
-                f"ALTER TABLE {refresh_tokens} "
-                "ADD COLUMN session_id VARCHAR(64) NOT NULL",
+                f"ALTER TABLE {refresh_tokens} ADD COLUMN session_id VARCHAR(64) NOT NULL",
             ),
         )
     if missing_family_created_at:
@@ -105,8 +101,7 @@ async def decouple_refresh_tokens_from_sessions(
     for constraint_name in constraint_names:
         await connection.execute(
             DDL(
-                f"ALTER TABLE {refresh_tokens} "
-                f"DROP CONSTRAINT IF EXISTS {quote(constraint_name)}",
+                f"ALTER TABLE {refresh_tokens} DROP CONSTRAINT IF EXISTS {quote(constraint_name)}",
             ),
         )
 
@@ -138,6 +133,4 @@ def pending_postgres_migrations(current_version: int) -> list[PostgresMigration]
             "Postgres fastauth schema is newer than this fastauth version; "
             "upgrade fastauth before startup."
         )
-    return [
-        migration for migration in POSTGRES_MIGRATIONS if migration.version > current_version
-    ]
+    return [migration for migration in POSTGRES_MIGRATIONS if migration.version > current_version]

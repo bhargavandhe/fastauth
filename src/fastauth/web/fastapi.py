@@ -94,10 +94,7 @@ def forwarded_header_values(header_name: str, header_value: str) -> list[str]:
 
 
 def is_trusted_proxy(ip_address_value: IpAddress, context: AuthContext) -> bool:
-    return any(
-        ip_address_value in network
-        for network in context.config.proxy.trusted_proxies
-    )
+    return any(ip_address_value in network for network in context.config.proxy.trusted_proxies)
 
 
 def resolve_client_ip(request: Request, context: AuthContext) -> IpAddress | None:
