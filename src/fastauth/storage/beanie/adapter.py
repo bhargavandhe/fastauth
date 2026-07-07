@@ -50,6 +50,7 @@ from fastauth.domain.models import (
     Verification,
 )
 from fastauth.exceptions import DuplicateError, NotFoundError
+from fastauth.storage.base import RevokedRefreshFamily
 from fastauth.storage.beanie.documents import (
     AccountDoc,
     ApiKeyDoc,
@@ -392,11 +393,17 @@ class BeanieAdapter:
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
+        return (await self.delete_refresh_token_family(family_id)).deleted_tokens
+
+    async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
         oid = to_object_id_or_none(family_id)
         if oid is None:
-            return 0
+            return RevokedRefreshFamily(deleted_tokens=0, session_ids=frozenset())
+        docs = await self.refresh_token_doc.find({"family_id": oid}).to_list()
+        session_ids = frozenset(str(doc.session_id) for doc in docs)
         result = await self.refresh_token_doc.find({"family_id": oid}).delete()
-        return int(result.deleted_count) if result and result.deleted_count else 0
+        deleted = int(result.deleted_count) if result and result.deleted_count else 0
+        return RevokedRefreshFamily(deleted_tokens=deleted, session_ids=session_ids)
 
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:

@@ -18,6 +18,7 @@ from fastauth.domain.models import (
     Verification,
 )
 from fastauth.exceptions import DuplicateError, NotFoundError
+from fastauth.storage.base import RevokedRefreshFamily
 
 __all__ = ["InMemoryAdapter"]
 
@@ -212,11 +213,15 @@ class InMemoryAdapter:
             return len(doomed)
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
+        return (await self.delete_refresh_token_family(family_id)).deleted_tokens
+
+    async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
         async with self.lock:
             doomed = [tid for tid, tok in self.refresh_tokens.items() if tok.family_id == family_id]
+            session_ids = frozenset(self.refresh_tokens[tid].session_id for tid in doomed)
             for tid in doomed:
                 del self.refresh_tokens[tid]
-            return len(doomed)
+            return RevokedRefreshFamily(deleted_tokens=len(doomed), session_ids=session_ids)
 
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:

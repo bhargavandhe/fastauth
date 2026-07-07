@@ -4,6 +4,37 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-07
+
+### Added
+
+- Added `AuthPrincipal` for immutable server API caller identity.
+- Added refresh-family revocation results so reuse detection can revoke
+  associated database sessions.
+- Added production validation for rotation secrets, custom memory backends, and
+  HTTP callback URL overrides.
+
+### Changed
+
+- Email/password TTLs and email-verification requirements now have one runtime
+  source of truth in global flow options.
+- Refresh rotation no longer leaves unbounded visible database sessions.
+- Database runtime lifecycle now uses async context managers and unwinds through
+  `AsyncExitStack`.
+- Email/password route handlers are split out of the provider options module
+  into typed endpoint groups.
+- Username validation now uses one shared constrained value type across domain,
+  HTTP, and server API models.
+
+### Fixed
+
+- `auth.api.sign_in.username()` now respects
+  `EmailPasswordOptions.allow_username_sign_in=False`.
+- FastAuth dependency errors installed through `auth.mount(app)` now return the
+  canonical `{code, message}` response shape.
+- Local HTTP quickstart now explicitly disables secure cookies only for local
+  development.
+
 ## [0.5.0] — 2026-07-07
 
 ### Added
@@ -480,7 +511,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/bhargavandhe/fastauth/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bhargavandhe/fastauth/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/bhargavandhe/fastauth/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/bhargavandhe/fastauth/compare/v0.4.0...v0.4.1

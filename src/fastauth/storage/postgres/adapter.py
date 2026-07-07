@@ -36,6 +36,7 @@ from fastauth.storage.base import (
     BaseDatabaseAdapter,
     JwksKeyStore,
     RateLimitStore,
+    RevokedRefreshFamily,
 )
 from fastauth.storage.postgres.migrations import (
     CURRENT_SCHEMA_VERSION,
@@ -508,13 +509,25 @@ class PostgresAdapter(
         return int(result.rowcount or 0)
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
+        return (await self.delete_refresh_token_family(family_id)).deleted_tokens
+
+    async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
         async with self.engine.begin() as connection:
+            session_result = await connection.execute(
+                select(self.schema.refresh_tokens.c.session_id).where(
+                    self.schema.refresh_tokens.c.family_id == family_id,
+                ),
+            )
+            session_ids = frozenset(row[0] for row in session_result)
             result = await connection.execute(
                 delete(self.schema.refresh_tokens).where(
                     self.schema.refresh_tokens.c.family_id == family_id,
                 ),
             )
-        return int(result.rowcount or 0)
+        return RevokedRefreshFamily(
+            deleted_tokens=int(result.rowcount or 0),
+            session_ids=session_ids,
+        )
 
     async def create_account(self, account: Account) -> Account:
         return await self.insert_row(

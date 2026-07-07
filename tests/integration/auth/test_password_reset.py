@@ -13,8 +13,13 @@ from fastauth.database import custom
 from fastauth.domain.enums import VerificationPurpose
 from fastauth.domain.events import PasswordResetRequested
 from fastauth.messaging.email import ConsoleEmailSender
-from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
-from fastauth.plugins.email_password import EmailPasswordOptions
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    FastAuthOptions,
+    PasswordResetOptions,
+    RateLimitOptions,
+)
 from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
@@ -150,7 +155,7 @@ async def test_reset_revokes_existing_refresh_tokens(
     assert refresh.json()["code"] == "TOKEN_INVALID"
 
 
-async def test_email_password_password_reset_ttl_option_controls_expiry() -> None:
+async def test_global_password_reset_ttl_option_controls_expiry() -> None:
     adapter = InMemoryAdapter()
     email_outbox = ConsoleEmailSender()
     auth = FastAuth(
@@ -160,10 +165,9 @@ async def test_email_password_password_reset_ttl_option_controls_expiry() -> Non
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
+            password_reset=PasswordResetOptions(expires_in=timedelta(minutes=7)),
         ),
-        plugins=[
-            email_password(EmailPasswordOptions(password_reset_expires_in=timedelta(minutes=7)))
-        ],
+        plugins=[email_password()],
         email_sender=email_outbox,
     )
     app = FastAPI(lifespan=auth.lifespan)

@@ -14,7 +14,7 @@ from fastauth.domain.enums import (
     ProviderId,
     VerificationPurpose,
 )
-from fastauth.domain.value_objects import NonEmptyString, normalize_email
+from fastauth.domain.value_objects import NonEmptyString, Username, normalize_email
 
 __all__ = [
     "Account",
@@ -77,7 +77,7 @@ class WireModel(BaseModel):
 class User(FastAuthModel):
     id: NonEmptyString = Field(default_factory=new_id)
     email: EmailStr
-    username: str | None = None
+    username: Username | None = None
     name: str | None = None
     image: str | None = None
     email_verified: bool = False

@@ -26,7 +26,7 @@ from fastauth.domain.events import (
     UserSignedUp,
 )
 from fastauth.domain.models import Account, User, WireModel
-from fastauth.domain.value_objects import normalize_email
+from fastauth.domain.value_objects import Username, normalize_email
 from fastauth.exceptions import EmailNotVerifiedError, InvalidCredentialsError, InvalidRequestError
 from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
@@ -138,7 +138,7 @@ class SignUpEmailRequest(WireModel):
     email: EmailStr
     password: SecretStr
     name: str | None = None
-    username: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_.-]{3,32}$")
+    username: Username | None = None
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
     @field_validator("email", mode="before")
@@ -161,7 +161,7 @@ class SignInEmailRequest(WireModel):
 
 class SignInUsernameRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
-    username: str
+    username: Username
     password: SecretStr
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
@@ -310,11 +310,7 @@ async def complete_sign_in(
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
 
-    options = email_password_options(context)
-    if (
-        context.config.email_verification.require_verified_for_sign_in
-        or (options is not None and options.require_email_verification)
-    ) and not user.email_verified:
+    if context.config.email_verification.require_verified_for_sign_in and not user.email_verified:
         raise EmailNotVerifiedError()
 
     # Successful sign-in: clear the failure counter so future attempts have

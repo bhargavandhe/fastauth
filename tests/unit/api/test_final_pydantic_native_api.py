@@ -56,7 +56,6 @@ def test_fastauth_class_is_primary_entrypoint_with_explicit_options() -> None:
         plugins=(
             EmailPasswordPlugin(
                 options=EmailPasswordOptions(
-                    require_email_verification=True,
                     allow_username_sign_in=False,
                 ),
             ),
@@ -65,7 +64,6 @@ def test_fastauth_class_is_primary_entrypoint_with_explicit_options() -> None:
 
     assert auth.options.database.kind == "memory"
     plugin = cast(EmailPasswordPlugin, auth.plugins[0])
-    assert plugin.options.require_email_verification is True
     assert plugin.options.allow_username_sign_in is False
 
 
@@ -113,12 +111,19 @@ def test_plugin_options_are_strict_and_frozen_without_enabled_flag() -> None:
     assert isinstance(options, PluginOptions)
     assert "enabled" not in EmailPasswordOptions.model_fields
     assert "password" not in EmailPasswordOptions.model_fields
+    assert "require_email_verification" not in EmailPasswordOptions.model_fields
+    assert "email_verification_expires_in" not in EmailPasswordOptions.model_fields
+    assert "password_reset_expires_in" not in EmailPasswordOptions.model_fields
+    assert "email_change_expires_in" not in EmailPasswordOptions.model_fields
+    assert "delete_account_expires_in" not in EmailPasswordOptions.model_fields
 
     with pytest.raises(ValidationError):
         options.allow_username_sign_in = False
 
     with pytest.raises(ValidationError):
         EmailPasswordOptions.model_validate({"password": {"min_length": 12}})
+    with pytest.raises(ValidationError):
+        EmailPasswordOptions.model_validate({"password_reset_expires_in": "PT7M"})
 
 
 def test_security_sensitive_value_objects_validate_and_serialize() -> None:

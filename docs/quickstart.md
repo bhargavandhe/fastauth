@@ -13,6 +13,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
+from fastauth.options import CookieOptions
 from fastauth.providers import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
@@ -20,6 +21,7 @@ auth = FastAuth(
     FastAuthOptions(
         secret_key=SecretStr(app_secret),
         database=memory(),
+        cookie=CookieOptions(secure=False),
     ),
     plugins=[email_password()],
 )
@@ -35,6 +37,9 @@ middleware already installed.
 
 `memory()` is suitable for tests and local demos. Pick `mongo(database)` or
 `postgres(url)` explicitly for persistent deployments.
+
+`CookieOptions(secure=False)` is only for local HTTP development. Keep secure
+cookies enabled for HTTPS deployments; production validation requires it.
 
 For Postgres, install `fastauth-py[postgres,jwt]` and pass an async
 SQLAlchemy URL or engine explicitly:

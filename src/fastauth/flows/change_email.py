@@ -40,7 +40,6 @@ from fastauth.exceptions import (
 )
 from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse
-from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -109,12 +108,7 @@ async def request_email_change(
 
     # Create the verification record keyed by the NEW email so the confirm
     # endpoint can look it up.
-    options = email_password_options(context)
-    expires_in = (
-        options.email_change_expires_in
-        if options is not None
-        else context.config.email_change.expires_in
-    )
+    expires_in = context.config.email_change.expires_in
     ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     pair = context.token_service.generate_pair()
     await context.adapter.create_verification(

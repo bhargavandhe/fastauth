@@ -23,6 +23,7 @@ __all__ = [
     "TokenHash",
     "UserId",
     "UserMetadata",
+    "Username",
     "VerificationId",
     "VerificationValueHash",
     "normalize_email",
@@ -40,6 +41,16 @@ Sha256Hex = Annotated[
 ]
 
 NonEmptyString = Annotated[str, StringConstraints(strict=True, min_length=1)]
+Username = Annotated[
+    str,
+    StringConstraints(
+        strict=True,
+        strip_whitespace=True,
+        min_length=3,
+        max_length=32,
+        pattern=r"^[a-zA-Z0-9_.-]+$",
+    ),
+]
 
 
 class StringValue(RootModel[str]):

@@ -31,7 +31,6 @@ from fastauth.flows.credentials import (
     record_failure_and_maybe_emit,
     validate_password_policy,
 )
-from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -218,12 +217,7 @@ async def request_delete_account(
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
-    options = email_password_options(context)
-    expires_in = (
-        options.delete_account_expires_in
-        if options is not None
-        else context.config.delete_account.expires_in
-    )
+    expires_in = context.config.delete_account.expires_in
     ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     pair = context.token_service.generate_pair()
     await context.adapter.create_verification(
