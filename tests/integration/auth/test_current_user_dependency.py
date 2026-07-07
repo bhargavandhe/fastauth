@@ -30,7 +30,8 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from fastauth.domain.models import User
 from fastauth.runtime.auth import FastAuth
@@ -91,6 +92,42 @@ async def test_current_user_returns_401_when_anonymous(
     assert response.json() == {
         "code": "INVALID_CREDENTIALS",
         "message": "authentication required",
+    }
+
+
+async def test_mount_preserves_host_http_exception_handler(auth: FastAuth) -> None:
+    app = FastAPI()
+
+    @app.exception_handler(HTTPException)
+    async def host_http_exception_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
+        exc: HTTPException,
+    ) -> JSONResponse:
+        del request
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"handled_by": "host", "detail": exc.detail},
+        )
+
+    auth.mount(app)
+
+    @app.get("/host-error")
+    async def host_error():  # pyright: ignore[reportUnusedFunction]
+        raise HTTPException(
+            status_code=418,
+            detail={"code": "HOST_ERROR", "message": "host error"},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http:
+        response = await http.get("/host-error")
+
+    assert response.status_code == 418
+    assert response.json() == {
+        "handled_by": "host",
+        "detail": {"code": "HOST_ERROR", "message": "host error"},
     }
 
 

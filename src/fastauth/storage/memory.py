@@ -221,7 +221,15 @@ class InMemoryAdapter:
             session_ids = frozenset(self.refresh_tokens[tid].session_id for tid in doomed)
             for tid in doomed:
                 del self.refresh_tokens[tid]
-            return RevokedRefreshFamily(deleted_tokens=len(doomed), session_ids=session_ids)
+            deleted_sessions = 0
+            for session_id in session_ids:
+                if self.sessions.pop(session_id, None) is not None:
+                    deleted_sessions += 1
+            return RevokedRefreshFamily(
+                deleted_tokens=len(doomed),
+                deleted_sessions=deleted_sessions,
+                session_ids=session_ids,
+            )
 
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:

@@ -403,7 +403,24 @@ class BeanieAdapter:
         session_ids = frozenset(str(doc.session_id) for doc in docs)
         result = await self.refresh_token_doc.find({"family_id": oid}).delete()
         deleted = int(result.deleted_count) if result and result.deleted_count else 0
-        return RevokedRefreshFamily(deleted_tokens=deleted, session_ids=session_ids)
+        session_oids = [
+            session_oid
+            for session_id in session_ids
+            if (session_oid := to_object_id_or_none(session_id)) is not None
+        ]
+        deleted_sessions = 0
+        if session_oids:
+            session_result = await self.session_doc.find({"_id": {"$in": session_oids}}).delete()
+            deleted_sessions = (
+                int(session_result.deleted_count)
+                if session_result and session_result.deleted_count
+                else 0
+            )
+        return RevokedRefreshFamily(
+            deleted_tokens=deleted,
+            deleted_sessions=deleted_sessions,
+            session_ids=session_ids,
+        )
 
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:

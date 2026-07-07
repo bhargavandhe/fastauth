@@ -4,6 +4,35 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-07
+
+### Added
+
+- Added `UserPrincipal` and `SessionPrincipal` as the canonical immutable
+  server API identity models.
+- Added deprecated `fastauth.api.legacy` command models for temporary `user=`
+  compatibility with `DeprecationWarning`.
+- Added explicit `revokedSessions` and `revokedRefreshTokens` response fields
+  to session revocation responses while preserving `revoked`.
+
+### Changed
+
+- Refresh-token family revocation now happens at the adapter level together
+  with associated database-session revocation.
+- Postgres refresh-family deletion now uses `DELETE ... RETURNING session_id`
+  to remove the refresh-row race between lookup and deletion.
+- `custom()` now accepts `backend` and `lifespan` keyword arguments.
+- `DatabaseRuntime` now requires only `adapter` and `lifespan()`.
+
+### Fixed
+
+- Refresh rotation now revokes the family if previous-session cleanup fails
+  after a replacement token has been committed.
+- `auth.mount()` no longer replaces the host application's `HTTPException`
+  handler.
+- Lifespan body failures and database-shutdown failures are reported as an
+  explicit exception group.
+
 ## [0.6.0] — 2026-07-07
 
 ### Added
@@ -511,7 +540,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/bhargavandhe/fastauth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/bhargavandhe/fastauth/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/bhargavandhe/fastauth/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/bhargavandhe/fastauth/compare/v0.4.1...v0.4.2

@@ -34,6 +34,7 @@ __all__ = [
     "CsrfOptions",
     "CustomDatabaseOptions",
     "CustomDatabaseRuntime",
+    "DatabaseLifespanFactory",
     "DatabaseOptions",
     "DatabaseRuntime",
     "DeleteAccountOptions",
@@ -240,13 +241,14 @@ class ProxyOptions(OptionsSection):
     forwarded_header: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+DatabaseLifespanFactory = Callable[[object], Callable[[FastAPI], AbstractAsyncContextManager[None]]]
+
+
 class DatabaseRuntime(Protocol):
     @property
     def adapter(self) -> DatabaseAdapter: ...
 
     def lifespan(self, auth: object, app: FastAPI) -> AbstractAsyncContextManager[None]: ...
-    async def startup(self, auth: object, app: FastAPI) -> None: ...
-    async def shutdown(self) -> None: ...
 
 
 class MemoryDatabaseRuntime:
@@ -346,8 +348,7 @@ class CustomDatabaseRuntime:
     def __init__(
         self,
         adapter: DatabaseAdapter,
-        lifespan: Callable[[object], Callable[[FastAPI], AbstractAsyncContextManager[None]]]
-        | None,
+        lifespan: DatabaseLifespanFactory | None,
     ) -> None:
         self.adapter = adapter
         self.lifespan_factory = lifespan
@@ -455,9 +456,7 @@ class CustomDatabaseOptions(OptionsSection):
     kind: Literal["custom"] = "custom"
     adapter: DatabaseAdapter
     backend: DatabaseBackendKind = DatabaseBackendKind.MEMORY
-    lifespan: Callable[[object], Callable[[FastAPI], AbstractAsyncContextManager[None]]] | None = (
-        None
-    )
+    lifespan: DatabaseLifespanFactory | None = None
 
     def build_adapter(self) -> DatabaseAdapter:
         return self.adapter

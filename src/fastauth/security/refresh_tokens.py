@@ -118,10 +118,7 @@ class RefreshTokenService:
         return min(next_expiry, family_created_at + self.config.absolute_max_age)
 
     async def revoke_family(self, family_id: str) -> RevokedRefreshFamily:
-        revoked = await self.adapter.delete_refresh_token_family(family_id)
-        for session_id in revoked.session_ids:
-            await self.adapter.delete_session(session_id)
-        return revoked
+        return await self.adapter.delete_refresh_token_family(family_id)
 
     async def get_valid(self, plain_token: str) -> RefreshToken:
         if not self.enabled:

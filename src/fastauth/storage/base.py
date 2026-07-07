@@ -42,6 +42,7 @@ class RevokedRefreshFamily(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     deleted_tokens: int
+    deleted_sessions: int = 0
     session_ids: frozenset[str]
 
 

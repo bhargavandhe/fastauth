@@ -513,19 +513,26 @@ class PostgresAdapter(
 
     async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
         async with self.engine.begin() as connection:
-            session_result = await connection.execute(
-                select(self.schema.refresh_tokens.c.session_id).where(
-                    self.schema.refresh_tokens.c.family_id == family_id,
-                ),
-            )
-            session_ids = frozenset(row[0] for row in session_result)
             result = await connection.execute(
-                delete(self.schema.refresh_tokens).where(
+                delete(self.schema.refresh_tokens)
+                .where(
                     self.schema.refresh_tokens.c.family_id == family_id,
-                ),
+                )
+                .returning(self.schema.refresh_tokens.c.session_id),
             )
+            rows = result.fetchall()
+            session_ids = frozenset(row[0] for row in rows)
+            deleted_sessions = 0
+            if session_ids:
+                session_result = await connection.execute(
+                    delete(self.schema.sessions).where(
+                        self.schema.sessions.c.id.in_(session_ids),
+                    ),
+                )
+                deleted_sessions = int(session_result.rowcount or 0)
         return RevokedRefreshFamily(
-            deleted_tokens=int(result.rowcount or 0),
+            deleted_tokens=len(rows),
+            deleted_sessions=deleted_sessions,
             session_ids=session_ids,
         )
 

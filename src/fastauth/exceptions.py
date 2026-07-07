@@ -14,6 +14,7 @@ __all__ = [
     "CsrfError",
     "DuplicateError",
     "EmailNotVerifiedError",
+    "FastAuthDependencyError",
     "FastAuthError",
     "FeatureNotEnabledError",
     "HookAbortError",
@@ -102,6 +103,13 @@ class InvalidCredentialsError(AuthenticationError):
 
     def __init__(self) -> None:
         super().__init__(message="invalid email or password")
+
+
+class FastAuthDependencyError(AuthenticationError):
+    default_code = "INVALID_CREDENTIALS"
+
+    def __init__(self) -> None:
+        super().__init__(message="authentication required")
 
 
 class EmailNotVerifiedError(AuthenticationError):
@@ -196,6 +204,7 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     InvalidRequestError: HTTPStatus.BAD_REQUEST,
     FeatureNotEnabledError: HTTPStatus.NOT_FOUND,
     PasswordAlreadySetError: HTTPStatus.CONFLICT,
+    FastAuthDependencyError: HTTPStatus.UNAUTHORIZED,
     InvalidCredentialsError: HTTPStatus.UNAUTHORIZED,
     EmailNotVerifiedError: HTTPStatus.FORBIDDEN,
     SessionExpiredError: HTTPStatus.UNAUTHORIZED,

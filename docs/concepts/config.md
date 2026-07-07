@@ -75,14 +75,14 @@ configuration layer and pass the resulting strings into `FastAuthOptions`.
 | `cookie` | Cookie name, path, domain, `Secure`/`HttpOnly`/`SameSite` attributes. |
 | `password` | Argon2id memory/time/parallelism, minimum password length. |
 | `email` | From-address, subject lines, optional template directory. |
-| `email_verification` | Token TTL, base verify URL, whether sign-in requires a verified email. |
-| `password_reset` | Token TTL, base reset URL. |
-| `email_change` | Token TTL, base confirm URL, email subject. |
-| `delete_account` | Token TTL, base confirm URL, account-deletion email subject. |
+| `email_verification` | Token TTL, callback path or override URL, whether sign-in requires a verified email. |
+| `password_reset` | Token TTL, callback path or override URL. |
+| `email_change` | Token TTL, callback path or override URL, email subject. |
+| `delete_account` | Token TTL, callback path or override URL, account-deletion email subject. |
 | `rate_limit` | Window, max requests, storage backend (memory or DB). |
 | `csrf` | Trusted origins, relative-path policy, enable/disable. |
 | `lockout` | Account-lockout policy (`max_failures`, `window`). |
-| `database` | Database option object from `memory()`, `mongo(database)`, `postgres(url)`, or `custom(adapter)`. |
+| `database` | Database option object from `memory()`, `mongo(database)`, `postgres(url)`, or `custom(adapter, backend=...)`. |
 | `proxy` | Trusted reverse proxies and the forwarding header to honor for client IP resolution. |
 | `advanced` | IPv6 subnet bucket size and `__Secure-` cookie prefix flag. |
 
@@ -95,6 +95,10 @@ Plugins are behavior objects passed to `FastAuth(..., plugins=[...])`, not a
 `database` defaults to `memory()`. For persistent deployments, pass
 `mongo(database)` or `postgres(url)` explicitly.
 
+`custom(adapter)` defaults to `DatabaseBackendKind.MEMORY`, which production
+validation rejects. Custom production adapters must declare their real backend,
+for example `custom(adapter, backend=DatabaseBackendKind.POSTGRES)`.
+
 ## HTTP field names
 
 Python models use snake_case field names. Public HTTP request and response
@@ -103,6 +107,9 @@ as `emailVerified`, `refreshToken`, `userId`, and `includeRefreshToken`.
 
 Request bodies accept both Python field names and aliases, but responses emit
 one stable camelCase shape. There is no runtime-selectable casing mode.
+
+Usernames are case-sensitive. For example, `Bhargav` and `bhargav` are distinct
+usernames and must be treated as separate values by adapters.
 
 ## Why no process config loader?
 

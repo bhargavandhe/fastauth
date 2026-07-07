@@ -93,7 +93,11 @@ async def test_revoke_specific_session(client: httpx.AsyncClient) -> None:
     other = next(s for s in listed if not s["isCurrent"])
     response = await client.delete(f"/auth/sessions/{other['id']}")
     assert response.status_code == 200
-    assert response.json() == {"revoked": 1}
+    assert response.json() == {
+        "revoked": 1,
+        "revokedSessions": 1,
+        "revokedRefreshTokens": 0,
+    }
     after = (await client.get("/auth/sessions")).json()["sessions"]
     assert len(after) == 1
     assert after[0]["isCurrent"] is True
@@ -133,7 +137,11 @@ async def test_revoke_other_sessions_keeps_current(client: httpx.AsyncClient) ->
     assert len(listed) == 3
     response = await client.delete("/auth/sessions")
     assert response.status_code == 200
-    assert response.json() == {"revoked": 2}
+    assert response.json() == {
+        "revoked": 2,
+        "revokedSessions": 2,
+        "revokedRefreshTokens": 0,
+    }
     after = (await client.get("/auth/sessions")).json()["sessions"]
     assert len(after) == 1
     assert after[0]["isCurrent"] is True

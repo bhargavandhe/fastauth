@@ -37,6 +37,19 @@ def build_options(adapter: InMemoryAdapter, **refresh_overrides: object) -> Fast
     )
 
 
+class FailOnceDeleteSessionAdapter(InMemoryAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_session_id: str | None = None
+        self.failed_once = False
+
+    async def delete_session(self, session_id: str) -> None:
+        if session_id == self.fail_session_id and not self.failed_once:
+            self.failed_once = True
+            raise RuntimeError("old session cleanup failed")
+        await super().delete_session(session_id)
+
+
 @pytest.fixture
 def adapter() -> InMemoryAdapter:
     return InMemoryAdapter()
@@ -262,6 +275,34 @@ async def test_repeated_refresh_keeps_single_visible_session(
     )
     assert sessions.status_code == 200, sessions.text
     assert len(sessions.json()["sessions"]) == 1
+
+
+async def test_refresh_revokes_family_when_old_session_cleanup_fails() -> None:
+    adapter = FailOnceDeleteSessionAdapter()
+    auth = FastAuth(
+        build_options(adapter),
+        plugins=[email_password()],
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http:
+        _access, refresh = await sign_up_with_tokens(http)
+        old_session_id = next(iter(adapter.sessions))
+        adapter.fail_session_id = old_session_id
+
+        with pytest.raises(RuntimeError, match="old session cleanup failed"):
+            await http.post(
+                "/auth/refresh",
+                json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
+            )
+
+    assert adapter.failed_once is True
+    assert adapter.refresh_tokens == {}
+    assert adapter.sessions == {}
 
 
 async def test_refresh_expired_token_returns_400(
