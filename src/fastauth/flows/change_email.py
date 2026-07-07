@@ -38,6 +38,7 @@ from fastauth.exceptions import (
     TokenExpiredError,
     TokenInvalidError,
 )
+from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
@@ -126,8 +127,13 @@ async def request_email_change(
     )
 
     # Build the confirm URL and send the email to the NEW address.
+    confirm_base_url = resolve_callback_url(
+        app_base_url=context.config.app.base_url,
+        callback_path=context.config.email_change.callback_path,
+        override=context.config.email_change.callback_url_override,
+    )
     confirm_url = (
-        str(context.config.email_change.base_confirm_url)
+        confirm_base_url
         + f"?token={quote(pair.plain)}&new_email={quote(request.new_email)}"
     )
     # We reuse the verification template — it shows a verify URL + recipient

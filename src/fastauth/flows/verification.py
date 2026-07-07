@@ -13,6 +13,7 @@ from fastauth.domain.events import EmailVerificationSent, OtpGenerated, UserEmai
 from fastauth.domain.models import EmailMessage, Verification, WireModel
 from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import TokenExpiredError, TokenInvalidError
+from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse, SessionResponse
 from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
@@ -88,7 +89,12 @@ async def send_verification_email(
     params = {"token": pair.plain, "email": user.email}
     if request.redirect_url is not None:
         params["redirect_url"] = request.redirect_url
-    verify_url = str(context.config.email_verification.base_verify_url) + "?" + urlencode(params)
+    verify_base_url = resolve_callback_url(
+        app_base_url=context.config.app.base_url,
+        callback_path=context.config.email_verification.callback_path,
+        override=context.config.email_verification.callback_url_override,
+    )
+    verify_url = verify_base_url + "?" + urlencode(params)
     html, text = context.template_renderer.render(
         "verification",
         {

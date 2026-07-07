@@ -4,6 +4,45 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-07
+
+### Added
+
+- Added trusted-proxy client IP resolution with secure defaults.
+- Linked refresh-token families to sessions across memory, Beanie, and Postgres.
+- Added production option validation for weak secrets, unsafe cookies, memory
+  storage, non-HTTPS base URLs, and automatic Postgres migrations.
+- Added shallow exports for `AuthenticationResponse`, `SessionView`, and
+  `UserView`, plus concise dependency aliases on `FastAuth`.
+- Added namespaced server-side APIs for session, password, and user operations.
+- Added a managed database runtime abstraction so adapter startup and shutdown
+  are owned by database options instead of `FastAuth` concrete type checks.
+
+### Changed
+
+- Refresh-token absolute lifetime now uses the family creation timestamp rather
+  than the rotated token creation timestamp.
+- Password validation and hashing now use one core credential policy instead of
+  provider-level duplicate password policy.
+- Email verification, password reset, email-change, and delete-account links now
+  derive from `app.base_url` plus callback paths by default.
+- Email/password routes are now contributed by the email-password plugin instead
+  of being hardcoded in the core FastAPI router.
+- Plugin lifespan shutdown is now exception-safe and runs in reverse startup
+  order.
+- Removed the dead top-level `PluginOptions.enabled` option; plugin presence is
+  the feature switch.
+- Removed default trust for forwarded IP headers; forwarded headers are only
+  honored from configured trusted proxies.
+
+### Fixed
+
+- Server-side email/password APIs now require the email-password provider to be
+  installed.
+- Session revocation and sign-out now revoke the corresponding refresh-token
+  families instead of leaving bearer clients able to refresh.
+- Documentation, examples, and security policy now match the current API.
+
 ## [0.4.2] — 2026-07-06
 
 ### Changed
@@ -441,7 +480,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/bhargavandhe/fastauth/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/bhargavandhe/fastauth/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/bhargavandhe/fastauth/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/bhargavandhe/fastauth/compare/v0.3.4...v0.4.0

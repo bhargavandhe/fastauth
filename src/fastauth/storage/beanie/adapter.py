@@ -296,6 +296,7 @@ class BeanieAdapter:
                 raise ValueError("refresh token family_id must reference a token id")
             family_id = doc_id
         data["user_id"] = require_object_id(token.user_id)
+        data["session_id"] = require_object_id(token.session_id)
         data["family_id"] = family_id
         if token.replaced_by is not None:
             data["replaced_by"] = require_object_id(token.replaced_by)
@@ -338,6 +339,7 @@ class BeanieAdapter:
         normalise_datetimes(new_token)
         data = new_token.model_dump(exclude={"id"})
         data["user_id"] = require_object_id(new_token.user_id)
+        data["session_id"] = require_object_id(new_token.session_id)
         data["family_id"] = require_object_id(new_token.family_id)
         new_oid = PydanticObjectId()
         new_token.id = str(new_oid)
@@ -365,11 +367,28 @@ class BeanieAdapter:
             return
         await self.refresh_token_doc.find_one(self.refresh_token_doc.id == oid).delete()
 
-    async def delete_refresh_tokens_for_user(self, user_id: str) -> int:
+    async def delete_refresh_tokens_for_user(
+        self,
+        user_id: str,
+        *,
+        except_session_id: str | None = None,
+    ) -> int:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return 0
-        result = await self.refresh_token_doc.find({"user_id": oid}).delete()
+        query: dict[str, object] = {"user_id": oid}
+        if except_session_id is not None:
+            except_oid = to_object_id_or_none(except_session_id)
+            if except_oid is not None:
+                query["session_id"] = {"$ne": except_oid}
+        result = await self.refresh_token_doc.find(query).delete()
+        return int(result.deleted_count) if result and result.deleted_count else 0
+
+    async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
+        oid = to_object_id_or_none(session_id)
+        if oid is None:
+            return 0
+        result = await self.refresh_token_doc.find({"session_id": oid}).delete()
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:

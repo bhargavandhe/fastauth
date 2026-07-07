@@ -24,6 +24,8 @@ quota), `default_rate_limit_max`, `default_rate_limit_window`, and
 ## Example
 
 ```python
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.api_key import ApiKeyOptions
@@ -31,13 +33,13 @@ from fastauth.providers import api_key, email_password
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[
-            email_password(),
-            api_key(ApiKeyOptions(default_prefix="ak_", default_remaining=10_000)),
-        ],
-    )
+    ),
+    plugins=[
+        email_password(),
+        api_key(ApiKeyOptions(default_prefix="ak_", default_remaining=10_000)),
+    ],
 )
 ```
 

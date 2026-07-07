@@ -6,8 +6,29 @@ from typing import Any
 
 from pydantic import ConfigDict
 
-from fastauth.api.commands import SignInEmailCommand, SignUpEmailCommand
-from fastauth.api.responses import AuthenticationResponse
+from fastauth.api.commands import (
+    ChangePasswordCommand,
+    ConfirmEmailChangeCommand,
+    ConfirmUserDeletionCommand,
+    DeleteUserCommand,
+    GetSessionCommand,
+    ListSessionsCommand,
+    RefreshSessionCommand,
+    RequestEmailChangeCommand,
+    RequestPasswordResetCommand,
+    RequestUserDeletionCommand,
+    ResetPasswordCommand,
+    RevokeOtherSessionsCommand,
+    RevokeSessionCommand,
+    SetPasswordCommand,
+    SignInEmailCommand,
+    SignInUsernameCommand,
+    SignOutCommand,
+    SignUpEmailCommand,
+    UpdateUserCommand,
+    VerifyPasswordCommand,
+)
+from fastauth.api.responses import AuthenticationResponse, UserView, user_view
 from fastauth.domain.models import User, WireModel
 from fastauth.flows.change_email import (
     ConfirmEmailChangeRequest,
@@ -104,6 +125,7 @@ from fastauth.flows.verification import (
 from fastauth.flows.verification import (
     verify_email as verify_email_flow,
 )
+from fastauth.plugins.email_password import require_email_password
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 
@@ -396,9 +418,16 @@ class AuthApi:
         self.context = context
         self.sign_up = SignUpApi(self)
         self.sign_in = SignInApi(self)
+        self.session = SessionApi(self)
+        self.password = PasswordApi(self)
+        self.user = UserApi(self)
 
     async def health(self) -> HealthResponse:
         return HealthResponse(status="ok", name=self.context.config.app.name)
+
+    async def sign_out(self, command: SignOutCommand) -> EmptyResponse:
+        token = command.token.get_secret_value() if command.token is not None else None
+        return await sign_out_flow(self.context, token)
 
     async def generate_openapi_schema(self) -> dict[str, Any]:
         """Build the fastauth OpenAPI 3.1 schema offline (no running ASGI server).
@@ -433,6 +462,7 @@ class SignUpApi:
         self._api = api
 
     async def email(self, command: SignUpEmailCommand) -> AuthenticationResponse:
+        require_email_password(self._api.context)
         response, _session = await sign_up_email_flow(
             self._api.context,
             SignUpEmailRequest(
@@ -453,6 +483,7 @@ class SignInApi:
         self._api = api
 
     async def email(self, command: SignInEmailCommand) -> AuthenticationResponse:
+        require_email_password(self._api.context)
         response, _session = await sign_in_email_flow(
             self._api.context,
             SignInEmailRequest(
@@ -464,3 +495,205 @@ class SignInApi:
             user_agent=command.context.user_agent,
         )
         return response
+
+    async def username(self, command: SignInUsernameCommand) -> AuthenticationResponse:
+        require_email_password(self._api.context)
+        response, _session = await sign_in_username_flow(
+            self._api.context,
+            SignInUsernameRequest(
+                username=command.username,
+                password=command.password,
+                delivery=command.delivery,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+        return response
+
+
+class SessionApi:
+    def __init__(self, api: AuthApi) -> None:
+        self._api = api
+
+    async def get(self, command: GetSessionCommand) -> AuthenticationResponse | None:
+        token = command.token.get_secret_value() if command.token is not None else None
+        return await get_session_flow(self._api.context, token)
+
+    async def refresh(self, command: RefreshSessionCommand) -> AuthenticationResponse:
+        response, _session = await refresh_session_flow(
+            self._api.context,
+            RefreshTokenRequest(
+                refresh_token=command.refresh_token,
+                delivery=command.delivery,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+        return response
+
+    async def list(self, command: ListSessionsCommand) -> ListSessionsResponse:
+        return await list_sessions_flow(
+            self._api.context,
+            user=command.user,
+            current_session_id=command.current_session_id,
+        )
+
+    async def revoke(self, command: RevokeSessionCommand) -> RevokeSessionsResponse:
+        return await revoke_session_flow(
+            self._api.context,
+            user=command.user,
+            session_id=command.session_id,
+        )
+
+    async def revoke_other(
+        self,
+        command: RevokeOtherSessionsCommand,
+    ) -> RevokeSessionsResponse:
+        return await revoke_other_sessions_flow(
+            self._api.context,
+            user=command.user,
+            current_session_id=command.current_session_id,
+        )
+
+
+class PasswordApi:
+    def __init__(self, api: AuthApi) -> None:
+        self._api = api
+
+    async def change(self, command: ChangePasswordCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await change_password_flow(
+            self._api.context,
+            command.user,
+            current_session_id=command.current_session_id,
+            request=ChangePasswordRequest(
+                current_password=command.current_password,
+                new_password=command.new_password,
+                revoke_other_sessions=command.revoke_other_sessions,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def request_reset(self, command: RequestPasswordResetCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await forgot_password_flow(
+            self._api.context,
+            ForgotPasswordRequest(
+                email=command.email,
+                redirect_url=command.redirect_url,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def reset(self, command: ResetPasswordCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await reset_password_flow(
+            self._api.context,
+            ResetPasswordRequest(
+                email=command.email,
+                token=command.token,
+                new_password=command.new_password,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+
+class UserApi:
+    def __init__(self, api: AuthApi) -> None:
+        self._api = api
+
+    async def update(self, command: UpdateUserCommand) -> UserView:
+        require_email_password(self._api.context)
+        payload = command.model_dump(
+            include={"name", "image", "metadata"},
+            exclude_unset=True,
+        )
+        updated = await update_user_flow(
+            self._api.context,
+            command.user,
+            UpdateUserRequest.model_validate(payload),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+        return user_view(updated)
+
+    async def set_password(self, command: SetPasswordCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await set_password_flow(
+            self._api.context,
+            command.user,
+            current_session_id=command.current_session_id,
+            request=SetPasswordRequest(
+                new_password=command.new_password,
+                revoke_other_sessions=command.revoke_other_sessions,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def verify_password(self, command: VerifyPasswordCommand) -> VerifyPasswordResponse:
+        require_email_password(self._api.context)
+        return await verify_password_flow(
+            self._api.context,
+            command.user,
+            VerifyPasswordRequest(password=command.password),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def delete(self, command: DeleteUserCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await delete_account_with_password_flow(
+            self._api.context,
+            command.user,
+            DeleteAccountRequest(password=command.password),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def request_delete(self, command: RequestUserDeletionCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await request_delete_account_flow(
+            self._api.context,
+            command.user,
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def confirm_delete(self, command: ConfirmUserDeletionCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await confirm_delete_account_flow(
+            self._api.context,
+            command.user,
+            DeleteAccountConfirmRequest(token=command.token),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def change_email(self, command: RequestEmailChangeCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await request_email_change_flow(
+            self._api.context,
+            command.user,
+            RequestEmailChangeRequest(
+                new_email=command.new_email,
+                password=command.password,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )
+
+    async def confirm_email_change(self, command: ConfirmEmailChangeCommand) -> EmptyResponse:
+        require_email_password(self._api.context)
+        return await confirm_email_change_flow(
+            self._api.context,
+            ConfirmEmailChangeRequest(
+                new_email=command.new_email,
+                token=command.token,
+            ),
+            ip=command.context.ip_address,
+            user_agent=command.context.user_agent,
+        )

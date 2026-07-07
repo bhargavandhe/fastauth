@@ -541,6 +541,7 @@ async def sign_in_with_otp(
     refresh_plain = await maybe_issue_refresh_token(
         context,
         user_id=user.id,
+        session_id=session_context.session.id,
         delivery=request.delivery,
         ip=ip,
         user_agent=user_agent,

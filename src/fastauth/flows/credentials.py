@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
-
 from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
     SecretStr,
-    TypeAdapter,
-    ValidationError,
     field_validator,
 )
 
@@ -63,6 +59,7 @@ async def maybe_issue_refresh_token(
     context: AuthContext,
     *,
     user_id: str,
+    session_id: str,
     delivery: CredentialDelivery,
     ip: str | None,
     user_agent: str | None,
@@ -80,6 +77,7 @@ async def maybe_issue_refresh_token(
         return None
     issued = await context.refresh_token_service.issue(
         user_id=user_id,
+        session_id=session_id,
         ip_address=ip,
         user_agent=user_agent,
     )
@@ -132,19 +130,7 @@ async def record_failure_and_maybe_emit(
 
 
 def validate_password_policy(context: AuthContext, password: SecretStr) -> str:
-    value = password.get_secret_value()
-    min_length = context.config.password.min_length
-    max_length = context.config.password.max_length
-    password_value = Annotated[
-        str,
-        Field(min_length=min_length, max_length=max_length),
-    ]
-    try:
-        return cast(str, TypeAdapter(password_value).validate_python(value, strict=True))
-    except ValidationError as exc:
-        first_error = exc.errors()[0]
-        message = str(first_error.get("msg", "password does not satisfy policy"))
-        raise InvalidRequestError(message=message) from exc
+    return context.credential_service.validate_password(password)
 
 
 class SignUpEmailRequest(WireModel):
@@ -236,6 +222,7 @@ async def sign_up_email(
     refresh_plain = await maybe_issue_refresh_token(
         context,
         user_id=user.id,
+        session_id=session_context.session.id,
         delivery=request.delivery,
         ip=ip,
         user_agent=user_agent,
@@ -361,6 +348,7 @@ async def complete_sign_in(
             refresh_token=await maybe_issue_refresh_token(
                 context,
                 user_id=user.id,
+                session_id=session_context.session.id,
                 delivery=delivery,
                 ip=ip,
                 user_agent=user_agent,
@@ -376,7 +364,7 @@ async def sign_out(context: AuthContext, token: str | None) -> EmptyResponse:
     found = await context.session_strategy.read(token)
     await context.session_strategy.revoke(token)
     if found is not None:
-        await context.refresh_token_service.revoke_for_user(found.user.id)
+        await context.refresh_token_service.revoke_for_session(found.session.id)
         await context.event_bus.publish(UserSignedOut(user_id=found.user.id))
         await context.event_bus.publish(
             SessionRevoked(user_id=found.user.id, session_id=found.session.id),

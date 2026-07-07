@@ -35,13 +35,13 @@ async def test_concurrent_refresh_rotation_has_single_winner_and_revokes_family(
         adapter=adapter,
         config=RefreshTokenOptions(enabled=True),
     )
-    issued = await service.issue(user_id="user-1")
+    issued = await service.issue(user_id="user-1", session_id="session-1")
     assert issued is not None
     refresh_token = issued[1]
 
     results = await asyncio.gather(
-        service.rotate(refresh_token),
-        service.rotate(refresh_token),
+        service.rotate(refresh_token, session_id="session-2"),
+        service.rotate(refresh_token, session_id="session-3"),
         return_exceptions=True,
     )
 

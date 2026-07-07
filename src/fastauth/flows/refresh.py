@@ -47,22 +47,31 @@ async def refresh_session(
         raise InvalidRequestError(
             message="refresh token rotation requires bearer credential delivery",
         )
-    new_record, new_plain = await context.refresh_token_service.rotate(
+    existing = await context.refresh_token_service.get_valid(
         request.refresh_token.get_secret_value(),
-        ip_address=ip,
-        user_agent=user_agent,
     )
-    user = await context.adapter.get_user_by_id(new_record.user_id)
+    user = await context.adapter.get_user_by_id(existing.user_id)
     if user is None:
-        # The token's user was deleted between issuance and refresh — revoke
-        # the chain (already consumed by rotate) and treat as invalid.
-        await context.refresh_token_service.revoke_for_user(new_record.user_id)
+        await context.adapter.delete_refresh_tokens_in_family(existing.family_id)
         raise TokenInvalidError()
     session_context = await context.session_strategy.create(
         user,
         ip=ip,
         user_agent=user_agent,
     )
+    try:
+        new_record, new_plain = await context.refresh_token_service.rotate(
+            request.refresh_token.get_secret_value(),
+            session_id=session_context.session.id,
+            ip_address=ip,
+            user_agent=user_agent,
+        )
+    except Exception:
+        await context.adapter.delete_session(session_context.session.id)
+        raise
+    if new_record.user_id != user.id:
+        await context.adapter.delete_session(session_context.session.id)
+        raise TokenInvalidError()
     return (
         authentication_response(
             user=user,

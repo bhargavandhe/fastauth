@@ -74,7 +74,13 @@ class RefreshTokenStore(Protocol):
         consumed_at: datetime,
     ) -> RefreshToken | None: ...
     async def delete_refresh_token(self, token_id: str) -> None: ...
-    async def delete_refresh_tokens_for_user(self, user_id: str) -> int: ...
+    async def delete_refresh_tokens_for_user(
+        self,
+        user_id: str,
+        *,
+        except_session_id: str | None = None,
+    ) -> int: ...
+    async def delete_refresh_tokens_for_session(self, session_id: str) -> int: ...
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int: ...
 
 
@@ -268,7 +274,15 @@ class BaseDatabaseAdapter:
     async def delete_refresh_token(self, token_id: str) -> None:
         raise self.unsupported("refresh tokens")
 
-    async def delete_refresh_tokens_for_user(self, user_id: str) -> int:
+    async def delete_refresh_tokens_for_user(
+        self,
+        user_id: str,
+        *,
+        except_session_id: str | None = None,
+    ) -> int:
+        raise self.unsupported("refresh tokens")
+
+    async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
         raise self.unsupported("refresh tokens")
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:

@@ -271,9 +271,9 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
             },
         )
         refresh = signup.json()["credentials"]["refreshToken"]
-        # Back-date created_at past the absolute window.
+        # Back-date family_created_at past the absolute window.
         row = next(iter(adapter.refresh_tokens.values()))
-        row.created_at = datetime.now(UTC) - timedelta(seconds=120)
+        row.family_created_at = datetime.now(UTC) - timedelta(seconds=120)
         response = await http.post(
             "/auth/refresh",
             json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
@@ -282,6 +282,69 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
         assert response.json()["code"] == "TOKEN_EXPIRED"
         # Family revoked.
         assert len(adapter.refresh_tokens) == 0
+
+
+async def test_refresh_absolute_max_age_does_not_reset_after_rotation() -> None:
+    adapter = InMemoryAdapter()
+    auth = FastAuth(
+        build_options(adapter, absolute_max_age=timedelta(seconds=60)),
+        plugins=[email_password()],
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as http:
+        signup = await http.post(
+            "/auth/sign-up/email",
+            json={
+                "email": "owner@example.com",
+                "password": "supersecret123",
+                "delivery": {"kind": "bearer"},
+            },
+        )
+        original = signup.json()["credentials"]["refreshToken"]
+        first = await http.post(
+            "/auth/refresh",
+            json={"refreshToken": original, "delivery": {"kind": "bearer"}},
+        )
+        assert first.status_code == 200, first.text
+        rotated = first.json()["credentials"]["refreshToken"]
+
+        for row in adapter.refresh_tokens.values():
+            row.family_created_at = datetime.now(UTC) - timedelta(seconds=120)
+
+        response = await http.post(
+            "/auth/refresh",
+            json={"refreshToken": rotated, "delivery": {"kind": "bearer"}},
+        )
+        assert response.status_code == 400
+        assert response.json()["code"] == "TOKEN_EXPIRED"
+        assert len(adapter.refresh_tokens) == 0
+
+
+async def test_revoke_session_revokes_that_session_refresh_token(
+    client: httpx.AsyncClient,
+) -> None:
+    access, refresh = await sign_up_with_tokens(client)
+    sessions = await client.get("/auth/sessions", headers={"authorization": f"Bearer {access}"})
+    assert sessions.status_code == 200, sessions.text
+    session_id = sessions.json()["sessions"][0]["id"]
+
+    revoked = await client.delete(
+        f"/auth/sessions/{session_id}",
+        headers={"authorization": f"Bearer {access}"},
+    )
+    assert revoked.status_code == 200, revoked.text
+
+    response = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "TOKEN_INVALID"
 
 
 async def test_cookie_refresh_delivery_is_rejected(client: httpx.AsyncClient) -> None:

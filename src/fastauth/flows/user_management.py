@@ -25,6 +25,7 @@ from fastauth.exceptions import (
     TokenExpiredError,
     TokenInvalidError,
 )
+from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import (
     EmptyResponse,
     record_failure_and_maybe_emit,
@@ -158,7 +159,10 @@ async def set_password(
             user.id,
             except_session_id=current_session_id,
         )
-    await context.refresh_token_service.revoke_for_user(user.id)
+        await context.refresh_token_service.revoke_for_user_except_session(
+            user.id,
+            current_session_id,
+        )
 
     await context.event_bus.publish(
         PasswordChanged(user_id=user.id, ip_address=ip, user_agent=user_agent),
@@ -238,9 +242,12 @@ async def request_delete_account(
         ),
     )
 
-    confirm_url = str(context.config.delete_account.base_confirm_url) + (
-        f"?token={quote(pair.plain)}"
+    confirm_base_url = resolve_callback_url(
+        app_base_url=context.config.app.base_url,
+        callback_path=context.config.delete_account.callback_path,
+        override=context.config.delete_account.callback_url_override,
     )
+    confirm_url = confirm_base_url + f"?token={quote(pair.plain)}"
     html, text = context.template_renderer.render(
         "delete_account",
         {"confirm_url": confirm_url, "expires_in_minutes": ttl_minutes},

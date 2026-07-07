@@ -21,6 +21,8 @@ the `/audit-logs/all` admin endpoint.
 ## Example
 
 ```python
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.audit_logs import AuditLogsOptions
@@ -28,13 +30,13 @@ from fastauth.providers import audit_logs, email_password
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[
-            email_password(),
-            audit_logs(AuditLogsOptions(admin_user_ids=["00000000-...-admin"])),
-        ],
-    )
+    ),
+    plugins=[
+        email_password(),
+        audit_logs(AuditLogsOptions(admin_user_ids=["00000000-...-admin"])),
+    ],
 )
 ```
 

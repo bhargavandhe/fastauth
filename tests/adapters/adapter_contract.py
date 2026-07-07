@@ -152,8 +152,10 @@ class AdapterContract:
             RefreshToken(
                 id=refresh_root_id,
                 user_id=user.id,
+                session_id=session.id,
                 token_hash="delete-refresh",
                 family_id=refresh_root_id,
+                family_created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(days=1),
             )
         )
@@ -337,13 +339,23 @@ class AdapterContract:
 
     async def test_refresh_token_rotation_contract(self, adapter: ContractAdapter) -> None:
         user = await adapter.create_user(User(email="refresh-contract@example.com"))
+        session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="refresh-contract-session",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
         root_id = new_id()
+        family_created_at = datetime.now(UTC)
         root = await adapter.create_refresh_token(
             RefreshToken(
                 id=root_id,
                 user_id=user.id,
+                session_id=session.id,
                 token_hash="refresh-contract-root",
                 family_id=root_id,
+                family_created_at=family_created_at,
                 expires_at=datetime.now(UTC) + timedelta(days=1),
             )
         )
@@ -352,8 +364,10 @@ class AdapterContract:
         consumed_at = datetime.now(UTC)
         successor = RefreshToken(
             user_id=user.id,
+            session_id=session.id,
             token_hash="refresh-contract-successor",
             family_id=root.family_id,
+            family_created_at=family_created_at,
             expires_at=datetime.now(UTC) + timedelta(days=1),
         )
         rotated = await adapter.rotate_refresh_token(
@@ -377,8 +391,10 @@ class AdapterContract:
             current_token_id=root.id,
             new_token=RefreshToken(
                 user_id=user.id,
+                session_id=session.id,
                 token_hash="refresh-contract-loser",
                 family_id=root.family_id,
+                family_created_at=family_created_at,
                 expires_at=datetime.now(UTC) + timedelta(days=1),
             ),
             consumed_at=datetime.now(UTC),

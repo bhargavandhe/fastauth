@@ -7,8 +7,17 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr, ValidationError
 
-from fastauth import FastAuth, FastAuthOptions
+from fastauth import AuthenticationResponse, FastAuth, FastAuthOptions, SessionView, UserView
+from fastauth.api.commands import (
+    ChangePasswordCommand,
+    GetSessionCommand,
+    ListSessionsCommand,
+    SignOutCommand,
+    SignUpEmailCommand,
+    UpdateUserCommand,
+)
 from fastauth.database import memory
+from fastauth.exceptions import FeatureNotEnabledError
 from fastauth.messaging.email import EmailMessage
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
 from fastauth.providers import email_password, openapi
@@ -129,6 +138,23 @@ def test_old_config_names_are_not_exported() -> None:
     assert hasattr(fastauth, "FastAuth")
 
 
+def test_root_exports_common_safe_response_types() -> None:
+    import fastauth
+
+    assert fastauth.AuthenticationResponse is AuthenticationResponse
+    assert fastauth.SessionView is SessionView
+    assert fastauth.UserView is UserView
+
+
+def test_fastauth_exposes_concise_dependency_aliases() -> None:
+    auth = FastAuth(FastAuthOptions(secret_key=SecretStr("f" * 64), database=memory()))
+
+    assert callable(auth.require_user)
+    assert callable(auth.optional_user)
+    assert callable(auth.require_session)
+    assert callable(auth.optional_session)
+
+
 def test_auth_api_public_methods_do_not_expose_transport_kwargs_or_tuple_results() -> None:
     auth = FastAuth(
         FastAuthOptions(secret_key=SecretStr("d" * 64), database=memory()),
@@ -143,3 +169,50 @@ def test_auth_api_public_methods_do_not_expose_transport_kwargs_or_tuple_results
         assert "ip" not in signature.parameters
         assert "user_agent" not in signature.parameters
         assert "tuple[" not in str(signature.return_annotation)
+
+
+def test_auth_api_exposes_namespaced_server_surface() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("g" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+
+    assert callable(auth.api.sign_out)
+    assert callable(auth.api.session.get)
+    assert callable(auth.api.session.refresh)
+    assert callable(auth.api.session.list)
+    assert callable(auth.api.session.revoke)
+    assert callable(auth.api.session.revoke_other)
+    assert callable(auth.api.password.change)
+    assert callable(auth.api.password.request_reset)
+    assert callable(auth.api.password.reset)
+    assert callable(auth.api.user.update)
+    assert callable(auth.api.user.change_email)
+    assert callable(auth.api.user.delete)
+
+
+def test_auth_api_commands_are_frozen_pydantic_models() -> None:
+    command_classes = [
+        SignOutCommand,
+        GetSessionCommand,
+        ListSessionsCommand,
+        ChangePasswordCommand,
+        UpdateUserCommand,
+    ]
+
+    for command_class in command_classes:
+        assert command_class.model_config.get("frozen") is True
+
+
+async def test_server_api_requires_email_password_provider() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("e" * 64), database=memory()),
+    )
+
+    with pytest.raises(FeatureNotEnabledError):
+        await auth.api.sign_up.email(
+            SignUpEmailCommand(
+                email="alice@example.com",
+                password=SecretStr("correct-horse-battery"),
+            ),
+        )

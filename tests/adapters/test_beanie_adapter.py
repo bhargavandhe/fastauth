@@ -80,21 +80,33 @@ class TestBeanieAdapter(AdapterContract):
         beanie_database: AsyncDatabase[Any],
     ) -> None:
         user = await adapter.create_user(User(email="mongo-ids@example.com"))
+        session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="mongo-ids-session",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
         family_root_id = new_id()
+        family_created_at = datetime.now(UTC)
         token = await adapter.create_refresh_token(
             RefreshToken(
                 id=family_root_id,
                 user_id=user.id,
+                session_id=session.id,
                 token_hash="refresh-token",
                 family_id=family_root_id,
+                family_created_at=family_created_at,
                 expires_at=datetime.now(UTC) + timedelta(days=1),
             )
         )
         rotated = RefreshToken(
             id="temporary-id",
             user_id=user.id,
+            session_id=session.id,
             token_hash="refresh-token-2",
             family_id=token.family_id,
+            family_created_at=family_created_at,
             expires_at=datetime.now(UTC) + timedelta(days=1),
         )
         await adapter.rotate_refresh_token(
@@ -186,12 +198,21 @@ class TestBeanieAdapter(AdapterContract):
         assert verification_doc is not None
 
         update_family_root_id = new_id()
+        update_session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="refresh-update-session",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
         token = await adapter.create_refresh_token(
             RefreshToken(
                 id=update_family_root_id,
                 user_id=user.id,
+                session_id=update_session.id,
                 token_hash="refresh-update",
                 family_id=update_family_root_id,
+                family_created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(days=1),
             )
         )

@@ -109,7 +109,7 @@ async def test_set_password_for_passwordless_user_allows_credential_sign_in(
     assert response.status_code == 200, response.text
 
 
-async def test_set_password_revokes_existing_refresh_tokens(
+async def test_set_password_keeps_current_refresh_token(
     client: httpx.AsyncClient,
     adapter: InMemoryAdapter,
 ) -> None:
@@ -138,8 +138,8 @@ async def test_set_password_revokes_existing_refresh_tokens(
         "/auth/refresh",
         json={"refreshToken": refresh_token, "delivery": {"kind": "bearer"}},
     )
-    assert refresh.status_code == 400
-    assert refresh.json()["code"] == "TOKEN_INVALID"
+    assert refresh.status_code == 200
+    assert refresh.json()["credentials"]["refreshToken"] is not None
 
 
 async def test_set_password_clears_lockout_for_email_and_username(

@@ -8,3 +8,6 @@ def test_fastapi_router_does_not_import_concrete_plugins() -> None:
 
     assert "fastauth.plugins.jwt" not in source
     assert "JwtPlugin" not in source
+    assert "fastauth.plugins.email_password" not in source
+    assert "EmailPasswordPlugin" not in source
+    assert "email_password_options" not in source

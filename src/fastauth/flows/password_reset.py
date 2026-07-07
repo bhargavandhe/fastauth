@@ -18,6 +18,7 @@ from fastauth.domain.events import (
 from fastauth.domain.models import EmailMessage, Verification, WireModel
 from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import TokenExpiredError, TokenInvalidError
+from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse, validate_password_policy
 from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
@@ -100,7 +101,12 @@ async def forgot_password(
     params = {"token": pair.plain, "email": user.email}
     if request.redirect_url is not None:
         params["redirect_url"] = request.redirect_url
-    reset_url = str(context.config.password_reset.base_reset_url) + "?" + urlencode(params)
+    reset_base_url = resolve_callback_url(
+        app_base_url=context.config.app.base_url,
+        callback_path=context.config.password_reset.callback_path,
+        override=context.config.password_reset.callback_url_override,
+    )
+    reset_url = reset_base_url + "?" + urlencode(params)
     html, text = context.template_renderer.render(
         "reset",
         {

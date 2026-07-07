@@ -103,7 +103,7 @@ def test_postgres_docs_describe_tracked_migrations() -> None:
     deploying = read_project_file("docs/guides/deploying.md")
 
     assert "schema_migrations" in adapters
-    assert "postgres(url, apply_migrations=False)" in adapters
+    assert 'postgres(url, migration_mode="check")' in adapters
     assert "tracked schema migrations" in deploying
 
 
@@ -130,17 +130,17 @@ def test_readme_route_protection_uses_public_user_view() -> None:
     text = read_project_file("README.md")
 
     assert "from fastauth.domain.models import User" not in text
-    assert "from fastauth.api.responses import UserView" in text
-    assert "Depends(auth.get_current_user_view)" in text
+    assert "from fastauth import UserView" in text
+    assert "Depends(auth.require_user)" in text
 
 
 def test_quickstart_route_protection_uses_public_user_view() -> None:
     text = read_project_file("docs/quickstart.md")
 
     assert "auth.get_current_user` | `User`" not in text
-    assert "auth.get_current_user_view` | `UserView`" in text
-    assert "from fastauth.api.responses import UserView" in text
-    assert "Depends(auth.get_current_user_view)" in text
+    assert "auth.require_user` | `UserView`" in text
+    assert "from fastauth import UserView" in text
+    assert "Depends(auth.require_user)" in text
 
 
 def test_session_docs_do_not_claim_unused_rotation_option() -> None:

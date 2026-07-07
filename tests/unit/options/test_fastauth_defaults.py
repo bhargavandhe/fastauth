@@ -5,8 +5,9 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import custom, memory
+from fastauth.domain.enums import DatabaseBackendKind
 from fastauth.exceptions import ConfigError
-from fastauth.options import MongoDatabaseOptions
+from fastauth.options import AppOptions, CustomDatabaseOptions, MongoDatabaseOptions
 from fastauth.providers import email_password
 from fastauth.storage.memory import InMemoryAdapter
 
@@ -45,6 +46,11 @@ def test_production_deployment_requires_non_console_email_sender() -> None:
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
         deployment="production",
+        app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+        database=CustomDatabaseOptions(
+            adapter=InMemoryAdapter(),
+            backend=DatabaseBackendKind.POSTGRES,
+        ),
     )
 
     with pytest.raises(ConfigError):

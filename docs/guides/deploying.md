@@ -46,27 +46,35 @@ uv run fastauth migrate \
 ```
 
 ```python
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
+from fastauth.options import AppOptions
 from fastauth.providers import email_password
 
 options = FastAuthOptions(
-    secret_key="replace-me-with-your-application-secret",
+    secret_key=SecretStr("replace-me-with-your-application-secret"),
+    deployment="production",
+    app=AppOptions(base_url="https://app.example.com"),
     database=postgres(
         "postgresql+asyncpg://user:pass@db.example.com/myapp",
         table_prefix="fastauth_",
         table_suffix="",
-        apply_migrations=False,
+        migration_mode="check",
     ),
-    plugins=[email_password()],
 )
-auth = FastAuth(options)
+auth = FastAuth(
+    options,
+    plugins=[email_password()],
+    email_sender=production_email_sender,
+)
 ```
 
-For local development and small deployments, omit `apply_migrations=False` to
-apply pending Postgres migrations before fastauth starts. Prefer the explicit
-CLI migration path for production releases where schema changes should be part
-of the deploy pipeline.
+For local development and small deployments, keep the default
+`migration_mode="apply"` to apply pending Postgres migrations before fastauth
+starts. Production options reject automatic migrations; prefer the explicit
+CLI migration path where schema changes are part of the deploy pipeline.
 
 ## Secrets
 

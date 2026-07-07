@@ -28,6 +28,7 @@ from fastauth.options import (
     SecurityHeadersOptions,
     SessionOptions,
 )
+from fastauth.storage.memory import InMemoryAdapter
 
 
 def test_fastauth_options_requires_secret_key() -> None:
@@ -44,6 +45,85 @@ def test_fastauth_options_accepts_explicit_secret_key() -> None:
     options = FastAuthOptions(secret_key=SecretStr("a" * 64))
     assert isinstance(options.secret_key, SecretStr)
     assert "a" * 64 not in repr(options)
+
+
+def test_fastauth_builds_reusable_credential_service_from_global_password_options() -> None:
+    from fastauth import FastAuth
+    from fastauth.exceptions import InvalidRequestError
+
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            password=PasswordOptions(min_length=16, max_length=128),
+        ),
+    )
+
+    assert auth.context.credential_service.validate_password(
+        SecretStr("correct-horse-battery")
+    ) == "correct-horse-battery"
+    with pytest.raises(InvalidRequestError):
+        auth.context.credential_service.validate_password(SecretStr("short-password"))
+
+
+def test_fastauth_options_rejects_short_secret_key() -> None:
+    with pytest.raises(ValidationError, match="secret_key must contain at least 32 bytes"):
+        FastAuthOptions(secret_key=SecretStr("short"))
+
+
+def test_cookie_samesite_none_requires_secure_cookie() -> None:
+    with pytest.raises(ValidationError, match="SameSite=None requires secure cookies"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            cookie=CookieOptions(secure=False, same_site="none"),
+        )
+
+
+def test_production_options_reject_memory_database() -> None:
+    with pytest.raises(ValidationError, match="memory database is not allowed in production"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+        )
+
+
+def test_production_options_reject_http_base_url() -> None:
+    with pytest.raises(ValidationError, match="production base_url must use HTTPS"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=CustomDatabaseOptions(
+                adapter=InMemoryAdapter(),
+            ),
+        )
+
+
+def test_production_options_reject_insecure_cookies() -> None:
+    with pytest.raises(ValidationError, match="production cookies must be secure"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=CustomDatabaseOptions(
+                adapter=InMemoryAdapter(),
+            ),
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+            cookie=CookieOptions(secure=False),
+        )
+
+
+def test_production_options_reject_automatic_postgres_migrations() -> None:
+    with pytest.raises(ValidationError, match="production should use migration_mode='check'"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=PostgresDatabaseOptions.model_validate(
+                {
+                    "url": "postgresql+asyncpg://user:pass@localhost:5432/app",
+                    "migration_mode": "apply",
+                }
+            ),
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+        )
 
 
 def test_standard_options_do_not_allow_arbitrary_runtime_objects() -> None:

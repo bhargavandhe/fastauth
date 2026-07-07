@@ -72,7 +72,10 @@ async def change_password(
             if session.id != current_session_id:
                 await context.adapter.delete_session(session.id)
                 revoked += 1
-    await context.refresh_token_service.revoke_for_user(user.id)
+        await context.refresh_token_service.revoke_for_user_except_session(
+            user.id,
+            current_session_id,
+        )
 
     await context.event_bus.publish(
         PasswordChanged(user_id=user.id, ip_address=ip, user_agent=user_agent),

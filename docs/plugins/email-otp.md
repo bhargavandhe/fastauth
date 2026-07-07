@@ -25,6 +25,8 @@ When enabled, the plugin contributes the following endpoints to
 ```python
 from datetime import timedelta
 
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions
@@ -32,19 +34,19 @@ from fastauth.providers import email_otp, email_password
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[
-            email_password(),
-            email_otp(EmailOtpOptions(
-                code_length=6,
-                expires_in=timedelta(minutes=5),
-                max_attempts=3,
-                allow_sign_up=True,
-                email_change=EmailChangeOtpOptions(enabled=False),
-            )),
-        ],
-    )
+    ),
+    plugins=[
+        email_password(),
+        email_otp(EmailOtpOptions(
+            code_length=6,
+            expires_in=timedelta(minutes=5),
+            max_attempts=3,
+            allow_sign_up=True,
+            email_change=EmailChangeOtpOptions(enabled=False),
+        )),
+    ],
 )
 ```
 
@@ -242,6 +244,8 @@ codes during integration tests.
 ## Capturing OTPs in tests
 
 ```python
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.test_utils import TestUtilsOptions
@@ -249,13 +253,13 @@ from fastauth.providers import email_otp, test_utils
 
 auth = FastAuth(
     FastAuthOptions(
-        secret_key="replace-me-with-your-application-secret",
+        secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=memory(),
-        plugins=[
-            email_otp(),
-            test_utils(TestUtilsOptions(capture_otp=True)),
-        ],
-    )
+    ),
+    plugins=[
+        email_otp(),
+        test_utils(TestUtilsOptions(capture_otp=True)),
+    ],
 )
 
 # Trigger send

@@ -41,11 +41,15 @@ options = FastAuthOptions(
     # ...
     email_verification=EmailVerificationOptions(
         expires_in=timedelta(minutes=15),
-        base_verify_url="https://app.example.com/verify",
+        callback_path="/verify",
         require_verified_for_sign_in=True,
     ),
 )
 ```
+
+Verification links are built from `FastAuthOptions.app.base_url` and
+`callback_path`. Set `callback_url_override` only when the verification link
+must use a different origin.
 
 ## Custom email transport
 

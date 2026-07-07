@@ -60,8 +60,10 @@ def test_beanie_document_mappers_preserve_objectid_and_bytes_boundaries() -> Non
     refresh_token = RefreshToken(
         id=refresh_id,
         user_id=user_id,
+        session_id=session_id,
         token_hash="refresh-hash",
         family_id=refresh_id,
+        family_created_at=now,
         replaced_by=replacement_id,
         expires_at=now + timedelta(days=30),
     )

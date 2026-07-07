@@ -87,6 +87,15 @@ def test_email_otp_options_live_in_plugin_module_and_are_strict_frozen() -> None
         options.code_length = 6
 
 
+def test_plugin_options_do_not_expose_top_level_enabled_flag() -> None:
+    assert "enabled" not in EmailOtpOptions.model_fields
+    with pytest.raises(ValidationError):
+        EmailOtpOptions(enabled=False)  # pyright: ignore[reportCallIssue]
+
+    nested = EmailChangeOtpOptions(enabled=True)
+    assert nested.enabled is True
+
+
 def test_provider_factories_accept_standardized_options() -> None:
     api_key_plugin = api_key(ApiKeyOptions(default_expires_in=timedelta(hours=1)))
     email_otp_plugin = email_otp(EmailOtpOptions(expires_in=timedelta(minutes=2)))

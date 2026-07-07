@@ -148,8 +148,6 @@ class PluginOptions(BaseModel):
         revalidate_instances="always",
     )
 
-    enabled: bool = True
-
 
 class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses override what they need
     """Subclass to add features. Override only the hooks you need."""
