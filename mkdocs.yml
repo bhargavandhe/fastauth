@@ -32,6 +32,7 @@ nav:
       - Configuration: concepts/config.md
       - Adapters: concepts/adapters.md
       - Sessions: concepts/sessions.md
+      - Server API: concepts/server-api.md
       - Hooks: concepts/hooks.md
       - Events: concepts/events.md
       - Plugins: concepts/plugins.md

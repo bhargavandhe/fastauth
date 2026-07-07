@@ -24,6 +24,7 @@ __all__ = [
     "NotFoundError",
     "PasswordAlreadySetError",
     "RateLimitError",
+    "RefreshSessionConsistencyError",
     "RefreshTokenReuseError",
     "SessionExpiredError",
     "TokenExpiredError",
@@ -196,6 +197,15 @@ class RefreshTokenReuseError(AuthenticationError):
     default_code = "REFRESH_TOKEN_REUSE"
 
 
+class RefreshSessionConsistencyError(AdapterError):
+    """Raised when refresh rotation committed but session cleanup required compensation."""
+
+    default_code = "REFRESH_SESSION_CONSISTENCY_ERROR"
+
+    def __init__(self) -> None:
+        super().__init__(message="refresh session consistency recovery required")
+
+
 EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     ConfigError: HTTPStatus.INTERNAL_SERVER_ERROR,
     AdapterError: HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -216,4 +226,5 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     AccountLockedError: HTTPStatus.LOCKED,
     JwksDecryptionError: HTTPStatus.INTERNAL_SERVER_ERROR,
     RefreshTokenReuseError: HTTPStatus.UNAUTHORIZED,
+    RefreshSessionConsistencyError: HTTPStatus.INTERNAL_SERVER_ERROR,
 }

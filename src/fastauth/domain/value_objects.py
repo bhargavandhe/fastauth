@@ -102,7 +102,6 @@ class PasswordHash(RootModel[NonEmptyString]):
         return value
 
 
-
 class RawToken(RootModel[NonEmptyString]):
     model_config = ConfigDict(frozen=True)
 

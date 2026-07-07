@@ -473,6 +473,7 @@ DatabaseOptions = Annotated[
     Field(discriminator="kind"),
 ]
 
+
 class FastAuthOptions(OptionsModel):
     """Single Pydantic options object accepted by ``FastAuth``."""
 
@@ -548,8 +549,7 @@ class FastAuthOptions(OptionsModel):
             self.delete_account.callback_url_override,
         )
         if any(
-            override is not None and override.scheme != "https"
-            for override in callback_overrides
+            override is not None and override.scheme != "https" for override in callback_overrides
         ):
             raise ValueError("production callback_url_override values must use HTTPS")
 

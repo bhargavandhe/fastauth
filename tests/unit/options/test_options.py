@@ -62,9 +62,10 @@ def test_fastauth_builds_reusable_credential_service_from_global_password_option
         ),
     )
 
-    assert auth.context.credential_service.validate_password(
-        SecretStr("correct-horse-battery")
-    ) == "correct-horse-battery"
+    assert (
+        auth.context.credential_service.validate_password(SecretStr("correct-horse-battery"))
+        == "correct-horse-battery"
+    )
     with pytest.raises(InvalidRequestError):
         auth.context.credential_service.validate_password(SecretStr("short-password"))
 

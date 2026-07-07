@@ -39,6 +39,13 @@ boundary; the adapter converts them to and from `ObjectId` internally.
 Protocol identifiers such as JWKS `kid` remain strings because they are not
 Mongo references.
 
+Refresh-token family revocation in the Beanie adapter is best-effort and
+retry-friendly when session deletion fails, but it is not atomic without
+MongoDB transactions. A concurrent refresh rotation, process crash, or database
+failure can leave partially revoked state that your application may need to
+reconcile. Do not treat standalone MongoDB revocation as equivalent to the
+transactional Postgres behavior.
+
 To namespace fastauth collections inside a shared Mongo database, pass a
 prefix and/or suffix through the Mongo database option:
 
@@ -91,6 +98,13 @@ is behind instead of mutating schema at process startup.
 
 The adapter uses FastAuth's string domain IDs as primary keys and stores plugin
 data in native Postgres types such as `jsonb` and `bytea`.
+
+For refresh-token families, Postgres serializes rotation and family revocation
+with a transaction-scoped advisory lock derived from the refresh-token table
+name and family id. This prevents a replacement token from being inserted while
+the same family is being revoked. Bulk revocation paths such as user-wide
+password reset remain separate operations and should not be described as
+globally race-free.
 
 Adapters are async-only and operate on the Pydantic domain models directly —
 there is no separate ORM layer. To plug in a new backend, implement

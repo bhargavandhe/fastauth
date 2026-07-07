@@ -4,8 +4,44 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from pydantic import ValidationError
+
+from fastauth.flows.sessions import RevokeSessionsResponse
 
 COOKIE_NAME = "fastauth.session_token"
+
+
+def test_revoke_sessions_response_requires_current_count_fields() -> None:
+    with pytest.raises(ValidationError):
+        RevokeSessionsResponse.model_validate({"revoked": 1})
+
+
+def test_revoke_sessions_response_accepts_matching_alias_input() -> None:
+    response = RevokeSessionsResponse.model_validate(
+        {
+            "revoked": 2,
+            "revokedSessions": 2,
+            "revokedRefreshTokens": 5,
+        }
+    )
+
+    assert response.revoked == 2
+    assert response.revoked_sessions == 2
+    assert response.revoked_refresh_tokens == 5
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"revoked": 8, "revoked_sessions": 2, "revoked_refresh_tokens": 5},
+        {"revoked": 8, "revokedSessions": 2, "revokedRefreshTokens": 5},
+    ],
+)
+def test_revoke_sessions_response_rejects_mismatched_revoked_counts(
+    payload: dict[str, int],
+) -> None:
+    with pytest.raises(ValidationError):
+        RevokeSessionsResponse.model_validate(payload)
 
 
 async def sign_up_and_capture_cookie(
