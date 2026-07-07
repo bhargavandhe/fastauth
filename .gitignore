@@ -26,6 +26,9 @@ htmlcov/
 # Generated docs
 site/
 
+# Local agent skills
+.agents/
+
 # OS/editor noise
 .DS_Store
 .idea/

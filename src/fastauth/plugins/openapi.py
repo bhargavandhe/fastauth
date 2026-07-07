@@ -23,7 +23,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import Field
 
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 
 __all__ = ["SCALAR_TEMPLATE", "OpenApiOptions", "OpenApiPlugin"]
@@ -73,6 +73,15 @@ class OpenApiPlugin(Plugin):
         if self.context is None:
             raise RuntimeError("OpenApiPlugin is not bound to an AuthContext")
         return self.context
+
+    def capabilities(self) -> Sequence[Capability]:
+        return [
+            Capability(
+                id="openapi-reference",
+                description="OpenAPI schema rendering and Scalar API reference routes.",
+                plugin_id=self.id,
+            )
+        ]
 
     def endpoints(self) -> Sequence[EndpointSpec]:
         return [

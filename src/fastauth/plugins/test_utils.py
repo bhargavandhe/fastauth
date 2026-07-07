@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fastauth.domain.events import OtpGenerated
 from fastauth.domain.models import User
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 
 __all__ = ["LoginResult", "TestHelpers", "TestUtilsOptions", "TestUtilsPlugin"]
@@ -131,6 +131,17 @@ class TestUtilsPlugin(Plugin):
         self.helpers = helpers
         if self.options.capture_otp:
             context.event_bus.subscribe(OtpGenerated, helpers.record_otp)
+
+    def capabilities(self) -> Sequence[Capability]:
+        return [
+            Capability(
+                id="test-utils",
+                description=(
+                    "Testing helpers for users, sessions, auth headers, and optional OTP capture."
+                ),
+                plugin_id=self.id,
+            )
+        ]
 
     def endpoints(self) -> Sequence[EndpointSpec]:
         return []

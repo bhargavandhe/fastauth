@@ -23,7 +23,7 @@ from pydantic import Field, SecretStr
 from fastauth.domain.enums import JwtAlgorithm
 from fastauth.domain.models import User, WireModel
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.jwt import JwksDocument, JwksRegistry, KmsSigner, LocalKmsSigner
 from fastauth.storage.base import JwksKeyStore
@@ -128,6 +128,17 @@ class JwtPlugin(Plugin):
                 handler=self.jwks_handler,
                 response_model=JwksDocument,
             ),
+        ]
+
+    def capabilities(self) -> Sequence[Capability]:
+        return [
+            Capability(
+                id="jwt",
+                description=(
+                    "JWT minting, JWKS publication, and optional JWT session strategy support."
+                ),
+                plugin_id=self.id,
+            )
         ]
 
     def bind(self, context: AuthContext) -> None:

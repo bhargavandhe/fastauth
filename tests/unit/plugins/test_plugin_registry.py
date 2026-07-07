@@ -9,7 +9,7 @@ from pydantic import SecretStr
 from fastauth.database import custom
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
 from fastauth.options import FastAuthOptions
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginRegistry
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginRegistry
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.base import AuditLogStore
 from fastauth.storage.memory import InMemoryAdapter
@@ -79,6 +79,64 @@ class CoreCollisionPlugin(Plugin):
         ]
 
 
+class CapabilityPlugin(Plugin):
+    id = "capability-plugin"
+
+    def capabilities(self) -> list[Capability]:
+        return [
+            Capability(
+                id="example-capability",
+                description="Example capability.",
+                plugin_id=self.id,
+            )
+        ]
+
+
+class CapabilityAgain(Plugin):
+    id = "capability-again"
+
+    def capabilities(self) -> list[Capability]:
+        return [
+            Capability(
+                id="example-capability",
+                description="Duplicate capability.",
+                plugin_id=self.id,
+            )
+        ]
+
+
+class HelloPluginApi:
+    async def ping(self) -> str:
+        return "pong"
+
+
+class ServerApiPlugin(Plugin):
+    id = "server-api-plugin"
+
+    def server_api_name(self) -> str:
+        return "hello"
+
+    def server_api(self) -> HelloPluginApi:
+        return HelloPluginApi()
+
+
+class ServerApiNameAgain(Plugin):
+    id = "server-api-name-again"
+
+    def server_api_name(self) -> str:
+        return "hello"
+
+    def server_api(self) -> HelloPluginApi:
+        return HelloPluginApi()
+
+
+class MissingServerApiNamePlugin(Plugin):
+    id = "missing-server-api-name"
+
+    def server_api(self) -> HelloPluginApi:
+        return HelloPluginApi()
+
+
 def test_registry_records_endpoints() -> None:
     registry = PluginRegistry([HelloPlugin()])
     assert "hello-plugin" in registry.by_id
@@ -93,6 +151,62 @@ def test_registry_rejects_duplicate_ids() -> None:
 def test_registry_rejects_duplicate_plugin_endpoint_routes() -> None:
     with pytest.raises(ValueError, match="duplicate plugin endpoint"):
         PluginRegistry([CollisionPlugin(), CollisionAgain()])
+
+
+def test_registry_rejects_duplicate_plugin_capabilities() -> None:
+    with pytest.raises(ValueError, match="duplicate plugin capability"):
+        PluginRegistry([CapabilityPlugin(), CapabilityAgain()])
+
+
+def test_registry_reports_plugin_info() -> None:
+    registry = PluginRegistry([CapabilityPlugin()])
+
+    info = registry.plugin_info()
+
+    assert info[0].id == "capability-plugin"
+    assert info[0].capabilities[0].id == "example-capability"
+
+
+def test_registry_reports_plugin_server_api_namespace() -> None:
+    registry = PluginRegistry([ServerApiPlugin()])
+
+    namespaces = registry.all_server_api_namespaces()
+    info = registry.plugin_info()
+
+    assert namespaces[0].name == "hello"
+    assert namespaces[0].plugin_id == "server-api-plugin"
+    assert info[0].server_api_name == "hello"
+
+
+def test_registry_rejects_missing_server_api_name() -> None:
+    registry = PluginRegistry([MissingServerApiNamePlugin()])
+
+    with pytest.raises(ValueError, match="server_api_name"):
+        registry.all_server_api_namespaces()
+
+
+def test_auth_api_exposes_plugin_server_api_namespace() -> None:
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(InMemoryAdapter()),
+        ),
+        plugins=[ServerApiPlugin()],
+    )
+
+    assert isinstance(auth.api.plugins.by_name["hello"], HelloPluginApi)
+    assert isinstance(auth.api.plugins.by_plugin_id["server-api-plugin"], HelloPluginApi)
+
+
+def test_auth_api_rejects_duplicate_plugin_server_api_names() -> None:
+    with pytest.raises(ValueError, match="duplicate plugin server API name"):
+        FastAuth(
+            FastAuthOptions(
+                secret_key=SecretStr("a" * 64),
+                database=custom(InMemoryAdapter()),
+            ),
+            plugins=[ServerApiPlugin(), ServerApiNameAgain()],
+        )
 
 
 def test_endpoint_spec_convenience_constructors() -> None:

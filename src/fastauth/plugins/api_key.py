@@ -22,7 +22,7 @@ from fastauth.domain.models import ApiKey, WireModel
 from fastauth.domain.value_objects import ApiKeyId, ApiKeyMetadata, PermissionSet
 from fastauth.exceptions import ConfigError, InvalidCredentialsError, NotFoundError
 from fastauth.flows.credentials import EmptyResponse
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.tokens import TokenService
 from fastauth.storage.base import ApiKeyStore
@@ -177,6 +177,15 @@ class ApiKeyPlugin(Plugin):
         if self.context is None:
             raise RuntimeError("ApiKeyPlugin is not bound to an AuthContext")
         return self.context
+
+    def capabilities(self) -> Sequence[Capability]:
+        return [
+            Capability(
+                id="api-keys",
+                description="API key creation, verification, listing, updating, and revocation.",
+                plugin_id=self.id,
+            )
+        ]
 
     def assert_store(self) -> ApiKeyStore:
         """Return the bound API-key store or raise if ``bind`` was never invoked."""

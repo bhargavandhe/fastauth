@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 
 if TYPE_CHECKING:
     from fastauth.runtime.context import AuthContext
@@ -38,6 +38,32 @@ class EmailPasswordPlugin(Plugin):
         from fastauth.plugins.email_password_routes import email_password_endpoints
 
         return email_password_endpoints(self)
+
+    def capabilities(self) -> Sequence[Capability]:
+        capabilities = [
+            Capability(
+                id="email-password",
+                description="Email and password sign-up, sign-in, verification, and account flows.",
+                plugin_id=self.id,
+            )
+        ]
+        if self.options.allow_username_sign_in:
+            capabilities.append(
+                Capability(
+                    id="username-sign-in",
+                    description="Username-based sign-in through the email/password provider.",
+                    plugin_id=self.id,
+                )
+            )
+        if self.options.allow_bearer_tokens:
+            capabilities.append(
+                Capability(
+                    id="email-password.bearer-tokens",
+                    description="Bearer-token delivery for email/password authentication.",
+                    plugin_id=self.id,
+                )
+            )
+        return capabilities
 
 
 def email_password_options(context: AuthContext) -> EmailPasswordOptions | None:

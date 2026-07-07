@@ -24,7 +24,7 @@ from fastauth.domain.events import AuthEvent
 from fastauth.domain.models import AuditLog, WireModel
 from fastauth.domain.value_objects import AuditEventData
 from fastauth.exceptions import ConfigError, CsrfError, InvalidCredentialsError, InvalidRequestError
-from fastauth.plugins.base import EndpointSpec, Plugin, PluginOptions
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.storage.base import AuditLogStore
 
@@ -112,6 +112,15 @@ class AuditLogsPlugin(Plugin):
         if self.store is None:
             raise RuntimeError("AuditLogsPlugin is not bound to an AuditLogStore")
         return self.store
+
+    def capabilities(self) -> Sequence[Capability]:
+        return [
+            Capability(
+                id="audit-logs",
+                description="Structured audit log capture and paginated audit-log queries.",
+                plugin_id=self.id,
+            )
+        ]
 
     async def record_event(self, event: AuthEvent) -> None:
         """Normalise ``event`` into an ``AuditLog`` row and persist it."""

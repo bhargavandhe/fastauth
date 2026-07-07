@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import cast
+from typing import TypeVar, cast
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
+from fastauth.domain.events import AuthEvent
 from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, FastAuthDependencyError, FastAuthError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
@@ -19,6 +20,7 @@ from fastauth.options import (
 )
 from fastauth.plugins.base import Plugin, PluginRegistry
 from fastauth.runtime.api import AuthApi
+from fastauth.runtime.capabilities import Capability, CapabilityRegistry
 from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks
@@ -38,6 +40,8 @@ from fastauth.web.fastapi import build_router, extract_session_token, http_statu
 from fastauth.web.security_headers import SecurityHeadersMiddleware
 
 __all__ = ["FastAuth"]
+
+EventT = TypeVar("EventT", bound=AuthEvent)
 
 
 async def fastauth_error_handler(
@@ -166,6 +170,7 @@ class FastAuth:
             config=config.refresh_token,
             token_service=token_service,
         )
+        event_bus = EventBus()
 
         self.context = AuthContext(
             config=config,
@@ -177,7 +182,7 @@ class FastAuth:
             email_sender=email_sender,
             template_renderer=TemplateRenderer(config.email.template_directory),
             hooks=DatabaseHooks(),
-            event_bus=EventBus(),
+            event_bus=event_bus,
             plugins=plugin_registry,
             signed_cookie=signed_cookie,
             rate_limiter=rate_limiter,
@@ -196,8 +201,30 @@ class FastAuth:
             if callable(bind):
                 bind(self.context)
 
+        self.events: EventBus = event_bus
+        self.capabilities: CapabilityRegistry = CapabilityRegistry(
+            [
+                Capability(
+                    id="core.sessions",
+                    description="Core session creation, reading, listing, and revocation.",
+                ),
+                Capability(
+                    id="core.refresh-tokens",
+                    description="Refresh-token rotation, absolute expiry, and family revocation.",
+                ),
+                *self.context.plugins.all_capabilities(),
+            ]
+        )
         self.api = AuthApi(self.context)
         self.router = build_router(self.context, self.api)
+
+    def on_event(
+        self,
+        event_type: type[EventT],
+        handler: Callable[[EventT], Awaitable[None]],
+    ) -> None:
+        """Subscribe an async handler to structured FastAuth security events."""
+        self.events.subscribe(event_type, handler)
 
     def as_asgi(self) -> FastAPI:
         """Return a standalone ``FastAPI`` app wrapping the fastauth router."""

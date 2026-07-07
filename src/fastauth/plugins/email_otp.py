@@ -44,7 +44,7 @@ from fastauth.flows.email_otp import (
     sign_in_with_otp,
     verify_email_with_otp,
 )
-from fastauth.plugins.base import EndpointSpec, Plugin, RateLimitRule
+from fastauth.plugins.base import Capability, EndpointSpec, Plugin, RateLimitRule
 from fastauth.plugins.email_otp_options import EmailChangeOtpOptions, EmailOtpOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.otp import OtpService
@@ -71,6 +71,24 @@ class EmailOtpPlugin(Plugin):
         if self.context is None:
             raise RuntimeError("EmailOtpPlugin is not bound to an AuthContext")
         return self.context
+
+    def capabilities(self) -> Sequence[Capability]:
+        capabilities = [
+            Capability(
+                id="email-otp",
+                description="Email OTP sign-in, email verification, and password reset.",
+                plugin_id=self.id,
+            )
+        ]
+        if self.options.email_change.enabled:
+            capabilities.append(
+                Capability(
+                    id="email-otp.email-change",
+                    description="Email-change confirmation through email OTP.",
+                    plugin_id=self.id,
+                )
+            )
+        return capabilities
 
     # --- Helpers --------------------------------------------------------
 

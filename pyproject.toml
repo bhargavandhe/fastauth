@@ -1,6 +1,6 @@
 [project]
 name = "fastauth-py"
-version = "0.8.0"
+version = "0.9.0"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -59,6 +59,7 @@ dev = [
   "uvicorn[standard]>=0.30",
 ]
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.26"]
+testing = ["pytest>=8.3"]
 
 [project.scripts]
 fastauth = "fastauth.cli.main:app"
@@ -85,6 +86,7 @@ ignore = ["S101"]  # allow assert in tests
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "ANN"]
 "examples/**/tests/**" = ["S", "ANN"]
+"src/fastauth/testing/adapter_contract.py" = ["S106"]
 
 [tool.ruff.format]
 quote-style = "double"

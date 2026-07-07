@@ -128,6 +128,7 @@ from fastauth.flows.verification import (
 from fastauth.flows.verification import (
     verify_email as verify_email_flow,
 )
+from fastauth.plugins.base import PluginApiRegistry
 from fastauth.plugins.email_password import require_email_password, require_username_sign_in
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
@@ -476,6 +477,7 @@ class AuthApi:
 
     def __init__(self, context: AuthContext) -> None:
         self.context = context
+        self.plugins = PluginApiRegistry(context.plugins.all_server_api_namespaces())
         self.sign_up = SignUpApi(self)
         self.sign_in = SignInApi(self)
         self.session = SessionApi(self)

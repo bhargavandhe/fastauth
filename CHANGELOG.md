@@ -4,6 +4,25 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-07-08
+
+### Added
+
+- Added a public plugin SDK surface for plugin capabilities, plugin metadata,
+  and plugin-contributed server API namespaces under `auth.api.plugins`.
+- Added `auth.capabilities` with core and plugin capability discovery.
+- Added `auth.events` and `auth.on_event(...)` as the public structured
+  security-event subscription surface.
+- Added `fastauth.testing.adapter_contract` plus the `testing` optional extra
+  so adapter authors can run the first-party adapter compliance contract.
+
+### Changed
+
+- First-party plugins now declare discoverable capabilities that reflect
+  option-gated runtime behavior.
+- The built-in adapter suites now import the same packaged adapter contract
+  exposed to third-party adapter authors.
+
 ## [0.8.0] — 2026-07-08
 
 ### Added

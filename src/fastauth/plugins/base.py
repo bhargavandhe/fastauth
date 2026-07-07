@@ -9,10 +9,16 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from fastauth.runtime.capabilities import Capability
+
 __all__ = [
+    "Capability",
     "EndpointSpec",
     "HttpMethod",
     "Plugin",
+    "PluginApiNamespace",
+    "PluginApiRegistry",
+    "PluginInfo",
     "PluginOptions",
     "PluginRegistry",
     "RateLimitRule",
@@ -137,6 +143,46 @@ class RateLimitRule(BaseModel):
     max_requests: int
 
 
+class PluginInfo(BaseModel):
+    """Public metadata describing a plugin's runtime contribution."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    endpoints: tuple[EndpointSpec, ...] = ()
+    capabilities: tuple[Capability, ...] = ()
+    rate_limit_rules: tuple[RateLimitRule, ...] = ()
+    trusted_origins: tuple[str, ...] = ()
+    event_handler_count: int = 0
+    server_api_name: str | None = None
+
+
+class PluginApiNamespace(BaseModel):
+    """A plugin-contributed public server API namespace."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    plugin_id: str
+    name: str
+    api: Any
+
+
+class PluginApiRegistry:
+    """Lookup surface for plugin-contributed server API namespaces."""
+
+    def __init__(self, namespaces: Sequence[PluginApiNamespace]) -> None:
+        self.items: tuple[PluginApiNamespace, ...] = tuple(namespaces)
+        self.by_name: dict[str, Any] = {}
+        self.by_plugin_id: dict[str, Any] = {}
+        for namespace in namespaces:
+            if namespace.name in self.by_name:
+                raise ValueError(f"duplicate plugin server API name: {namespace.name}")
+            if namespace.plugin_id in self.by_plugin_id:
+                raise ValueError(f"duplicate plugin server API plugin id: {namespace.plugin_id}")
+            self.by_name[namespace.name] = namespace.api
+            self.by_plugin_id[namespace.plugin_id] = namespace.api
+
+
 class PluginOptions(BaseModel):
     """Common immutable base for first-party plugin configuration."""
 
@@ -192,6 +238,15 @@ class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses
     def event_handlers(self) -> Sequence[EventHandlerPair]:
         return []
 
+    def capabilities(self) -> Sequence[Capability]:
+        return []
+
+    def server_api_name(self) -> str | None:
+        return None
+
+    def server_api(self) -> object | None:
+        return None
+
     def trusted_origins(self) -> Sequence[str]:
         return []
 
@@ -214,6 +269,7 @@ class PluginRegistry:
     def __init__(self, plugins: Sequence[Plugin]) -> None:
         self.plugins = list(plugins)
         self.by_id: dict[str, Plugin] = {}
+        capabilities: dict[str, str] = {}
         routes: dict[tuple[str, str], str] = {}
         for plugin in self.plugins:
             if not plugin.id:
@@ -221,6 +277,13 @@ class PluginRegistry:
             if plugin.id in self.by_id:
                 raise ValueError(f"duplicate plugin id: {plugin.id}")
             self.by_id[plugin.id] = plugin
+            for capability in plugin.capabilities():
+                if capability.id in capabilities:
+                    raise ValueError(
+                        "duplicate plugin capability "
+                        f"{capability.id} from {capabilities[capability.id]} and {plugin.id}",
+                    )
+                capabilities[capability.id] = plugin.id
             for endpoint in plugin.endpoints():
                 route_key = (endpoint.method, endpoint.path)
                 if route_key in routes:
@@ -242,3 +305,35 @@ class PluginRegistry:
 
     def all_event_handlers(self) -> list[EventHandlerPair]:
         return [pair for plugin in self.plugins for pair in plugin.event_handlers()]
+
+    def all_capabilities(self) -> list[Capability]:
+        return [capability for plugin in self.plugins for capability in plugin.capabilities()]
+
+    def all_server_api_namespaces(self) -> list[PluginApiNamespace]:
+        namespaces: list[PluginApiNamespace] = []
+        for plugin in self.plugins:
+            api = plugin.server_api()
+            if api is None:
+                continue
+            name = plugin.server_api_name()
+            if name is None:
+                raise ValueError(f"plugin {plugin.id} returned server_api without server_api_name")
+            namespaces.append(PluginApiNamespace(plugin_id=plugin.id, name=name, api=api))
+        return namespaces
+
+    def plugin_info(self) -> list[PluginInfo]:
+        info: list[PluginInfo] = []
+        for plugin in self.plugins:
+            server_api = plugin.server_api()
+            info.append(
+                PluginInfo(
+                    id=plugin.id,
+                    endpoints=tuple(plugin.endpoints()),
+                    capabilities=tuple(plugin.capabilities()),
+                    rate_limit_rules=tuple(plugin.rate_limit_rules()),
+                    trusted_origins=tuple(plugin.trusted_origins()),
+                    event_handler_count=len(plugin.event_handlers()),
+                    server_api_name=plugin.server_api_name() if server_api is not None else None,
+                ),
+            )
+        return info

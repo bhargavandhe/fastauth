@@ -15,6 +15,7 @@ The available extras are:
 - `cli` — the `fastauth` Typer CLI (`typer`, `rich`).
 - `dev` — test runner, type checker, linter, and pre-commit hooks.
 - `docs` — `mkdocs-material` and `mkdocstrings[python]`.
+- `testing` — `pytest` for the packaged adapter contract suite.
 
 ## Configuration source
 

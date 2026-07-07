@@ -1,4 +1,4 @@
-"""Compatibility import for the public adapter contract test suite."""
+"""Testing contracts and helpers for FastAuth extension authors."""
 
 from __future__ import annotations
 
