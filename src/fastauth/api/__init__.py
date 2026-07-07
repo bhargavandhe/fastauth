@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastauth.api.commands import (
+    AuthPrincipal,
     BearerCredentialDelivery,
     ChangePasswordCommand,
     ConfirmEmailChangeCommand,
@@ -36,6 +37,7 @@ from fastauth.api.responses import (
 )
 
 __all__ = [
+    "AuthPrincipal",
     "AuthenticationResponse",
     "BearerCredentialDelivery",
     "ChangePasswordCommand",

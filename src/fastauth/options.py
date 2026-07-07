@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import timedelta
 from typing import Annotated, Literal, Protocol, cast
 
@@ -244,6 +244,7 @@ class DatabaseRuntime(Protocol):
     @property
     def adapter(self) -> DatabaseAdapter: ...
 
+    def lifespan(self, auth: object, app: FastAPI) -> AbstractAsyncContextManager[None]: ...
     async def startup(self, auth: object, app: FastAPI) -> None: ...
     async def shutdown(self) -> None: ...
 
@@ -259,6 +260,14 @@ class MemoryDatabaseRuntime:
 
     async def shutdown(self) -> None:
         return None
+
+    @asynccontextmanager
+    async def lifespan(self, auth: object, app: FastAPI) -> AsyncGenerator[None, None]:
+        try:
+            await self.startup(auth, app)
+            yield
+        finally:
+            await self.shutdown()
 
 
 class MongoDatabaseRuntime:
@@ -293,6 +302,14 @@ class MongoDatabaseRuntime:
     async def shutdown(self) -> None:
         return None
 
+    @asynccontextmanager
+    async def lifespan(self, auth: object, app: FastAPI) -> AsyncGenerator[None, None]:
+        try:
+            await self.startup(auth, app)
+            yield
+        finally:
+            await self.shutdown()
+
 
 class PostgresDatabaseRuntime:
     def __init__(
@@ -316,6 +333,14 @@ class PostgresDatabaseRuntime:
         if engine is not None:
             await engine.dispose()
 
+    @asynccontextmanager
+    async def lifespan(self, auth: object, app: FastAPI) -> AsyncGenerator[None, None]:
+        try:
+            await self.startup(auth, app)
+            yield
+        finally:
+            await self.shutdown()
+
 
 class CustomDatabaseRuntime:
     def __init__(
@@ -325,13 +350,13 @@ class CustomDatabaseRuntime:
         | None,
     ) -> None:
         self.adapter = adapter
-        self.lifespan = lifespan
+        self.lifespan_factory = lifespan
         self.context: AbstractAsyncContextManager[None] | None = None
 
     async def startup(self, auth: object, app: FastAPI) -> None:
-        if self.lifespan is None:
+        if self.lifespan_factory is None:
             return
-        self.context = self.lifespan(auth)(app)
+        self.context = self.lifespan_factory(auth)(app)
         await self.context.__aenter__()
 
     async def shutdown(self) -> None:
@@ -341,6 +366,14 @@ class CustomDatabaseRuntime:
             await self.context.__aexit__(None, None, None)
         finally:
             self.context = None
+
+    @asynccontextmanager
+    async def lifespan(self, auth: object, app: FastAPI) -> AsyncGenerator[None, None]:
+        if self.lifespan_factory is None:
+            yield
+            return
+        async with self.lifespan_factory(auth)(app):
+            yield
 
 
 class MemoryDatabaseOptions(OptionsSection):
@@ -488,6 +521,11 @@ class FastAuthOptions(OptionsModel):
         secret_value = self.secret_key.get_secret_value()
         if len(secret_value.encode("utf-8")) < 32:
             raise ValueError("secret_key must contain at least 32 bytes")
+        for index, secret in enumerate(self.secret_key_rotation):
+            if len(secret.get_secret_value().encode("utf-8")) < 32:
+                raise ValueError(
+                    f"secret_key_rotation[{index}] must contain at least 32 bytes",
+                )
 
         if self.cookie.same_site == "none" and not self.cookie.secure:
             raise ValueError("SameSite=None requires secure cookies")
@@ -495,7 +533,7 @@ class FastAuthOptions(OptionsModel):
         if self.deployment != "production":
             return self
 
-        if isinstance(self.database, MemoryDatabaseOptions):
+        if self.database.backend_kind() is DatabaseBackendKind.MEMORY:
             raise ValueError("memory database is not allowed in production")
 
         if self.app.base_url.scheme != "https":
@@ -503,6 +541,18 @@ class FastAuthOptions(OptionsModel):
 
         if not self.cookie.secure:
             raise ValueError("production cookies must be secure")
+
+        callback_overrides = (
+            self.email_verification.callback_url_override,
+            self.password_reset.callback_url_override,
+            self.email_change.callback_url_override,
+            self.delete_account.callback_url_override,
+        )
+        if any(
+            override is not None and override.scheme != "https"
+            for override in callback_overrides
+        ):
+            raise ValueError("production callback_url_override values must use HTTPS")
 
         if (
             isinstance(self.database, PostgresDatabaseOptions)

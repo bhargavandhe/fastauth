@@ -15,7 +15,6 @@ from fastauth.domain.value_objects import normalize_email
 from fastauth.exceptions import TokenExpiredError, TokenInvalidError
 from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse, SessionResponse
-from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 
@@ -63,12 +62,7 @@ async def send_verification_email(
         return EmptyResponse(success=True)
 
     pair = context.token_service.generate_pair()
-    options = email_password_options(context)
-    expires_in = (
-        options.email_verification_expires_in
-        if options is not None
-        else context.config.email_verification.expires_in
-    )
+    expires_in = context.config.email_verification.expires_in
     ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
     await context.adapter.create_verification(
         Verification(

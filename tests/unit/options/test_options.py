@@ -70,6 +70,17 @@ def test_fastauth_options_rejects_short_secret_key() -> None:
         FastAuthOptions(secret_key=SecretStr("short"))
 
 
+def test_fastauth_options_rejects_short_rotation_secret() -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"secret_key_rotation\[0\] must contain at least 32 bytes",
+    ):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            secret_key_rotation=(SecretStr("short"),),
+        )
+
+
 def test_cookie_samesite_none_requires_secure_cookie() -> None:
     with pytest.raises(ValidationError, match="SameSite=None requires secure cookies"):
         FastAuthOptions(
@@ -94,7 +105,18 @@ def test_production_options_reject_http_base_url() -> None:
             deployment="production",
             database=CustomDatabaseOptions(
                 adapter=InMemoryAdapter(),
+                backend=DatabaseBackendKind.POSTGRES,
             ),
+        )
+
+
+def test_production_options_reject_custom_memory_database() -> None:
+    with pytest.raises(ValidationError, match="memory database is not allowed in production"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=CustomDatabaseOptions(adapter=InMemoryAdapter()),
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
         )
 
 
@@ -105,9 +127,29 @@ def test_production_options_reject_insecure_cookies() -> None:
             deployment="production",
             database=CustomDatabaseOptions(
                 adapter=InMemoryAdapter(),
+                backend=DatabaseBackendKind.POSTGRES,
             ),
             app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
             cookie=CookieOptions(secure=False),
+        )
+
+
+def test_production_options_reject_http_callback_overrides() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="production callback_url_override values must use HTTPS",
+    ):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=CustomDatabaseOptions(
+                adapter=InMemoryAdapter(),
+                backend=DatabaseBackendKind.POSTGRES,
+            ),
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+            email_verification=EmailVerificationOptions.model_validate(
+                {"callback_url_override": "http://app.example.com/verify"}
+            ),
         )
 
 

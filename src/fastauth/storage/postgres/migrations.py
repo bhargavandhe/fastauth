@@ -56,7 +56,6 @@ async def add_refresh_token_session_fields(
 
     quote = connection.dialect.identifier_preparer.quote
     refresh_tokens = quote(schema.refresh_tokens.name)
-    sessions = quote(schema.sessions.name)
     refresh_tokens_session_id_idx = quote(f"{schema.refresh_tokens.name}_session_id_idx")
 
     await connection.execute(schema.refresh_tokens.delete())
@@ -64,8 +63,7 @@ async def add_refresh_token_session_fields(
         await connection.execute(
             DDL(
                 f"ALTER TABLE {refresh_tokens} "
-                f"ADD COLUMN session_id VARCHAR(64) NOT NULL "
-                f"REFERENCES {sessions}(id) ON DELETE CASCADE",
+                "ADD COLUMN session_id VARCHAR(64) NOT NULL",
             ),
         )
     if missing_family_created_at:
@@ -84,6 +82,35 @@ async def add_refresh_token_session_fields(
         )
 
 
+async def decouple_refresh_tokens_from_sessions(
+    connection: AsyncConnection,
+    schema: PostgresSchema,
+) -> None:
+    def load_refresh_token_foreign_keys(sync_connection: Connection) -> list[str]:
+        inspector = inspect(sync_connection)
+        keys = inspector.get_foreign_keys(schema.refresh_tokens.name)
+        constraint_names: list[str] = []
+        for key in keys:
+            name = key.get("name")
+            if isinstance(name, str) and key.get("constrained_columns") == ["session_id"]:
+                constraint_names.append(name)
+        return constraint_names
+
+    constraint_names = await connection.run_sync(load_refresh_token_foreign_keys)
+    if not constraint_names:
+        return
+
+    quote = connection.dialect.identifier_preparer.quote
+    refresh_tokens = quote(schema.refresh_tokens.name)
+    for constraint_name in constraint_names:
+        await connection.execute(
+            DDL(
+                f"ALTER TABLE {refresh_tokens} "
+                f"DROP CONSTRAINT IF EXISTS {quote(constraint_name)}",
+            ),
+        )
+
+
 POSTGRES_MIGRATIONS: tuple[PostgresMigration, ...] = (
     PostgresMigration(
         version=1,
@@ -94,6 +121,11 @@ POSTGRES_MIGRATIONS: tuple[PostgresMigration, ...] = (
         version=2,
         description="link refresh tokens to sessions",
         apply=add_refresh_token_session_fields,
+    ),
+    PostgresMigration(
+        version=3,
+        description="preserve refresh token evidence after session rotation",
+        apply=decouple_refresh_tokens_from_sessions,
     ),
 )
 

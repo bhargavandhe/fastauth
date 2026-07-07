@@ -42,7 +42,7 @@ from fastauth.storage.memory import InMemoryAdapter
 async def authed_client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     """A FastAPI app with three protected routes + an httpx client."""
     app = FastAPI()
-    app.include_router(auth.router)
+    auth.mount(app)
 
     @app.get("/me")
     async def me_required(  # pyright: ignore[reportUnusedFunction]
@@ -88,8 +88,10 @@ async def test_current_user_returns_401_when_anonymous(
 ) -> None:
     response = await authed_client.get("/me")
     assert response.status_code == 401
-    # FastAPI HTTPException wraps the detail under "detail".
-    assert response.json()["detail"]["code"] == "INVALID_CREDENTIALS"
+    assert response.json() == {
+        "code": "INVALID_CREDENTIALS",
+        "message": "authentication required",
+    }
 
 
 async def test_optional_current_user_returns_user_when_authenticated(

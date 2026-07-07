@@ -25,7 +25,7 @@ from fastauth.domain.models import RefreshToken, new_id
 from fastauth.exceptions import RefreshTokenReuseError, TokenExpiredError, TokenInvalidError
 from fastauth.options import RefreshTokenOptions
 from fastauth.security.tokens import TokenPair, TokenService
-from fastauth.storage.base import DatabaseAdapter
+from fastauth.storage.base import DatabaseAdapter, RevokedRefreshFamily
 
 __all__ = ["RefreshTokenService"]
 
@@ -117,6 +117,12 @@ class RefreshTokenService:
             return next_expiry
         return min(next_expiry, family_created_at + self.config.absolute_max_age)
 
+    async def revoke_family(self, family_id: str) -> RevokedRefreshFamily:
+        revoked = await self.adapter.delete_refresh_token_family(family_id)
+        for session_id in revoked.session_ids:
+            await self.adapter.delete_session(session_id)
+        return revoked
+
     async def get_valid(self, plain_token: str) -> RefreshToken:
         if not self.enabled:
             raise TokenInvalidError()
@@ -125,7 +131,7 @@ class RefreshTokenService:
         if existing is None:
             raise TokenInvalidError()
         if existing.consumed_at is not None:
-            await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
+            await self.revoke_family(existing.family_id)
             raise RefreshTokenReuseError()
         now = datetime.now(UTC)
         if existing.expires_at <= now:
@@ -133,7 +139,7 @@ class RefreshTokenService:
         if self.config.absolute_max_age is not None:
             absolute_deadline = existing.family_created_at + self.config.absolute_max_age
             if now >= absolute_deadline:
-                await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
+                await self.revoke_family(existing.family_id)
                 raise TokenExpiredError()
         return existing
 
@@ -176,7 +182,7 @@ class RefreshTokenService:
             consumed_at=now,
         )
         if rotated is None:
-            await self.adapter.delete_refresh_tokens_in_family(existing.family_id)
+            await self.revoke_family(existing.family_id)
             raise RefreshTokenReuseError()
         return rotated, new_pair.plain
 

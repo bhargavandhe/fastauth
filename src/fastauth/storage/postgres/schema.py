@@ -124,7 +124,6 @@ def build_postgres_schema(
         Column(
             "session_id",
             String(64),
-            ForeignKey(f"{sessions.name}.id", ondelete="CASCADE"),
             nullable=False,
         ),
         Column("token_hash", String(255), nullable=False, unique=True),

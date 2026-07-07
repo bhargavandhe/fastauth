@@ -208,6 +208,62 @@ async def test_refresh_token_reuse_revokes_family(
     assert blocked.status_code == 400
 
 
+async def test_refresh_token_reuse_revokes_associated_access_sessions(
+    client: httpx.AsyncClient,
+    adapter: InMemoryAdapter,
+) -> None:
+    original_access, original_refresh = await sign_up_with_tokens(client)
+    first = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": original_refresh, "delivery": {"kind": "bearer"}},
+    )
+    assert first.status_code == 200, first.text
+    rotated_access = first.json()["credentials"]["token"]
+
+    reused = await client.post(
+        "/auth/refresh",
+        json={"refreshToken": original_refresh, "delivery": {"kind": "bearer"}},
+    )
+    assert reused.status_code == 401
+    assert reused.json()["code"] == "REFRESH_TOKEN_REUSE"
+    assert adapter.refresh_tokens == {}
+    assert adapter.sessions == {}
+
+    original_session = await client.get(
+        "/auth/get-session",
+        headers={"authorization": f"Bearer {original_access}"},
+    )
+    rotated_session = await client.get(
+        "/auth/get-session",
+        headers={"authorization": f"Bearer {rotated_access}"},
+    )
+    assert original_session.status_code == 204
+    assert rotated_session.status_code == 204
+
+
+async def test_repeated_refresh_keeps_single_visible_session(
+    client: httpx.AsyncClient,
+) -> None:
+    access, refresh = await sign_up_with_tokens(client)
+
+    for _ in range(3):
+        response = await client.post(
+            "/auth/refresh",
+            json={"refreshToken": refresh, "delivery": {"kind": "bearer"}},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        access = body["credentials"]["token"]
+        refresh = body["credentials"]["refreshToken"]
+
+    sessions = await client.get(
+        "/auth/sessions",
+        headers={"authorization": f"Bearer {access}"},
+    )
+    assert sessions.status_code == 200, sessions.text
+    assert len(sessions.json()["sessions"]) == 1
+
+
 async def test_refresh_expired_token_returns_400(
     client: httpx.AsyncClient,
     adapter: InMemoryAdapter,

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+from pydantic import BaseModel, ConfigDict
+
 from fastauth.domain.enums import AuditEventType, ProviderId, VerificationPurpose
 from fastauth.domain.models import (
     Account,
@@ -29,10 +31,18 @@ __all__ = [
     "JwksKeyStore",
     "RateLimitStore",
     "RefreshTokenStore",
+    "RevokedRefreshFamily",
     "SessionStore",
     "UserStore",
     "VerificationStore",
 ]
+
+
+class RevokedRefreshFamily(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    deleted_tokens: int
+    session_ids: frozenset[str]
 
 
 @runtime_checkable
@@ -81,6 +91,7 @@ class RefreshTokenStore(Protocol):
         except_session_id: str | None = None,
     ) -> int: ...
     async def delete_refresh_tokens_for_session(self, session_id: str) -> int: ...
+    async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily: ...
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int: ...
 
 
@@ -283,6 +294,9 @@ class BaseDatabaseAdapter:
         raise self.unsupported("refresh tokens")
 
     async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
+        raise self.unsupported("refresh tokens")
+
+    async def delete_refresh_token_family(self, family_id: str) -> RevokedRefreshFamily:
         raise self.unsupported("refresh tokens")
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:

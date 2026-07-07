@@ -9,9 +9,11 @@ from pydantic import SecretStr, ValidationError
 
 from fastauth import AuthenticationResponse, FastAuth, FastAuthOptions, SessionView, UserView
 from fastauth.api.commands import (
+    AuthPrincipal,
     ChangePasswordCommand,
     GetSessionCommand,
     ListSessionsCommand,
+    SignInUsernameCommand,
     SignOutCommand,
     SignUpEmailCommand,
     UpdateUserCommand,
@@ -20,6 +22,7 @@ from fastauth.database import memory
 from fastauth.exceptions import FeatureNotEnabledError
 from fastauth.messaging.email import EmailMessage
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
+from fastauth.plugins.email_password import EmailPasswordOptions
 from fastauth.providers import email_password, openapi
 
 
@@ -216,3 +219,64 @@ async def test_server_api_requires_email_password_provider() -> None:
                 password=SecretStr("correct-horse-battery"),
             ),
         )
+
+
+async def test_server_api_respects_disabled_username_sign_in() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("i" * 64), database=memory()),
+        plugins=[
+            email_password(
+                EmailPasswordOptions(
+                    allow_username_sign_in=False,
+                )
+            )
+        ],
+    )
+
+    with pytest.raises(FeatureNotEnabledError, match="username-sign-in"):
+        await auth.api.sign_in.username(
+            SignInUsernameCommand(
+                username="alice",
+                password=SecretStr("correct-horse-battery"),
+            ),
+        )
+
+
+def test_username_commands_use_shared_username_validation() -> None:
+    with pytest.raises(ValidationError):
+        SignInUsernameCommand(
+            username="bad username",
+            password=SecretStr("correct-horse-battery"),
+        )
+
+    with pytest.raises(ValidationError):
+        SignUpEmailCommand(
+            email="alice@example.com",
+            username="x",
+            password=SecretStr("correct-horse-battery"),
+        )
+
+
+async def test_session_api_accepts_immutable_principal() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("j" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+    signed_up = await auth.api.sign_up.email(
+        SignUpEmailCommand(
+            email="alice@example.com",
+            username="alice",
+            password=SecretStr("correct-horse-battery"),
+        )
+    )
+
+    result = await auth.api.session.list(
+        ListSessionsCommand(
+            principal=AuthPrincipal(user_id=signed_up.user.id.root),
+            current_session_id=signed_up.session.id.root,
+        )
+    )
+
+    assert len(result.sessions) == 1
+    with pytest.raises(ValidationError):
+        AuthPrincipal(user_id="")

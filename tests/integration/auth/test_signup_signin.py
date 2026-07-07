@@ -11,7 +11,13 @@ from pydantic import SecretStr
 
 from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
-from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    EmailVerificationOptions,
+    FastAuthOptions,
+    RateLimitOptions,
+)
 from fastauth.plugins.email_password import EmailPasswordOptions
 from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
@@ -266,7 +272,11 @@ async def test_sign_in_username_returns_token_when_requested(
     assert isinstance(response.json()["credentials"]["token"], str)
 
 
-def build_custom_auth(options: EmailPasswordOptions) -> FastAuth:
+def build_custom_auth(
+    options: EmailPasswordOptions,
+    *,
+    email_verification: EmailVerificationOptions | None = None,
+) -> FastAuth:
     adapter = InMemoryAdapter()
     return FastAuth(
         FastAuthOptions(
@@ -275,6 +285,7 @@ def build_custom_auth(options: EmailPasswordOptions) -> FastAuth:
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
+            email_verification=email_verification or EmailVerificationOptions(),
         ),
         plugins=[email_password(options)],
         email_sender=ConsoleEmailSender(),
@@ -332,8 +343,11 @@ async def test_email_password_option_can_disable_bearer_delivery(endpoint: str) 
         assert response.json()["code"] == "INVALID_REQUEST"
 
 
-async def test_email_password_option_can_require_verified_email_for_sign_in() -> None:
-    auth = build_custom_auth(EmailPasswordOptions(require_email_verification=True))
+async def test_global_option_can_require_verified_email_for_sign_in() -> None:
+    auth = build_custom_auth(
+        EmailPasswordOptions(),
+        email_verification=EmailVerificationOptions(require_verified_for_sign_in=True),
+    )
     async for http in client_for_auth(auth):
         created = await http.post(
             "/auth/sign-up/email",

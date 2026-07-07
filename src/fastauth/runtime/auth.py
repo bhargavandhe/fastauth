@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import cast
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import JSONResponse
 
 from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
@@ -37,6 +39,27 @@ from fastauth.web.fastapi import build_router, extract_session_token
 from fastauth.web.security_headers import SecurityHeadersMiddleware
 
 __all__ = ["FastAuth"]
+
+
+async def fastauth_http_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> Response:
+    if not isinstance(exc, HTTPException):
+        raise exc
+    detail = exc.detail
+    if isinstance(detail, dict):
+        typed_detail = cast(dict[str, object], detail)
+        if isinstance(typed_detail.get("code"), str) and isinstance(
+            typed_detail.get("message"),
+            str,
+        ):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=typed_detail,
+                headers=exc.headers,
+            )
+    return await http_exception_handler(request, exc)
 
 
 class FastAuth:
@@ -193,6 +216,7 @@ class FastAuth:
 
     def mount(self, app: FastAPI) -> None:
         """Mount fastauth routes and middleware on an existing ``FastAPI`` app."""
+        app.add_exception_handler(HTTPException, fastauth_http_exception_handler)
         app.include_router(self.router)
         app.add_middleware(
             CsrfMiddleware,
@@ -209,12 +233,12 @@ class FastAuth:
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
         """ASGI lifespan for storage bootstrap plus plugin startup/shutdown hooks."""
         app_instance = app or FastAPI()
-        await self.database_runtime.startup(self, app_instance)
-        try:
-            async with self.plugin_lifespan():
-                yield
-        finally:
-            await self.database_runtime.shutdown()
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(
+                self.database_runtime.lifespan(self, app_instance),
+            )
+            await stack.enter_async_context(self.plugin_lifespan())
+            yield
 
     @asynccontextmanager
     async def plugin_lifespan(self) -> AsyncGenerator[None, None]:
