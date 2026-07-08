@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import timedelta
-from typing import Annotated, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypeAlias, cast
 
 from fastapi import FastAPI
 from pydantic import (
@@ -38,6 +39,8 @@ __all__ = [
     "DatabaseOptions",
     "DatabaseRuntime",
     "DeleteAccountOptions",
+    "DurationInput",
+    "DynamicBaseUrlOptions",
     "EmailChangeOptions",
     "EmailOptions",
     "EmailVerificationOptions",
@@ -45,6 +48,7 @@ __all__ = [
     "LockoutOptions",
     "MemoryDatabaseOptions",
     "MemoryDatabaseRuntime",
+    "MongoDatabase",
     "MongoDatabaseOptions",
     "MongoDatabaseRuntime",
     "PasswordOptions",
@@ -56,7 +60,43 @@ __all__ = [
     "RefreshTokenOptions",
     "SecurityHeadersOptions",
     "SessionOptions",
+    "parse_duration",
 ]
+
+if TYPE_CHECKING:
+    from pymongo.asynchronous.database import AsyncDatabase
+
+    MongoDatabase: TypeAlias = AsyncDatabase[Any]
+else:
+    MongoDatabase: TypeAlias = object
+
+DurationInput: TypeAlias = timedelta | int | float | str
+DurationPattern = re.compile(r"^\s*(?P<amount>\d+(?:\.\d+)?)\s*(?P<unit>ms|s|m|h|d|w)\s*$")
+DurationUnits: dict[str, float] = {
+    "ms": 0.001,
+    "s": 1.0,
+    "m": 60.0,
+    "h": 60.0 * 60.0,
+    "d": 60.0 * 60.0 * 24.0,
+    "w": 60.0 * 60.0 * 24.0 * 7.0,
+}
+
+
+def parse_duration(value: object) -> object:
+    """Normalize common duration inputs to ``timedelta`` for Pydantic fields."""
+    if value is None or isinstance(value, timedelta):
+        return value
+    if isinstance(value, bool):
+        raise ValueError("duration must be a timedelta, seconds, or a string like '10m'")
+    if isinstance(value, int | float):
+        return timedelta(seconds=value)
+    if isinstance(value, str):
+        match = DurationPattern.fullmatch(value)
+        if match is None:
+            raise ValueError("duration strings must look like '30s', '10m', '2h', '7d', or '1w'")
+        seconds = float(match.group("amount")) * DurationUnits[match.group("unit")]
+        return timedelta(seconds=seconds)
+    return value
 
 
 class OptionsModel(BaseModel):
@@ -75,9 +115,42 @@ class OptionsSection(OptionsModel):
     """Common base for grouped user-facing options."""
 
 
+class DynamicBaseUrlOptions(OptionsSection):
+    """Request-scoped base URL configuration."""
+
+    allowed_hosts: tuple[str, ...] = Field(min_length=1)
+    fallback: AnyHttpUrl | None = None
+    protocol: Literal["http", "https"] = "https"
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def normalize_allowed_hosts_input(cls, value: object) -> object:
+        if isinstance(value, list):
+            return tuple(cast(list[object], value))
+        return value
+
+    @field_validator("allowed_hosts", mode="after")
+    @classmethod
+    def validate_allowed_hosts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for host in value:
+            candidate = host.strip().lower()
+            if (
+                not candidate
+                or "://" in candidate
+                or "/" in candidate
+                or "\\" in candidate
+                or "@" in candidate
+                or candidate == "*"
+            ):
+                raise ValueError("allowed_hosts entries must be host patterns")
+            normalized.append(candidate)
+        return tuple(normalized)
+
+
 class AppOptions(OptionsSection):
     name: str = Field(default="fastauth", min_length=1, max_length=100)
-    base_url: AnyHttpUrl = "http://localhost:8000"  # type: ignore[assignment]
+    base_url: AnyHttpUrl | DynamicBaseUrlOptions = "http://localhost:8000"  # type: ignore[assignment]
     base_path: str = Field(default="/auth", pattern=r"^/[a-zA-Z0-9/_-]*$")
 
 
@@ -85,6 +158,11 @@ class SessionOptions(OptionsSection):
     strategy: SessionStrategyKind = SessionStrategyKind.DATABASE
     expires_in: timedelta = Field(default=timedelta(days=7), gt=timedelta(0))
     idle_timeout: timedelta | None = Field(default=None, gt=timedelta(0))
+
+    @field_validator("expires_in", "idle_timeout", mode="before")
+    @classmethod
+    def normalize_duration_input(cls, value: object) -> object:
+        return parse_duration(value)
 
     @model_validator(mode="after")
     def validate_idle_timeout(self) -> SessionOptions:
@@ -140,6 +218,11 @@ class EmailVerificationOptions(OptionsSection):
     callback_path: str = Field(default="/auth/verify-email", pattern=r"^/")
     callback_url_override: AnyHttpUrl | None = None
 
+    @field_validator("expires_in", mode="before")
+    @classmethod
+    def normalize_expires_in_input(cls, value: object) -> object:
+        return parse_duration(value)
+
     @property
     def token_ttl_minutes(self) -> int:
         return int(self.expires_in.total_seconds() // 60)
@@ -149,6 +232,11 @@ class PasswordResetOptions(OptionsSection):
     expires_in: timedelta = Field(default=timedelta(minutes=30), gt=timedelta(0))
     callback_path: str = Field(default="/auth/reset-password", pattern=r"^/")
     callback_url_override: AnyHttpUrl | None = None
+
+    @field_validator("expires_in", mode="before")
+    @classmethod
+    def normalize_expires_in_input(cls, value: object) -> object:
+        return parse_duration(value)
 
     @property
     def token_ttl_minutes(self) -> int:
@@ -161,6 +249,11 @@ class EmailChangeOptions(OptionsSection):
     callback_url_override: AnyHttpUrl | None = None
     subject: str = Field(default="Confirm your new email address", min_length=1, max_length=200)
 
+    @field_validator("expires_in", mode="before")
+    @classmethod
+    def normalize_expires_in_input(cls, value: object) -> object:
+        return parse_duration(value)
+
     @property
     def token_ttl_minutes(self) -> int:
         return int(self.expires_in.total_seconds() // 60)
@@ -172,6 +265,11 @@ class DeleteAccountOptions(OptionsSection):
     callback_url_override: AnyHttpUrl | None = None
     subject: str = Field(default="Confirm account deletion", min_length=1, max_length=200)
 
+    @field_validator("expires_in", mode="before")
+    @classmethod
+    def normalize_expires_in_input(cls, value: object) -> object:
+        return parse_duration(value)
+
     @property
     def token_ttl_minutes(self) -> int:
         return int(self.expires_in.total_seconds() // 60)
@@ -182,6 +280,11 @@ class RateLimitOptions(OptionsSection):
     window: timedelta = Field(default=timedelta(seconds=60), gt=timedelta(0))
     max_requests: int = Field(default=100, ge=1, le=1_000_000)
     storage: RateLimitStorageKind = RateLimitStorageKind.MEMORY
+
+    @field_validator("window", mode="before")
+    @classmethod
+    def normalize_window_input(cls, value: object) -> object:
+        return parse_duration(value)
 
     @property
     def window_seconds(self) -> int:
@@ -200,6 +303,11 @@ class LockoutOptions(OptionsSection):
     max_failures: int = Field(default=5, ge=1, le=100)
     window: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
 
+    @field_validator("window", mode="before")
+    @classmethod
+    def normalize_window_input(cls, value: object) -> object:
+        return parse_duration(value)
+
     @property
     def window_seconds(self) -> int:
         return int(self.window.total_seconds())
@@ -209,6 +317,11 @@ class RefreshTokenOptions(OptionsSection):
     enabled: bool = True
     max_age: timedelta = Field(default=timedelta(days=30), gt=timedelta(0))
     absolute_max_age: timedelta | None = Field(default=None, gt=timedelta(0))
+
+    @field_validator("max_age", "absolute_max_age", mode="before")
+    @classmethod
+    def normalize_duration_input(cls, value: object) -> object:
+        return parse_duration(value)
 
     @property
     def max_age_seconds(self) -> int:
@@ -275,7 +388,7 @@ class MemoryDatabaseRuntime:
 class MongoDatabaseRuntime:
     def __init__(
         self,
-        database: object,
+        database: MongoDatabase,
         *,
         collection_prefix: str,
         collection_suffix: str,
@@ -392,7 +505,7 @@ class MemoryDatabaseOptions(OptionsSection):
 
 class MongoDatabaseOptions(OptionsSection):
     kind: Literal["mongo"] = "mongo"
-    database: object
+    database: MongoDatabase
     collection_prefix: str = ""
     collection_suffix: str = ""
 
@@ -536,7 +649,15 @@ class FastAuthOptions(OptionsModel):
         if self.database.backend_kind() is DatabaseBackendKind.MEMORY:
             raise ValueError("memory database is not allowed in production")
 
-        if self.app.base_url.scheme != "https":
+        if isinstance(self.app.base_url, DynamicBaseUrlOptions):
+            if self.app.base_url.protocol != "https":
+                raise ValueError("production dynamic base_url must use HTTPS")
+            if (
+                self.app.base_url.fallback is not None
+                and self.app.base_url.fallback.scheme != "https"
+            ):
+                raise ValueError("production dynamic base_url fallback must use HTTPS")
+        elif self.app.base_url.scheme != "https":
             raise ValueError("production base_url must use HTTPS")
 
         if not self.cookie.secure:

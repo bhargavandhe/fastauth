@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 from typing import Any
 
@@ -15,6 +16,190 @@ def test_generate_secret_prints_64_chars() -> None:
     assert len(result.stdout.strip()) >= 64
 
 
+def test_info_prints_versions_and_optional_dependency_status() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["info"])
+
+    assert result.exit_code == 0
+    assert "fastauth:" in result.stdout
+    assert "python:" in result.stdout
+    assert "pydantic:" in result.stdout
+    assert "optional dependencies:" in result.stdout
+    assert "sqlalchemy:" in result.stdout
+
+
+def test_inspect_prints_default_options_summary() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect"])
+
+    assert result.exit_code == 0
+    assert "FastAuthOptions" in result.stdout
+    assert "deployment: development" in result.stdout
+    assert "database: memory" in result.stdout
+    assert "session: database" in result.stdout
+
+
+def test_inspect_can_render_valid_config_as_json(tmp_path: pathlib.Path) -> None:
+    config = tmp_path / "fastauth.json"
+    config.write_text(
+        json.dumps(
+            {
+                "secret_key": "a" * 64,
+                "session": {"expires_in": "2h"},
+                "cookie": {"same_site": "strict"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect", str(config), "--output", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["deployment"] == "development"
+    assert payload["database"]["kind"] == "memory"
+    assert payload["session"]["max_age_seconds"] == 7200
+    assert payload["cookie"]["same_site"] == "strict"
+
+
+def test_config_check_validates_json_config(tmp_path: pathlib.Path) -> None:
+    config = tmp_path / "fastauth.json"
+    config.write_text(
+        json.dumps(
+            {
+                "secret_key": "b" * 64,
+                "session": {"expires_in": 1800},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config-check", str(config)])
+
+    assert result.exit_code == 0
+    assert "config valid" in result.stdout
+    assert "database: memory" in result.stdout
+
+
+def test_config_check_validates_toml_fastauth_table(tmp_path: pathlib.Path) -> None:
+    config = tmp_path / "fastauth.toml"
+    config.write_text(
+        """
+[fastauth]
+secret_key = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+[fastauth.session]
+expires_in = "45m"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config-check", str(config)])
+
+    assert result.exit_code == 0
+    assert "config valid" in result.stdout
+
+
+def test_config_check_reports_validation_errors(tmp_path: pathlib.Path) -> None:
+    config = tmp_path / "fastauth.json"
+    config.write_text(
+        json.dumps(
+            {
+                "secret_key": "short",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config-check", str(config)])
+
+    assert result.exit_code == 1
+    assert "config invalid" in result.stdout
+    assert "secret_key must contain at least 32 bytes" in result.stdout
+
+
+def test_schema_plan_prints_postgres_tables_and_migrations() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "schema-plan",
+            "--backend",
+            "postgres",
+            "--postgres-table-prefix",
+            "tenant_",
+            "--postgres-table-suffix",
+            "_auth",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Backend: postgres" in result.stdout
+    assert "tenant_users_auth" in result.stdout
+    assert "Current schema version:" in result.stdout
+    assert "initial fastauth schema" in result.stdout
+
+
+def test_schema_plan_prints_mongo_collections() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "schema-plan",
+            "--backend",
+            "mongo",
+            "--mongo-collection-prefix",
+            "tenant_",
+            "--mongo-collection-suffix",
+            "_auth",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Backend: mongo" in result.stdout
+    assert "tenant_users_auth" in result.stdout
+    assert "Startup action: ensure Beanie documents and indexes" in result.stdout
+
+
+def test_migrate_dry_run_prints_pending_postgres_migrations() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["migrate-dry-run", "--backend", "postgres", "--current-version", "1"],
+    )
+
+    assert result.exit_code == 0
+    assert "Pending migrations:" in result.stdout
+    assert "2: link refresh tokens to sessions" in result.stdout
+    assert "3: preserve refresh token evidence" in result.stdout
+    assert "fastauth_users" in result.stdout
+
+
+def test_migrate_dry_run_rejects_newer_postgres_schema() -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["migrate-dry-run", "--backend", "postgres", "--current-version", "99"],
+    )
+
+    assert result.exit_code == 1
+    assert "schema is newer than this fastauth version" in result.stdout
+
+
+def test_migrate_dry_run_prints_mongo_plan() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["migrate-dry-run", "--backend", "mongo"])
+
+    assert result.exit_code == 0
+    assert "Backend: mongo" in result.stdout
+    assert "Tracked migrations: none" in result.stdout
+    assert "users" in result.stdout
+
+
 def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["init", "--path", str(tmp_path)])
@@ -25,7 +210,7 @@ def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     # NOT pull from any env-only loader.
     body = auth_py.read_text(encoding="utf-8")
     assert "FastAuthOptions" in body
-    assert "create_auth(" in body
+    assert "FastAuth(" in body
     assert "plugins=[email_password()]" in body
     assert "FastAuthEnvConfig" not in body
     assert "memory()" in body
@@ -40,6 +225,7 @@ def test_init_can_write_postgres_scaffold(tmp_path: pathlib.Path) -> None:
 
     body = (tmp_path / "auth.py").read_text(encoding="utf-8")
     assert "postgres(" in body
+    assert "url=postgres_url" in body
     assert "postgres_url" in body
     assert "table_prefix=table_prefix" in body
     assert "table_suffix=table_suffix" in body
@@ -53,6 +239,7 @@ def test_init_can_write_mongo_scaffold(tmp_path: pathlib.Path) -> None:
 
     body = (tmp_path / "auth.py").read_text(encoding="utf-8")
     assert "mongo(" in body
+    assert "database=database" in body
     assert "create_mongo_database(mongo_url: str, database_name: str)" in body
     assert "collection_prefix=collection_prefix" in body
     assert "collection_suffix=collection_suffix" in body

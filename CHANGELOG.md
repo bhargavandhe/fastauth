@@ -4,6 +4,36 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-09
+
+### Changed
+
+- Canonicalized construction on `FastAuth(FastAuthOptions(...), plugins=[...])`.
+- Made database factories keyword-only for backend handles:
+  `mongo(database=...)`, `postgres(url=...)`, and `custom(adapter=...)`.
+- Consolidated route protection dependencies under `auth.depends.user()`,
+  `auth.depends.optional_user()`, `auth.depends.session()`, and
+  `auth.depends.optional_session()`.
+- `auth.depends.user()` now returns the public `UserView` DTO by default.
+- Duration option fields now accept `timedelta`, numeric seconds, or short
+  strings such as `"10m"`, `"2h"`, `"7d"`, and `"4w"`.
+- `MongoDatabaseOptions.database` and `mongo(database=...)` now expose a typed
+  `MongoDatabase` alias for PyMongo async databases.
+
+### Added
+
+- Added `docs/migrating/0.11.md` with the direct 0.10 to 0.11 migration steps.
+
+### Removed
+
+- Removed `create_auth(...)`.
+- Removed `FastAuth.configure(...)`, `FastAuth.local_dev(...)`, and
+  `FastAuth.production(...)`.
+- Removed duplicate application-route dependency spellings such as
+  `auth.require_user`, `auth.optional_user`, `auth.require_session`,
+  `auth.optional_session`, `auth.get_current_user`, and
+  `auth.get_current_session`.
+
 ## [0.10.2] — 2026-07-08
 
 ### Changed
@@ -645,7 +675,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/bhargavandhe/fastauth/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/bhargavandhe/fastauth/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/bhargavandhe/fastauth/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bhargavandhe/fastauth/compare/v0.9.0...v0.10.0

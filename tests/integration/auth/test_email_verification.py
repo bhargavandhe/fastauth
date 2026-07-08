@@ -123,7 +123,7 @@ def require_verified_auth(
     return FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            database=custom(adapter),
+            database=custom(adapter=adapter),
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),

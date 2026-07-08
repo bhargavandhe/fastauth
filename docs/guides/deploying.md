@@ -58,7 +58,7 @@ options = FastAuthOptions(
     deployment="production",
     app=AppOptions(base_url="https://app.example.com"),
     database=postgres(
-        "postgresql+asyncpg://user:pass@db.example.com/myapp",
+        url="postgresql+asyncpg://user:pass@db.example.com/myapp",
         table_prefix="fastauth_",
         table_suffix="",
         migration_mode="check",

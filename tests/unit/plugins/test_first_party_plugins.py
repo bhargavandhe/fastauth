@@ -26,7 +26,7 @@ def test_first_party_plugin_bind_calls_base_context_hook(plugin: object) -> None
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            database=custom(InMemoryAdapter()),
+            database=custom(adapter=InMemoryAdapter()),
         ),
         plugins=[plugin],  # type: ignore[list-item]
     )

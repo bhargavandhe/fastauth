@@ -38,7 +38,7 @@ async def jwt_session_client() -> AsyncIterator[tuple[httpx.AsyncClient, FastAut
     adapter = InMemoryAdapter()
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
-        database=custom(adapter),
+        database=custom(adapter=adapter),
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),
@@ -144,7 +144,7 @@ def test_jwt_strategy_without_jwt_plugin_raises() -> None:
     """Misconfiguration: strategy=JWT but JwtPlugin not installed."""
     options = FastAuthOptions(
         secret_key=SecretStr("a" * 64),
-        database=custom(InMemoryAdapter()),
+        database=custom(adapter=InMemoryAdapter()),
         csrf=CsrfOptions(enabled=False),
         session=SessionOptions(strategy=SessionStrategyKind.JWT),
     )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from pydantic import SecretStr
 
@@ -7,7 +9,7 @@ from fastauth import FastAuth, FastAuthOptions, email_password
 from fastauth.database import custom, memory
 from fastauth.domain.enums import DatabaseBackendKind
 from fastauth.exceptions import ConfigError
-from fastauth.options import AppOptions, CustomDatabaseOptions, MongoDatabaseOptions
+from fastauth.options import AppOptions, CustomDatabaseOptions, MongoDatabase, MongoDatabaseOptions
 from fastauth.storage.memory import InMemoryAdapter
 
 
@@ -34,7 +36,7 @@ def test_fastauth_accepts_custom_adapter_database_option() -> None:
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("b" * 64),
-            database=custom(adapter),
+            database=custom(adapter=adapter),
         ),
     )
 
@@ -57,7 +59,7 @@ def test_production_deployment_requires_non_console_email_sender() -> None:
 
 
 def test_mongo_database_option_models_collection_affixes() -> None:
-    database = object()
+    database = cast(MongoDatabase, object())
     options = FastAuthOptions(
         secret_key=SecretStr("b" * 64),
         database=MongoDatabaseOptions(

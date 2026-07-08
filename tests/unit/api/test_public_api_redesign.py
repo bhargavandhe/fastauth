@@ -16,7 +16,6 @@ from fastauth import (
     SessionView,
     UserId,
     UserView,
-    create_auth,
     email_password,
     openapi,
 )
@@ -59,30 +58,6 @@ def test_fastauth_class_builds_auth_from_pydantic_options() -> None:
 
     assert auth.options.database.kind == "memory"
     assert auth.router.prefix == "/auth"
-
-
-def test_create_auth_factory_builds_fastauth_from_keyword_options() -> None:
-    auth = create_auth(
-        secret_key=SecretStr("a" * 64),
-        database=memory(),
-        plugins=[email_password()],
-    )
-
-    assert isinstance(auth, FastAuth)
-    assert auth.options.database.kind == "memory"
-
-
-def test_fastauth_configure_and_local_dev_helpers() -> None:
-    configured = FastAuth.configure(
-        secret_key=SecretStr("a" * 64),
-        database=memory(),
-        plugins=[email_password()],
-    )
-    local = FastAuth.local_dev(secret_key=SecretStr("b" * 64), plugins=[email_password()])
-
-    assert isinstance(configured, FastAuth)
-    assert local.options.cookie.secure is False
-    assert local.options.database.kind == "memory"
 
 
 def test_fastauth_factory_accepts_dependency_overrides() -> None:
@@ -179,6 +154,7 @@ def test_old_config_names_are_not_exported() -> None:
     import fastauth
 
     assert not hasattr(fastauth, "FastAuthConfig")
+    assert not hasattr(fastauth, "create_auth")
     assert hasattr(fastauth, "FastAuth")
 
 
@@ -190,16 +166,16 @@ def test_root_exports_common_safe_response_types() -> None:
     assert fastauth.UserView is UserView
 
 
-def test_fastauth_exposes_concise_dependency_aliases() -> None:
+def test_fastauth_exposes_single_dependency_namespace() -> None:
     auth = FastAuth(FastAuthOptions(secret_key=SecretStr("f" * 64), database=memory()))
 
-    assert callable(auth.require_user)
-    assert callable(auth.optional_user)
-    assert callable(auth.require_session)
-    assert callable(auth.optional_session)
-    assert callable(auth.depends.user_view())
+    assert not hasattr(auth, "require_user")
+    assert not hasattr(auth, "optional_user")
+    assert not hasattr(auth, "require_session")
+    assert not hasattr(auth, "optional_session")
+    assert callable(auth.depends.user())
     assert callable(auth.depends.session())
-    assert callable(auth.depends.optional_user_view())
+    assert callable(auth.depends.optional_user())
     assert callable(auth.depends.optional_session())
 
 

@@ -21,6 +21,7 @@ from fastauth.exceptions import TokenExpiredError, TokenInvalidError
 from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse, validate_password_policy
 from fastauth.runtime.context import AuthContext
+from fastauth.web.callbacks import validate_callback_url
 
 __all__ = [
     "ForgotPasswordRequest",
@@ -59,6 +60,7 @@ async def forgot_password(
     *,
     ip: str | None,
     user_agent: str | None,
+    app_base_url: str | None = None,
 ) -> EmptyResponse:
     """Issue a reset token and email it; always returns success (anti-enumeration)."""
     user = await context.adapter.get_user_by_email(request.email)
@@ -93,10 +95,19 @@ async def forgot_password(
     )
 
     params = {"token": pair.plain, "email": user.email}
-    if request.redirect_url is not None:
-        params["redirect_url"] = request.redirect_url
+    redirect_url = validate_callback_url(
+        request.redirect_url,
+        trusted_origins=(
+            *context.config.csrf.trusted_origins,
+            *context.plugins.all_trusted_origins(),
+        ),
+        allow_relative=context.config.csrf.allow_relative_paths,
+        field_name="redirect_url",
+    )
+    if redirect_url is not None:
+        params["redirect_url"] = redirect_url
     reset_base_url = resolve_callback_url(
-        app_base_url=context.config.app.base_url,
+        app_base_url=app_base_url or context.config.app.base_url,
         callback_path=context.config.password_reset.callback_path,
         override=context.config.password_reset.callback_url_override,
     )

@@ -201,10 +201,13 @@ class JwtPlugin(Plugin):
 
     async def issue_token_for(self, user: User) -> str:
         """Sign a JWT for ``user`` using the plugin's configured signer."""
+        from fastauth.web.callbacks import resolve_configured_base_url
+
         context, _registry, signer = self.assert_bound()
         now = datetime.now(UTC)
-        issuer = str(self.options.issuer or context.config.app.base_url)
-        audience = str(self.options.audience or context.config.app.base_url)
+        default_base_url = resolve_configured_base_url(context.config.app.base_url)
+        issuer = self.options.issuer or default_base_url
+        audience = self.options.audience or default_base_url
         payload: dict[str, Any] = {
             "iss": issuer,
             "aud": audience,

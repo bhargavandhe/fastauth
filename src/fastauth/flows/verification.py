@@ -17,6 +17,7 @@ from fastauth.flows.callbacks import resolve_callback_url
 from fastauth.flows.credentials import EmptyResponse, SessionResponse
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
+from fastauth.web.callbacks import validate_callback_url
 
 __all__ = [
     "SendVerificationEmailRequest",
@@ -54,6 +55,7 @@ async def send_verification_email(
     *,
     ip: str | None,
     user_agent: str | None,
+    app_base_url: str | None = None,
 ) -> EmptyResponse:
     """Send a verification email; always returns success (anti-enumeration)."""
     user = await context.adapter.get_user_by_email(request.email)
@@ -81,10 +83,19 @@ async def send_verification_email(
     )
 
     params = {"token": pair.plain, "email": user.email}
-    if request.redirect_url is not None:
-        params["redirect_url"] = request.redirect_url
+    redirect_url = validate_callback_url(
+        request.redirect_url,
+        trusted_origins=(
+            *context.config.csrf.trusted_origins,
+            *context.plugins.all_trusted_origins(),
+        ),
+        allow_relative=context.config.csrf.allow_relative_paths,
+        field_name="redirect_url",
+    )
+    if redirect_url is not None:
+        params["redirect_url"] = redirect_url
     verify_base_url = resolve_callback_url(
-        app_base_url=context.config.app.base_url,
+        app_base_url=app_base_url or context.config.app.base_url,
         callback_path=context.config.email_verification.callback_path,
         override=context.config.email_verification.callback_url_override,
     )

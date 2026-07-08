@@ -5,7 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from fastapi import Request
+
+from fastauth.api.responses import UserView, user_view
+from fastauth.exceptions import FastAuthDependencyError
 from fastauth.plugins.base import Plugin, PluginApiRegistry, PluginApiT
+from fastauth.security.sessions import SessionContext
+from fastauth.web.fastapi import extract_session_token
 
 if TYPE_CHECKING:
     from fastauth.runtime.auth import FastAuth
@@ -17,26 +23,49 @@ __all__ = [
 
 
 class DependsManager:
+    """FastAPI dependency factory namespace for a bound ``FastAuth`` instance."""
+
     def __init__(self, auth: FastAuth) -> None:
-        self._auth = auth
+        self.auth = auth
 
     def session(self) -> Callable[..., Any]:
-        return self._auth.get_current_session
+        return self.session_dependency
 
     def optional_session(self) -> Callable[..., Any]:
-        return self._auth.get_optional_current_session
+        return self.optional_session_dependency
 
     def user(self) -> Callable[..., Any]:
-        return self._auth.get_current_user
-
-    def user_view(self) -> Callable[..., Any]:
-        return self._auth.get_current_user_view
+        return self.user_dependency
 
     def optional_user(self) -> Callable[..., Any]:
-        return self._auth.get_optional_current_user
+        return self.optional_user_dependency
 
-    def optional_user_view(self) -> Callable[..., Any]:
-        return self._auth.get_optional_current_user_view
+    async def session_dependency(self, request: Request) -> SessionContext:
+        """Return the active session or raise the canonical FastAuth 401."""
+        session = await self.optional_session_dependency(request)
+        if session is None:
+            raise FastAuthDependencyError()
+        return session
+
+    async def optional_session_dependency(
+        self,
+        request: Request,
+    ) -> SessionContext | None:
+        """Return the active session, or ``None`` for anonymous requests."""
+        token = extract_session_token(request, self.auth.context)
+        if token is None:
+            return None
+        return await self.auth.context.session_strategy.read(token)
+
+    async def user_dependency(self, request: Request) -> UserView:
+        """Return the active user as the public ``UserView`` DTO."""
+        session = await self.session_dependency(request)
+        return user_view(session.user)
+
+    async def optional_user_dependency(self, request: Request) -> UserView | None:
+        """Return the active user as ``UserView``, or ``None`` for anonymous requests."""
+        session = await self.optional_session_dependency(request)
+        return user_view(session.user) if session is not None else None
 
 
 class PluginsManager:

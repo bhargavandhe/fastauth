@@ -21,7 +21,7 @@ from pydantic import SecretStr
 from pymongo import AsyncMongoClient
 from testcontainers.mongodb import MongoDbContainer  # pyright: ignore[reportMissingTypeStubs]
 
-from examples.quickstart.app import build_options, create_app, create_auth
+from examples.quickstart.app import build_auth, build_options, create_app
 
 
 @pytest.fixture(scope="session")
@@ -58,7 +58,7 @@ async def client(mongo_url: str) -> AsyncIterator[httpx.AsyncClient]:
         csrf_enabled=False,
         rate_limit_enabled=False,
     )
-    auth = create_auth(options)
+    auth = build_auth(options)
     app = create_app(auth)
     try:
         await mongo_client.drop_database(database_name)

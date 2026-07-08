@@ -22,7 +22,7 @@ def options(
 ) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=SecretStr("x" * 64),
-        database=custom(adapter),
+        database=custom(adapter=adapter),
         rate_limit=rate_limit or RateLimitOptions(),
     )
 

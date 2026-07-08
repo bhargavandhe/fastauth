@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from pydantic import AnyHttpUrl
 
+from fastauth.options import DynamicBaseUrlOptions
+from fastauth.web.callbacks import build_callback_url
+
 __all__ = ["resolve_callback_url"]
 
 
 def resolve_callback_url(
     *,
-    app_base_url: AnyHttpUrl,
+    app_base_url: AnyHttpUrl | DynamicBaseUrlOptions | str,
     callback_path: str,
-    override: AnyHttpUrl | None,
+    override: AnyHttpUrl | str | None,
 ) -> str:
-    if override is not None:
-        return str(override).rstrip("/")
-    return f"{str(app_base_url).rstrip('/')}/{callback_path.lstrip('/')}"
+    return build_callback_url(
+        app_base_url=app_base_url,
+        callback_path=callback_path,
+        override=override,
+    )

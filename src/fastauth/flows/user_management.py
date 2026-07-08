@@ -216,6 +216,7 @@ async def request_delete_account(
     *,
     ip: str | None,
     user_agent: str | None,
+    app_base_url: str | None = None,
 ) -> EmptyResponse:
     expires_in = context.config.delete_account.expires_in
     ttl_minutes = max(1, int(expires_in.total_seconds() // 60))
@@ -237,7 +238,7 @@ async def request_delete_account(
     )
 
     confirm_base_url = resolve_callback_url(
-        app_base_url=context.config.app.base_url,
+        app_base_url=app_base_url or context.config.app.base_url,
         callback_path=context.config.delete_account.callback_path,
         override=context.config.delete_account.callback_url_override,
     )

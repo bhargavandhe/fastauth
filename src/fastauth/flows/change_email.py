@@ -6,7 +6,7 @@ Two-step:
    their password and the proposed new email. We verify the password, check
    that the new email is not already taken, set ``user.pending_email_change``
    to the new address, and send a verification token to the NEW address. The
-   user keeps seeing their OLD email in ``auth.get_current_user`` until the
+   user keeps seeing their OLD email from ``auth.depends.user()`` until the
    change is confirmed.
 
 2. ``POST /auth/change-email/confirm`` — token-based. The caller submits the
@@ -83,6 +83,7 @@ async def request_email_change(
     *,
     ip: str | None,
     user_agent: str | None,
+    app_base_url: str | None = None,
 ) -> EmptyResponse:
     if request.new_email.lower() == user.email.lower():
         # Already on this address. Anti-enumeration: succeed silently.
@@ -122,7 +123,7 @@ async def request_email_change(
 
     # Build the confirm URL and send the email to the NEW address.
     confirm_base_url = resolve_callback_url(
-        app_base_url=context.config.app.base_url,
+        app_base_url=app_base_url or context.config.app.base_url,
         callback_path=context.config.email_change.callback_path,
         override=context.config.email_change.callback_url_override,
     )

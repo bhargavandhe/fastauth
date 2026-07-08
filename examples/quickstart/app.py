@@ -25,9 +25,9 @@ __all__ = [
     "MONGO_URL",
     "app",
     "auth",
+    "build_auth",
     "build_options",
     "create_app",
-    "create_auth",
     "lifespan",
     "mongo_client",
     "mongo_database",
@@ -55,14 +55,14 @@ def build_options(
 ) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=secret_key,
-        database=mongo(database),
+        database=mongo(database=database),
         cookie=CookieOptions(secure=cookie_secure),
         csrf=CsrfOptions(enabled=csrf_enabled),
         rate_limit=RateLimitOptions(enabled=rate_limit_enabled),
     )
 
 
-def create_auth(options: FastAuthOptions) -> AuthRuntime:
+def build_auth(options: FastAuthOptions) -> AuthRuntime:
     return FastAuth(
         options,
         plugins=[
@@ -97,6 +97,6 @@ options = build_options(
     secret_key=SecretStr("replace-me-with-a-secret-from-your-application-config"),
     database=mongo_database,
 )
-auth = create_auth(options)
+auth = build_auth(options)
 app = create_app(auth)
 lifespan = app.router.lifespan_context

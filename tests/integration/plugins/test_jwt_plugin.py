@@ -13,7 +13,13 @@ from pydantic import SecretStr
 from fastauth import email_password
 from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
-from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.options import (
+    AppOptions,
+    CookieOptions,
+    CsrfOptions,
+    FastAuthOptions,
+    RateLimitOptions,
+)
 from fastauth.plugins.jwt import JwtOptions, JwtPlugin
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
@@ -25,7 +31,7 @@ async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            database=custom(adapter),
+            database=custom(adapter=adapter),
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
@@ -98,7 +104,7 @@ async def test_set_auth_jwt_header_uses_json_serializable_default_audience() -> 
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            database=custom(InMemoryAdapter()),
+            database=custom(adapter=InMemoryAdapter()),
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
@@ -124,3 +130,46 @@ async def test_set_auth_jwt_header_uses_json_serializable_default_audience() -> 
 
     assert response.status_code == 200
     assert response.headers.get("set-auth-jwt", "").count(".") == 2
+
+
+async def test_jwt_defaults_use_dynamic_base_url_fallback() -> None:
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            app=AppOptions.model_validate(
+                {
+                    "base_url": {
+                        "allowed_hosts": ("tenant.example.com",),
+                        "fallback": "https://fallback.example.com",
+                    },
+                },
+            ),
+            database=custom(adapter=InMemoryAdapter()),
+            csrf=CsrfOptions(enabled=False),
+            cookie=CookieOptions(secure=False),
+            rate_limit=RateLimitOptions(enabled=False),
+        ),
+        plugins=[email_password(), JwtPlugin()],
+        email_sender=ConsoleEmailSender(),
+    )
+    app = FastAPI(lifespan=auth.lifespan)
+    auth.mount(app)
+
+    async with auth.lifespan(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            signup = await client.post(
+                "/auth/sign-up/email",
+                json={"email": "dora@example.com", "password": "correct-horse-staple"},
+            )
+            assert signup.status_code == 200
+            response = await client.post("/auth/token")
+            jwks = (await client.get("/auth/jwks")).json()
+
+    token = response.json()["token"]
+    key_set = jwk.KeySet([jwk.import_key(item) for item in jwks["keys"]])
+    decoded = jwt.decode(token, key_set, algorithms=["EdDSA"])
+    assert decoded.claims["iss"] == "https://fallback.example.com"
+    assert decoded.claims["aud"] == "https://fallback.example.com"

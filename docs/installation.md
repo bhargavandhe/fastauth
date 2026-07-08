@@ -39,7 +39,7 @@ mongo_database = mongo_client["myapp"]
 options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
     database=mongo(
-        mongo_database,
+        database=mongo_database,
         collection_prefix="tenant_",
         collection_suffix="_auth",
     ),

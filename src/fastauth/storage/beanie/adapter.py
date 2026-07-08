@@ -142,7 +142,7 @@ class BeanieAdapter:
         ``app = FastAPI(lifespan=adapter.lifespan(auth))``
 
         Application code should normally prefer ``FastAuthOptions`` with
-        ``database=mongo(database)`` and then use ``auth.lifespan``.
+        ``database=mongo(database=database)`` and then use ``auth.lifespan``.
 
         It keeps Beanie-specific bootstrap in the Beanie adapter package while
         preserving ``FastAuth`` as storage-agnostic runtime code.

@@ -9,6 +9,7 @@ from fastauth.options import (
     CustomDatabaseOptions,
     DatabaseLifespanFactory,
     MemoryDatabaseOptions,
+    MongoDatabase,
     MongoDatabaseOptions,
     PostgresDatabaseOptions,
 )
@@ -22,8 +23,8 @@ def memory() -> MemoryDatabaseOptions:
 
 
 def mongo(
-    database: object,
     *,
+    database: MongoDatabase,
     collection_prefix: str = "",
     collection_suffix: str = "",
 ) -> MongoDatabaseOptions:
@@ -35,8 +36,8 @@ def mongo(
 
 
 def postgres(
-    url: str,
     *,
+    url: str,
     table_prefix: str = "fastauth_",
     table_suffix: str = "",
     migration_mode: Literal["apply", "check", "disabled"] = "apply",
@@ -53,8 +54,8 @@ def postgres(
 
 
 def custom(
-    adapter: DatabaseAdapter,
     *,
+    adapter: DatabaseAdapter,
     backend: DatabaseBackendKind = DatabaseBackendKind.MEMORY,
     lifespan: DatabaseLifespanFactory | None = None,
 ) -> CustomDatabaseOptions:

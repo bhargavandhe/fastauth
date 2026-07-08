@@ -9,16 +9,11 @@ from typing import TypeVar, cast
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.events import AuthEvent
-from fastauth.domain.models import User
-from fastauth.exceptions import ConfigError, FastAuthDependencyError, FastAuthError
+from fastauth.exceptions import ConfigError, FastAuthError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
-from fastauth.options import (
-    CookieOptions,
-    FastAuthOptions,
-)
+from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import Plugin, PluginInfo, PluginRegistry
 from fastauth.runtime.api import AuthApi
 from fastauth.runtime.capabilities import Capability, CapabilityRegistry
@@ -45,14 +40,14 @@ from fastauth.security.rate_limit import (
     RateLimiter,
 )
 from fastauth.security.refresh_tokens import RefreshTokenService
-from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
+from fastauth.security.sessions import DatabaseSessionStrategy, SessionStrategy
 from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import JwksKeyStore, RateLimitStore
 from fastauth.web.csrf import CsrfMiddleware
-from fastauth.web.fastapi import build_router, extract_session_token, http_status_for
+from fastauth.web.fastapi import build_router, http_status_for
 from fastauth.web.security_headers import SecurityHeadersMiddleware
 
-__all__ = ["FastAuth", "create_auth"]
+__all__ = ["FastAuth"]
 
 EventT = TypeVar("EventT", bound=AuthEvent)
 
@@ -135,6 +130,9 @@ class FastAuth:
                     raise ConfigError(
                         message="JWT sessions require an adapter implementing JwksKeyStore",
                     )
+                from fastauth.web.callbacks import resolve_configured_base_url
+
+                jwt_default_base_url = resolve_configured_base_url(config.app.base_url)
                 jwks_store = cast(JwksKeyStore, adapter)
                 registry, signer = jwt_plugin.ensure_registry_and_signer(
                     adapter=jwks_store,
@@ -145,8 +143,8 @@ class FastAuth:
                     adapter=adapter,
                     registry=registry,
                     signer=signer,
-                    issuer=jwt_plugin.options.issuer or str(config.app.base_url),
-                    audience=jwt_plugin.options.audience or str(config.app.base_url),
+                    issuer=jwt_plugin.options.issuer or jwt_default_base_url,
+                    audience=jwt_plugin.options.audience or jwt_default_base_url,
                     expires_in_seconds=jwt_plugin.options.expires_in_seconds,
                     payload_builder=jwt_plugin.payload_builder,
                 )
@@ -239,60 +237,6 @@ class FastAuth:
         self.depends = DependsManager(self)
         self.routes = AuthRoutes.from_base_path(self.context.config.app.base_path)
         self.inspect = AuthInspector(self)
-
-    @classmethod
-    def configure(
-        cls,
-        *,
-        plugins: Sequence[Plugin] = (),
-        email_sender: EmailSender | None = None,
-        password_hasher: PasswordHasher | None = None,
-        session_strategy: SessionStrategy | None = None,
-        token_service: TokenService | None = None,
-        **options: object,
-    ) -> FastAuth:
-        """Construct ``FastAuth`` directly from ``FastAuthOptions`` keyword fields."""
-        return cls(
-            FastAuthOptions.model_validate(options),
-            plugins=plugins,
-            email_sender=email_sender,
-            password_hasher=password_hasher,
-            session_strategy=session_strategy,
-            token_service=token_service,
-        )
-
-    @classmethod
-    def local_dev(
-        cls,
-        *,
-        plugins: Sequence[Plugin] = (),
-        email_sender: EmailSender | None = None,
-        **options: object,
-    ) -> FastAuth:
-        """Construct a local HTTP development instance with insecure cookies."""
-        options.setdefault("cookie", CookieOptions(secure=False))
-        options.setdefault("deployment", "development")
-        return cls(
-            FastAuthOptions.model_validate(options),
-            plugins=plugins,
-            email_sender=email_sender,
-        )
-
-    @classmethod
-    def production(
-        cls,
-        *,
-        plugins: Sequence[Plugin] = (),
-        email_sender: EmailSender | None = None,
-        **options: object,
-    ) -> FastAuth:
-        """Construct a production instance and apply production validators."""
-        options["deployment"] = "production"
-        return cls(
-            FastAuthOptions.model_validate(options),
-            plugins=plugins,
-            email_sender=email_sender,
-        )
 
     def on_event(
         self,
@@ -389,106 +333,3 @@ class FastAuth:
             raise primary_error
         if shutdown_errors:
             raise BaseExceptionGroup("plugin shutdown failed", shutdown_errors)
-
-    # --- FastAPI dependency callables ---
-    #
-    # These are bound methods on the ``FastAuth`` instance so they capture the
-    # built ``AuthContext`` (signed-cookie unpacker, session strategy, adapter)
-    # automatically. Users compose them with ``Annotated[T, Depends(...)]`` at
-    # their callsite — e.g.::
-    #
-    #     CurrentUser = Annotated[UserView, Depends(auth.get_current_user_view)]
-    #     async def me(user: CurrentUser) -> UserView: ...
-    #
-    # Cookie and ``Authorization: Bearer`` transports are both honoured via
-    # the same ``extract_session_token`` helper used by the core endpoints.
-
-    async def get_current_session(self, request: Request) -> SessionContext:
-        """Return the active ``SessionContext`` or raise HTTP 401.
-
-        Use as a FastAPI dependency with
-        ``Annotated[SessionContext, Depends(auth.get_current_session)]``. Raises
-        ``FastAuthDependencyError`` so mounted applications get the canonical
-        FastAuth error DTO without replacing their own HTTPException handler.
-        """
-        session = await self.get_optional_current_session(request)
-        if session is None:
-            raise FastAuthDependencyError()
-        return session
-
-    async def get_optional_current_session(
-        self,
-        request: Request,
-    ) -> SessionContext | None:
-        """Return the active ``SessionContext`` or ``None`` for anonymous requests.
-
-        Never raises. Use when an endpoint should work for both signed-in and
-        anonymous callers but customise its response based on session presence.
-        """
-        token = extract_session_token(request, self.context)
-        if token is None:
-            return None
-        return await self.context.session_strategy.read(token)
-
-    async def get_current_user(self, request: Request) -> User:
-        """Return the active ``User`` or raise 401.
-
-        Prefer ``get_current_user_view`` for application routes. Use this
-        lower-level dependency only when domain/session internals are required:
-        ``Annotated[User, Depends(auth.get_current_user)]``.
-        """
-        session = await self.get_current_session(request)
-        return session.user
-
-    async def get_current_user_view(self, request: Request) -> UserView:
-        """Return the active user as a safe public DTO or raise 401."""
-        return user_view(await self.get_current_user(request))
-
-    async def get_optional_current_user(self, request: Request) -> User | None:
-        """Return the active ``User`` or ``None`` for anonymous requests.
-
-        Never raises. Companion to ``get_optional_current_session``.
-        """
-        session = await self.get_optional_current_session(request)
-        return session.user if session else None
-
-    async def get_optional_current_user_view(self, request: Request) -> UserView | None:
-        """Return the active user as a safe public DTO, or ``None`` for anonymous requests."""
-        user = await self.get_optional_current_user(request)
-        return user_view(user) if user is not None else None
-
-    async def require_session(self, request: Request) -> SessionContext:
-        """Alias for ``get_current_session``."""
-        return await self.get_current_session(request)
-
-    async def optional_session(self, request: Request) -> SessionContext | None:
-        """Alias for ``get_optional_current_session``."""
-        return await self.get_optional_current_session(request)
-
-    async def require_user(self, request: Request) -> UserView:
-        """Alias for ``get_current_user_view``."""
-        return await self.get_current_user_view(request)
-
-    async def optional_user(self, request: Request) -> UserView | None:
-        """Alias for ``get_optional_current_user_view``."""
-        return await self.get_optional_current_user_view(request)
-
-
-def create_auth(
-    *,
-    plugins: Sequence[Plugin] = (),
-    email_sender: EmailSender | None = None,
-    password_hasher: PasswordHasher | None = None,
-    session_strategy: SessionStrategy | None = None,
-    token_service: TokenService | None = None,
-    **options: object,
-) -> FastAuth:
-    """Construct ``FastAuth`` from ``FastAuthOptions`` keyword fields."""
-    return FastAuth.configure(
-        plugins=plugins,
-        email_sender=email_sender,
-        password_hasher=password_hasher,
-        session_strategy=session_strategy,
-        token_service=token_service,
-        **options,
-    )

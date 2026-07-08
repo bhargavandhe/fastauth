@@ -52,7 +52,7 @@ await auth.api.password.change(
 A `SessionPrincipal` is a trusted application reference. FastAuth verifies that
 the session id belongs to the user, but the principal is not proof that the
 caller is currently authenticated or that idle-timeout freshness was checked in
-the same request. Use FastAPI dependencies such as `auth.require_session` when
+the same request. Use FastAPI dependencies such as `auth.depends.session()` when
 you need request-time authentication proof.
 
 The deprecated `fastauth.api.legacy` `user=` command models were removed in

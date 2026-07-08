@@ -43,7 +43,7 @@ async def test_fastauth_exposes_public_event_subscription() -> None:
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            database=custom(InMemoryAdapter()),
+            database=custom(adapter=InMemoryAdapter()),
         )
     )
     received: list[str] = []

@@ -29,12 +29,15 @@ def first_url(message_text: str) -> str:
 
 async def configured_client(
     email_outbox: ConsoleEmailSender,
+    *,
+    app_options: AppOptions | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
-            database=custom(InMemoryAdapter()),
+            app=app_options
+            or AppOptions.model_validate({"base_url": "https://api.example.com"}),
+            database=custom(adapter=InMemoryAdapter()),
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
             rate_limit=RateLimitOptions(enabled=False),
@@ -71,3 +74,37 @@ async def test_email_callbacks_derive_from_app_base_url_by_default(
         ("https", "api.example.com", "/auth/change-email/confirm"),
         ("https", "api.example.com", "/auth/delete-account/confirm"),
     ]
+
+
+async def test_email_callbacks_can_derive_from_dynamic_request_base_url(
+    email_outbox: ConsoleEmailSender,
+) -> None:
+    app_options = AppOptions.model_validate(
+        {
+            "base_url": {
+                "allowed_hosts": ("tenant.example.com",),
+                "fallback": "https://api.example.com",
+                "protocol": "https",
+            },
+        },
+    )
+    async for client in configured_client(email_outbox, app_options=app_options):
+        response = await client.post(
+            "/auth/sign-up/email",
+            json=SIGNUP,
+            headers={"host": "tenant.example.com"},
+        )
+        assert response.status_code == 200
+        response = await client.post(
+            "/auth/send-verification-email",
+            json={"email": SIGNUP["email"]},
+            headers={"host": "tenant.example.com"},
+        )
+        assert response.status_code == 200
+
+    parsed = urlparse(first_url(email_outbox.outbox[0].text))
+    assert (parsed.scheme, parsed.netloc, parsed.path) == (
+        "https",
+        "tenant.example.com",
+        "/auth/verify-email",
+    )

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-from fastauth.plugins.base import PluginInfo
+from fastauth.plugins.base import EndpointInfo, PluginInfo
 from fastauth.runtime.capabilities import Capability
 
 if TYPE_CHECKING:
@@ -29,6 +29,17 @@ class RouteInfo(BaseModel):
     name: str
     tags: tuple[str, ...] = ()
     source: str = "core"
+    operation_id: str | None = None
+    request_model_name: str | None = None
+    query_model_name: str | None = None
+    response_model_name: str | None = None
+    auth_required: bool = False
+    server_only: bool = False
+    csrf_policy: str | None = None
+    openapi_extra: dict[str, JsonValue] | None = None
+    client_namespace: str | None = None
+    deprecated: bool = False
+    error_codes: tuple[str, ...] = ()
 
 
 class AuthInspection(BaseModel):
@@ -67,8 +78,19 @@ class AuthInspector:
     def plugins(self) -> list[PluginInfo]:
         return self._auth.plugin_info()
 
+    def plugin_endpoint_info_by_route(self) -> dict[tuple[str, str, str], EndpointInfo]:
+        router_prefix = getattr(self._auth.router, "prefix", "")
+        endpoint_info_by_route: dict[tuple[str, str, str], EndpointInfo] = {}
+        for plugin in self.plugins():
+            for endpoint in plugin.endpoints:
+                endpoint_info_by_route[
+                    (endpoint.method, f"{router_prefix}{endpoint.path}", endpoint.name)
+                ] = endpoint
+        return endpoint_info_by_route
+
     def routes(self) -> list[RouteInfo]:
         routes: list[RouteInfo] = []
+        plugin_endpoint_info = self.plugin_endpoint_info_by_route()
         for route in self._auth.router.routes:
             methods = getattr(route, "methods", None)
             path = getattr(route, "path", "")
@@ -78,6 +100,7 @@ class AuthInspector:
             for method in sorted(methods or ()):
                 if method in {"HEAD", "OPTIONS"}:
                     continue
+                endpoint_info = plugin_endpoint_info.get((method, path, name))
                 routes.append(
                     RouteInfo(
                         method=method,
@@ -85,6 +108,35 @@ class AuthInspector:
                         name=name,
                         tags=tags,
                         source=source,
+                        operation_id=(
+                            endpoint_info.operation_id if endpoint_info is not None else None
+                        ),
+                        request_model_name=(
+                            endpoint_info.request_model_name if endpoint_info is not None else None
+                        ),
+                        query_model_name=(
+                            endpoint_info.query_model_name if endpoint_info is not None else None
+                        ),
+                        response_model_name=(
+                            endpoint_info.response_model_name if endpoint_info is not None else None
+                        ),
+                        auth_required=(
+                            endpoint_info.auth_required if endpoint_info is not None else False
+                        ),
+                        server_only=(
+                            endpoint_info.server_only if endpoint_info is not None else False
+                        ),
+                        csrf_policy=(
+                            endpoint_info.csrf_policy if endpoint_info is not None else None
+                        ),
+                        openapi_extra=(
+                            endpoint_info.openapi_extra if endpoint_info is not None else None
+                        ),
+                        client_namespace=(
+                            endpoint_info.client_namespace if endpoint_info is not None else None
+                        ),
+                        deprecated=endpoint_info.deprecated if endpoint_info is not None else False,
+                        error_codes=endpoint_info.error_codes if endpoint_info is not None else (),
                     )
                 )
         return routes

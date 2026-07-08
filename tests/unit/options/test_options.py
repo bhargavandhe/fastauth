@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -17,12 +18,14 @@ from fastauth.options import (
     CsrfOptions,
     CustomDatabaseOptions,
     DeleteAccountOptions,
+    DynamicBaseUrlOptions,
     EmailChangeOptions,
     EmailOptions,
     EmailVerificationOptions,
     FastAuthOptions,
     LockoutOptions,
     MemoryDatabaseOptions,
+    MongoDatabase,
     MongoDatabaseOptions,
     PasswordOptions,
     PasswordResetOptions,
@@ -115,6 +118,47 @@ def test_production_options_reject_http_base_url() -> None:
         )
 
 
+def test_app_options_accept_dynamic_base_url_config() -> None:
+    options = AppOptions.model_validate(
+        {
+            "base_url": {
+                "allowed_hosts": ("api.example.com", "*.tenant.example.com"),
+                "fallback": "https://api.example.com",
+                "protocol": "https",
+            },
+        },
+    )
+
+    assert isinstance(options.base_url, DynamicBaseUrlOptions)
+    assert options.base_url.allowed_hosts == (
+        "api.example.com",
+        "*.tenant.example.com",
+    )
+    assert str(options.base_url.fallback) == "https://api.example.com/"
+    assert options.base_url.protocol == "https"
+
+
+def test_production_options_reject_http_dynamic_base_url() -> None:
+    with pytest.raises(ValidationError, match="production dynamic base_url must use HTTPS"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=CustomDatabaseOptions(
+                adapter=InMemoryAdapter(),
+                backend=DatabaseBackendKind.POSTGRES,
+            ),
+            app=AppOptions.model_validate(
+                {
+                    "base_url": {
+                        "allowed_hosts": ("api.example.com",),
+                        "fallback": "https://api.example.com",
+                        "protocol": "http",
+                    },
+                },
+            ),
+        )
+
+
 def test_production_options_reject_custom_memory_database() -> None:
     with pytest.raises(ValidationError, match="memory database is not allowed in production"):
         FastAuthOptions(
@@ -141,7 +185,7 @@ def test_custom_database_factory_accepts_backend_and_lifespan() -> None:
         return app_lifespan
 
     options = custom(
-        InMemoryAdapter(),
+        adapter=InMemoryAdapter(),
         backend=DatabaseBackendKind.POSTGRES,
         lifespan=lifespan,
     )
@@ -235,6 +279,41 @@ def test_fastauth_options_accept_nested_overrides() -> None:
     assert options.database.table_suffix == "_auth"
 
 
+def test_duration_fields_accept_seconds_and_short_strings() -> None:
+    options = FastAuthOptions.model_validate(
+        {
+            "secret_key": SecretStr("c" * 64),
+            "session": {"expires_in": "2h", "idle_timeout": 900},
+            "email_verification": {"expires_in": "15m"},
+            "password_reset": {"expires_in": "30m"},
+            "email_change": {"expires_in": "10m"},
+            "delete_account": {"expires_in": "1h"},
+            "rate_limit": {"window": "30s"},
+            "lockout": {"window": "5m"},
+            "refresh_token": {"max_age": "14d", "absolute_max_age": "4w"},
+        }
+    )
+
+    assert options.session.expires_in == timedelta(hours=2)
+    assert options.session.idle_timeout == timedelta(minutes=15)
+    assert options.email_verification.expires_in == timedelta(minutes=15)
+    assert options.password_reset.expires_in == timedelta(minutes=30)
+    assert options.email_change.expires_in == timedelta(minutes=10)
+    assert options.delete_account.expires_in == timedelta(hours=1)
+    assert options.rate_limit.window == timedelta(seconds=30)
+    assert options.lockout.window == timedelta(minutes=5)
+    assert options.refresh_token.max_age == timedelta(days=14)
+    assert options.refresh_token.absolute_max_age == timedelta(weeks=4)
+
+
+def test_duration_fields_reject_invalid_strings_and_bools() -> None:
+    with pytest.raises(ValidationError, match="duration strings must look like"):
+        SessionOptions(expires_in="soon")  # pyright: ignore[reportArgumentType]
+
+    with pytest.raises(ValidationError, match="duration must be a timedelta"):
+        SessionOptions(expires_in=True)  # pyright: ignore[reportArgumentType]
+
+
 def test_database_options_are_discriminated() -> None:
     options = FastAuthOptions.model_validate(
         {
@@ -252,7 +331,7 @@ def test_database_options_are_discriminated() -> None:
 
 def test_mongo_database_options_model_collection_prefix_and_suffix() -> None:
     options = MongoDatabaseOptions(
-        database=object(),
+        database=cast(MongoDatabase, object()),
         collection_prefix="tenant_",
         collection_suffix="_auth",
     )
@@ -263,12 +342,15 @@ def test_mongo_database_options_model_collection_prefix_and_suffix() -> None:
 
 def test_mongo_database_options_reject_invalid_collection_prefix() -> None:
     with pytest.raises(ValidationError):
-        MongoDatabaseOptions(database=object(), collection_prefix="$tenant_")
+        MongoDatabaseOptions(database=cast(MongoDatabase, object()), collection_prefix="$tenant_")
 
 
 def test_mongo_database_options_reject_invalid_collection_suffix() -> None:
     with pytest.raises(ValidationError):
-        MongoDatabaseOptions(database=object(), collection_suffix="_bad\x00suffix")
+        MongoDatabaseOptions(
+            database=cast(MongoDatabase, object()),
+            collection_suffix="_bad\x00suffix",
+        )
 
 
 def test_fastauth_options_accept_dict_via_model_validate() -> None:

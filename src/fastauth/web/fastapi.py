@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 import ipaddress
 from collections.abc import Awaitable, Callable, Coroutine
+from fnmatch import fnmatchcase
 from ipaddress import IPv4Address, IPv6Address
-from typing import Any
+from typing import Any, ClassVar
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -28,7 +30,7 @@ from fastauth.flows.sessions import (
     ListSessionsResponse,
     RevokeSessionsResponse,
 )
-from fastauth.plugins.base import EndpointSpec
+from fastauth.plugins.base import EndpointHookSpec, EndpointSpec, PluginMiddlewareSpec
 from fastauth.runtime.api import AuthApi, HealthResponse, RouterAuthApi
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
@@ -195,6 +197,94 @@ def http_status_for(exc: FastAuthError) -> int:
     return 500
 
 
+def hook_kwargs_for(
+    handler: Callable[..., object],
+    kwargs: dict[str, object],
+) -> dict[str, object]:
+    try:
+        signature = inspect.signature(handler)
+    except (TypeError, ValueError):
+        return kwargs
+
+    selected: dict[str, object] = {}
+    for parameter in signature.parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            return kwargs
+        if parameter.kind in {
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        } and parameter.name in kwargs:
+            selected[parameter.name] = kwargs[parameter.name]
+    return selected
+
+
+async def call_plugin_hook(handler: Callable[..., object], **kwargs: object) -> object:
+    result = handler(**hook_kwargs_for(handler, kwargs))
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
+def response_result(result: object) -> Response | None:
+    if isinstance(result, Response):
+        return result
+    return None
+
+
+def endpoint_metadata(request: Request, route: APIRoute) -> dict[str, object]:
+    return {
+        "method": request.method,
+        "name": route.name,
+        "path": route.path,
+        "source": getattr(route, "fastauth_source", "core"),
+    }
+
+
+def endpoint_hook_matches(hook: EndpointHookSpec, endpoint: dict[str, object]) -> bool:
+    return hook.matcher_name is None or hook.matcher_name == endpoint.get("name")
+
+
+def plugin_path_matches(
+    pattern: str,
+    request: Request,
+    context: AuthContext,
+    route: APIRoute,
+) -> bool:
+    request_path = request.url.path
+    candidate_paths = {request_path, route.path}
+    base_path = context.config.app.base_path
+    if base_path and request_path.startswith(base_path):
+        relative_path = request_path.removeprefix(base_path)
+        candidate_paths.add(relative_path or "/")
+    if base_path and route.path.startswith(base_path):
+        candidate_paths.add(route.path.removeprefix(base_path) or "/")
+    return any(fnmatchcase(candidate, pattern) for candidate in candidate_paths)
+
+
+def matching_plugin_middlewares(
+    request: Request,
+    context: AuthContext,
+    route: APIRoute,
+) -> list[PluginMiddlewareSpec]:
+    return [
+        middleware
+        for middleware in context.plugins.all_middlewares()
+        if plugin_path_matches(middleware.path, request, context, route)
+    ]
+
+
+def matching_endpoint_hooks(
+    context: AuthContext,
+    endpoint: dict[str, object],
+    phase: str,
+) -> list[EndpointHookSpec]:
+    return [
+        hook
+        for hook in context.plugins.all_endpoint_hooks()
+        if hook.phase == phase and endpoint_hook_matches(hook, endpoint)
+    ]
+
+
 class FastAuthRoute(APIRoute):
     """Custom route class that converts ``FastAuthError`` into a JSON response.
 
@@ -204,12 +294,17 @@ class FastAuthRoute(APIRoute):
     without registering anything else.
     """
 
+    fastauth_context: ClassVar[AuthContext | None] = None
+
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         original = super().get_route_handler()
 
         async def custom_route_handler(request: Request) -> Response:
             try:
-                return await original(request)
+                context = self.fastauth_context
+                if context is None:
+                    return await original(request)
+                return await self.handle_with_plugin_contract(request, original, context)
             except FastAuthError as exc:
                 headers: dict[str, str] = {}
                 if isinstance(exc, RateLimitError):
@@ -224,6 +319,129 @@ class FastAuthRoute(APIRoute):
 
         return custom_route_handler
 
+    async def handle_with_plugin_contract(
+        self,
+        request: Request,
+        original: Callable[[Request], Coroutine[Any, Any, Response]],
+        context: AuthContext,
+    ) -> Response:
+        route = self
+        endpoint = endpoint_metadata(request, route)
+
+        for hook in context.plugins.all_request_hooks():
+            result = await call_plugin_hook(
+                hook.handler,
+                request=request,
+                context=context,
+                endpoint=endpoint,
+                hook=hook,
+            )
+            if (response := response_result(result)) is not None:
+                return await self.run_response_hooks(
+                    request=request,
+                    response=response,
+                    context=context,
+                    endpoint=endpoint,
+                )
+
+        for hook in matching_endpoint_hooks(context, endpoint, "before"):
+            result = await call_plugin_hook(
+                hook.handler,
+                request=request,
+                context=context,
+                endpoint=endpoint,
+                hook=hook,
+            )
+            if (response := response_result(result)) is not None:
+                return await self.run_response_hooks(
+                    request=request,
+                    response=response,
+                    context=context,
+                    endpoint=endpoint,
+                )
+
+        middlewares = matching_plugin_middlewares(request, context, route)
+        response = await self.run_plugin_middlewares(
+            request=request,
+            original=original,
+            context=context,
+            endpoint=endpoint,
+            middlewares=middlewares,
+        )
+
+        for hook in matching_endpoint_hooks(context, endpoint, "after"):
+            result = await call_plugin_hook(
+                hook.handler,
+                request=request,
+                response=response,
+                context=context,
+                endpoint=endpoint,
+                hook=hook,
+            )
+            if (replacement := response_result(result)) is not None:
+                response = replacement
+
+        return await self.run_response_hooks(
+            request=request,
+            response=response,
+            context=context,
+            endpoint=endpoint,
+        )
+
+    async def run_plugin_middlewares(
+        self,
+        *,
+        request: Request,
+        original: Callable[[Request], Coroutine[Any, Any, Response]],
+        context: AuthContext,
+        endpoint: dict[str, object],
+        middlewares: list[PluginMiddlewareSpec],
+    ) -> Response:
+        async def dispatch(index: int, current_request: Request) -> Response:
+            if index >= len(middlewares):
+                return await original(current_request)
+
+            middleware = middlewares[index]
+
+            async def call_next(next_request: Request | None = None) -> Response:
+                return await dispatch(index + 1, next_request or current_request)
+
+            result = await call_plugin_hook(
+                middleware.handler,
+                request=current_request,
+                call_next=call_next,
+                context=context,
+                endpoint=endpoint,
+                middleware=middleware,
+            )
+            if (response := response_result(result)) is not None:
+                return response
+            return await call_next(current_request)
+
+        return await dispatch(0, request)
+
+    async def run_response_hooks(
+        self,
+        *,
+        request: Request,
+        response: Response,
+        context: AuthContext,
+        endpoint: dict[str, object],
+    ) -> Response:
+        current_response = response
+        for hook in context.plugins.all_response_hooks():
+            result = await call_plugin_hook(
+                hook.handler,
+                request=request,
+                response=current_response,
+                context=context,
+                endpoint=endpoint,
+                hook=hook,
+            )
+            if (replacement := response_result(result)) is not None:
+                current_response = replacement
+        return current_response
+
 
 def rate_limit_dependency(
     context: AuthContext,
@@ -235,6 +453,13 @@ def rate_limit_dependency(
         await context.rate_limiter.check(path, client_ip(request, context))
 
     return dependency
+
+
+def fastauth_route_class(context: AuthContext) -> type[FastAuthRoute]:
+    class ContextFastAuthRoute(FastAuthRoute):
+        fastauth_context: ClassVar[AuthContext | None] = context
+
+    return ContextFastAuthRoute
 
 
 def prefixed_plugin_path(router: APIRouter, path: str) -> str:
@@ -379,7 +604,7 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     router = APIRouter(
         prefix=context.config.app.base_path,
         tags=["fastauth"],
-        route_class=FastAuthRoute,
+        route_class=fastauth_route_class(context),
         dependencies=[Depends(rate_limit_dependency(context))],
         default_response_class=JSONResponse,
     )

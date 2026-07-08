@@ -15,7 +15,7 @@ from fastauth.providers import (
     openapi,
     test_utils,
 )
-from fastauth.runtime.auth import FastAuth, create_auth
+from fastauth.runtime.auth import FastAuth
 from fastauth.runtime.capabilities import (
     API_KEYS,
     AUDIT_LOGS,
@@ -63,11 +63,10 @@ __all__ = [
     "__version__",
     "api_key",
     "audit_logs",
-    "create_auth",
     "email_otp",
     "email_password",
     "jwt",
     "openapi",
     "test_utils",
 ]
-__version__ = "0.10.2"
+__version__ = "0.11.0"

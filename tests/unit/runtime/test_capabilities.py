@@ -27,7 +27,7 @@ def build_auth(*, username_sign_in: bool = True) -> FastAuth:
     return FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            database=custom(InMemoryAdapter()),
+            database=custom(adapter=InMemoryAdapter()),
         ),
         plugins=[
             email_password(

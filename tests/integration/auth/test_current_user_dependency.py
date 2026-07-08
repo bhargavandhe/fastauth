@@ -1,6 +1,6 @@
-"""Integration tests for FastAuth.get_current_user / get_current_session dependencies.
+"""Integration tests for the ``auth.depends`` FastAPI dependency namespace.
 
-The dependencies live on the FastAuth instance so they can capture the bound
+The dependencies live on the FastAuth manager so they can capture the bound
 ``AuthContext`` (its adapter, session strategy, signed-cookie unpacker, etc.)
 without forcing the user to wire a factory at every route.
 
@@ -9,15 +9,15 @@ Two compatible call styles for users:
 1. ``Depends`` as a default value (works under ``from __future__ import annotations``;
    the ``Depends(...)`` instance is a runtime default, not an annotation):
 
-       async def me(user: User = Depends(auth.get_current_user)) -> User: ...
+       async def me(user: UserView = Depends(auth.depends.user())) -> UserView: ...
 
 2. ``Annotated[T, Depends(...)]`` (the modern syntax; works when the route is
    defined in a scope where ``auth`` is a module-level name, OR when
    ``from __future__ import annotations`` is NOT in effect, OR when
    ``Depends(...)`` is wrapped in a module-level type alias):
 
-       CurrentUser = Annotated[User, Depends(auth.get_current_user)]
-       async def me(user: CurrentUser) -> User: ...
+       CurrentUser = Annotated[UserView, Depends(auth.depends.user())]
+       async def me(user: CurrentUser) -> UserView: ...
 
 This test file deliberately uses style (1) because the test file uses
 ``from __future__ import annotations`` at the top and defines routes inside
@@ -33,7 +33,7 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from fastauth.domain.models import User
+from fastauth.api.responses import UserView
 from fastauth.runtime.auth import FastAuth
 from fastauth.security.sessions import SessionContext
 from fastauth.storage.memory import InMemoryAdapter
@@ -47,19 +47,19 @@ async def authed_client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
 
     @app.get("/me")
     async def me_required(  # pyright: ignore[reportUnusedFunction]
-        user: User = Depends(auth.get_current_user),  # noqa: B008
+        user: UserView = Depends(auth.depends.user()),  # noqa: B008
     ) -> dict[str, str]:
-        return {"id": user.id, "email": user.email}
+        return {"id": user.id.root, "email": str(user.email)}
 
     @app.get("/maybe-me")
     async def me_optional(  # pyright: ignore[reportUnusedFunction]
-        user: User | None = Depends(auth.get_optional_current_user),  # noqa: B008
+        user: UserView | None = Depends(auth.depends.optional_user()),  # noqa: B008
     ) -> dict[str, str | None]:
-        return {"id": user.id if user else None}
+        return {"id": user.id.root if user else None}
 
     @app.get("/my-session")
     async def my_session(  # pyright: ignore[reportUnusedFunction]
-        session: SessionContext = Depends(auth.get_current_session),  # noqa: B008
+        session: SessionContext = Depends(auth.depends.session()),  # noqa: B008
     ) -> dict[str, str]:
         return {"user_id": session.user.id, "session_id": session.session.id}
 
@@ -182,4 +182,4 @@ async def test_current_user_accepts_bearer_token(
         "/me", headers={"authorization": f"Bearer {session_ctx.token}"}
     )
     assert response.status_code == 200
-    assert response.json()["id"] == user.id
+    assert response.json()["id"] == str(user.id)

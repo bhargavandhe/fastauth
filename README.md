@@ -10,19 +10,19 @@ pip install fastauth-py
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import create_auth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.options import CookieOptions
 from fastauth import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 
-auth = create_auth(
+options = FastAuthOptions(
     secret_key=SecretStr(app_secret),
     database=memory(),
     cookie=CookieOptions(secure=False),
-    plugins=[email_password()],
 )
+auth = FastAuth(options, plugins=[email_password()])
 
 app = FastAPI(lifespan=auth.lifespan)
 auth.mount(app)
@@ -126,11 +126,11 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **test_utils()** — factories, login helpers, OTP capture for tests.
 
 ### Developer experience
-- **`CurrentUser` / `CurrentSession` FastAPI dependencies** with optional
-  variants, both `Depends(...)` and `Annotated[...]` calling styles
-  documented.
-- **Explicit storage wiring** — choose `memory()`, `mongo(database)`,
-  `postgres(url)`, or `custom(adapter, backend=...)`. Fastauth never reads
+- **`auth.depends.user()` / `auth.depends.session()` FastAPI dependencies**
+  with optional variants, both `Depends(...)` and `Annotated[...]` calling
+  styles documented.
+- **Explicit storage wiring** — choose `memory()`, `mongo(database=...)`,
+  `postgres(url=...)`, or `custom(adapter=..., backend=...)`. Fastauth never reads
   storage settings from the process environment.
 - **`auth.mount(app)`** — install routes, CSRF, and security headers on your
   FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
@@ -168,7 +168,7 @@ from fastapi import Depends
 from fastauth import UserView
 
 @app.get("/me")
-async def me(user: UserView = Depends(auth.require_user)) -> UserView:
+async def me(user: UserView = Depends(auth.depends.user())) -> UserView:
     return user
 ```
 
@@ -179,7 +179,7 @@ from typing import Annotated
 from fastapi import Depends
 from fastauth import UserView
 
-CurrentUser = Annotated[UserView, Depends(auth.require_user)]
+CurrentUser = Annotated[UserView, Depends(auth.depends.user())]
 
 @app.get("/me")
 async def me(user: CurrentUser) -> UserView:
@@ -187,7 +187,7 @@ async def me(user: CurrentUser) -> UserView:
 ```
 
 Cookie auth and `Authorization: Bearer …` both work — fastauth handles either
-transparently. Use `auth.optional_user` if anonymous requests
+transparently. Use `auth.depends.optional_user()` if anonymous requests
 are allowed.
 
 ## Configuration
@@ -197,8 +197,6 @@ default; pass only what you want to override:
 
 ```python
 from pydantic import SecretStr
-from datetime import timedelta
-
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.options import (
@@ -213,8 +211,8 @@ options = FastAuthOptions(
     app=AppOptions(name="My App", base_url="https://myapp.com"),
     cookie=CookieOptions(secure=True, same_site="strict"),
     csrf=CsrfOptions(trusted_origins=("https://myapp.com",)),
-    lockout=LockoutOptions(max_failures=10, window=timedelta(minutes=5)),
-    refresh_token=RefreshTokenOptions(max_age=timedelta(days=14)),
+    lockout=LockoutOptions(max_failures=10, window="5m"),
+    refresh_token=RefreshTokenOptions(max_age="14d"),
     security_headers=SecurityHeadersOptions(
         content_security_policy="default-src 'self'",
     ),
@@ -227,8 +225,7 @@ auth = FastAuth(options, plugins=[email_password()])
 `email_verification`, `password_reset`, `email_change`, `delete_account`,
 `rate_limit`, `csrf`, `lockout`, `refresh_token`, `security_headers`,
 `advanced`, plus the top-level `database` backend. Plugins are behavior
-objects passed to `create_auth(..., plugins=[...])` or
-`FastAuth(..., plugins=[...])`.
+objects passed to `FastAuth(..., plugins=[...])`.
 
 See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.
 
@@ -265,7 +262,7 @@ fastauth/
 
 ## Status
 
-**v0.10.2** — current release. Coverage spans unit tests, adapter-contract
+**v0.11.0** — current release. Coverage spans unit tests, adapter-contract
 tests, integration flows, CLI behavior, and the quickstart example.
 `pyright --strict` is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed
 feature list.

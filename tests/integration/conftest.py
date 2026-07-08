@@ -22,7 +22,7 @@ from fastauth.storage.memory import InMemoryAdapter
 def build_options(adapter: InMemoryAdapter) -> FastAuthOptions:
     return FastAuthOptions(
         secret_key=SecretStr("a" * 64),
-        database=custom(adapter),
+        database=custom(adapter=adapter),
         csrf=CsrfOptions(enabled=False),
         cookie=CookieOptions(secure=False),
         rate_limit=RateLimitOptions(enabled=False),

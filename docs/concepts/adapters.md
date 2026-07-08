@@ -27,7 +27,7 @@ mongo_database = mongo_client["myapp"]
 auth = FastAuth(
     FastAuthOptions(
         secret_key=SecretStr("replace-me-with-your-application-secret"),
-        database=mongo(mongo_database),
+        database=mongo(database=mongo_database),
     ),
     plugins=[email_password()],
 )
@@ -53,7 +53,7 @@ prefix and/or suffix through the Mongo database option:
 options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
     database=mongo(
-        mongo_database,
+        database=mongo_database,
         collection_prefix="tenant_",
         collection_suffix="_auth",
     ),
@@ -79,7 +79,7 @@ auth = FastAuth(
     FastAuthOptions(
         secret_key=SecretStr("replace-me-with-your-application-secret"),
         database=postgres(
-            "postgresql+asyncpg://user:pass@localhost/myapp",
+            url="postgresql+asyncpg://user:pass@localhost/myapp",
             table_prefix="fastauth_",
             table_suffix="",
         ),
@@ -93,7 +93,7 @@ tracked schema migrations from the CLI and records the fastauth schema version
 in `<prefix>schema_migrations<suffix>`. Postgres table names follow the same
 `<prefix><base><suffix>` rule as Mongo collections. For long-lived production
 deployments, run the CLI during deploy and pass
-`postgres(url, migration_mode="check")` so the app fails fast if the database
+`postgres(url=..., migration_mode="check")` so the app fails fast if the database
 is behind instead of mutating schema at process startup.
 
 The adapter uses FastAuth's string domain IDs as primary keys and stores plugin

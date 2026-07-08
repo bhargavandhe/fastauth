@@ -7,22 +7,28 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from fastauth.plugins.schema import PluginSchema
 from fastauth.runtime.capabilities import Capability
 
 __all__ = [
     "Capability",
+    "EndpointHookSpec",
     "EndpointInfo",
     "EndpointSpec",
     "HttpMethod",
     "Plugin",
     "PluginApiNamespace",
     "PluginApiRegistry",
+    "PluginErrorCode",
     "PluginInfo",
+    "PluginMiddlewareSpec",
     "PluginOptions",
     "PluginRegistry",
     "RateLimitRule",
+    "RequestHookSpec",
+    "ResponseHookSpec",
 ]
 
 if TYPE_CHECKING:
@@ -36,6 +42,7 @@ if TYPE_CHECKING:
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 EndpointHandler = Callable[..., Awaitable[Any]] | None
 EventHandlerPair = tuple[type[BaseModel], Callable[[Any], Awaitable[None]]]
+PluginHookHandler = Callable[..., Awaitable[Any]]
 CapabilityT = TypeVar("CapabilityT")
 PluginApiT = TypeVar("PluginApiT")
 
@@ -50,7 +57,17 @@ class EndpointSpec(BaseModel):
     name: str
     tags: list[str] = Field(default_factory=list)
     handler: EndpointHandler = None
+    operation_id: str | None = None
+    request_model: type[BaseModel] | None = None
+    query_model: type[BaseModel] | None = None
     response_model: type[BaseModel] | None = None
+    auth_required: bool = False
+    server_only: bool = False
+    csrf_policy: str | None = None
+    openapi_extra: dict[str, JsonValue] | None = None
+    client_namespace: str | None = None
+    deprecated: bool = False
+    error_codes: tuple[str, ...] = ()
 
     @classmethod
     def route(
@@ -61,7 +78,17 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
+        operation_id: str | None = None,
+        request_model: type[BaseModel] | None = None,
+        query_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
+        auth_required: bool = False,
+        server_only: bool = False,
+        csrf_policy: str | None = None,
+        openapi_extra: dict[str, JsonValue] | None = None,
+        client_namespace: str | None = None,
+        deprecated: bool = False,
+        error_codes: Sequence[str] = (),
     ) -> EndpointSpec:
         return cls(
             method=method,
@@ -69,7 +96,17 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=list(tags),
             handler=handler,
+            operation_id=operation_id,
+            request_model=request_model,
+            query_model=query_model,
             response_model=response_model,
+            auth_required=auth_required,
+            server_only=server_only,
+            csrf_policy=csrf_policy,
+            openapi_extra=openapi_extra,
+            client_namespace=client_namespace,
+            deprecated=deprecated,
+            error_codes=tuple(error_codes),
         )
 
     @classmethod
@@ -80,7 +117,17 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
+        operation_id: str | None = None,
+        request_model: type[BaseModel] | None = None,
+        query_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
+        auth_required: bool = False,
+        server_only: bool = False,
+        csrf_policy: str | None = None,
+        openapi_extra: dict[str, JsonValue] | None = None,
+        client_namespace: str | None = None,
+        deprecated: bool = False,
+        error_codes: Sequence[str] = (),
     ) -> EndpointSpec:
         return cls.route(
             "GET",
@@ -88,7 +135,17 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=tags,
             handler=handler,
+            operation_id=operation_id,
+            request_model=request_model,
+            query_model=query_model,
             response_model=response_model,
+            auth_required=auth_required,
+            server_only=server_only,
+            csrf_policy=csrf_policy,
+            openapi_extra=openapi_extra,
+            client_namespace=client_namespace,
+            deprecated=deprecated,
+            error_codes=error_codes,
         )
 
     @classmethod
@@ -99,7 +156,17 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
+        operation_id: str | None = None,
+        request_model: type[BaseModel] | None = None,
+        query_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
+        auth_required: bool = False,
+        server_only: bool = False,
+        csrf_policy: str | None = None,
+        openapi_extra: dict[str, JsonValue] | None = None,
+        client_namespace: str | None = None,
+        deprecated: bool = False,
+        error_codes: Sequence[str] = (),
     ) -> EndpointSpec:
         return cls.route(
             "POST",
@@ -107,7 +174,17 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=tags,
             handler=handler,
+            operation_id=operation_id,
+            request_model=request_model,
+            query_model=query_model,
             response_model=response_model,
+            auth_required=auth_required,
+            server_only=server_only,
+            csrf_policy=csrf_policy,
+            openapi_extra=openapi_extra,
+            client_namespace=client_namespace,
+            deprecated=deprecated,
+            error_codes=error_codes,
         )
 
     @classmethod
@@ -118,7 +195,17 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
+        operation_id: str | None = None,
+        request_model: type[BaseModel] | None = None,
+        query_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
+        auth_required: bool = False,
+        server_only: bool = False,
+        csrf_policy: str | None = None,
+        openapi_extra: dict[str, JsonValue] | None = None,
+        client_namespace: str | None = None,
+        deprecated: bool = False,
+        error_codes: Sequence[str] = (),
     ) -> EndpointSpec:
         return cls.route(
             "DELETE",
@@ -126,7 +213,17 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=tags,
             handler=handler,
+            operation_id=operation_id,
+            request_model=request_model,
+            query_model=query_model,
             response_model=response_model,
+            auth_required=auth_required,
+            server_only=server_only,
+            csrf_policy=csrf_policy,
+            openapi_extra=openapi_extra,
+            client_namespace=client_namespace,
+            deprecated=deprecated,
+            error_codes=error_codes,
         )
 
 
@@ -139,11 +236,22 @@ class EndpointInfo(BaseModel):
     path: str
     name: str
     tags: tuple[str, ...] = ()
+    operation_id: str | None = None
     request_model_name: str | None = None
+    query_model_name: str | None = None
     response_model_name: str | None = None
+    auth_required: bool = False
+    server_only: bool = False
+    csrf_policy: str | None = None
+    openapi_extra: dict[str, JsonValue] | None = None
+    client_namespace: str | None = None
+    deprecated: bool = False
+    error_codes: tuple[str, ...] = ()
 
     @classmethod
     def from_spec(cls, spec: EndpointSpec) -> EndpointInfo:
+        request_model_name = spec.request_model.__name__ if spec.request_model is not None else None
+        query_model_name = spec.query_model.__name__ if spec.query_model is not None else None
         response_model_name = (
             spec.response_model.__name__ if spec.response_model is not None else None
         )
@@ -152,8 +260,17 @@ class EndpointInfo(BaseModel):
             path=spec.path,
             name=spec.name,
             tags=tuple(spec.tags),
-            request_model_name=None,
+            operation_id=spec.operation_id,
+            request_model_name=request_model_name,
+            query_model_name=query_model_name,
             response_model_name=response_model_name,
+            auth_required=spec.auth_required,
+            server_only=spec.server_only,
+            csrf_policy=spec.csrf_policy,
+            openapi_extra=spec.openapi_extra,
+            client_namespace=spec.client_namespace,
+            deprecated=spec.deprecated,
+            error_codes=tuple(spec.error_codes),
         )
 
 
@@ -163,6 +280,54 @@ class RateLimitRule(BaseModel):
     path: str
     window: timedelta
     max_requests: int
+
+
+class PluginContractModel(BaseModel):
+    """Common immutable base for plugin extension contract DTOs."""
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+        validate_default=True,
+        revalidate_instances="always",
+    )
+
+
+class PluginErrorCode(PluginContractModel):
+    """Error code contributed by a plugin."""
+
+    code: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
+    message: str = Field(min_length=1)
+
+
+class PluginMiddlewareSpec(PluginContractModel):
+    """Route-scoped middleware contributed by a plugin."""
+
+    path: str = Field(min_length=1)
+    handler: PluginHookHandler
+
+
+class RequestHookSpec(PluginContractModel):
+    """Request interceptor contributed by a plugin."""
+
+    name: str = Field(min_length=1)
+    handler: PluginHookHandler
+
+
+class ResponseHookSpec(PluginContractModel):
+    """Response interceptor contributed by a plugin."""
+
+    name: str = Field(min_length=1)
+    handler: PluginHookHandler
+
+
+class EndpointHookSpec(PluginContractModel):
+    """Before/after endpoint hook contributed by a plugin."""
+
+    phase: Literal["before", "after"]
+    handler: PluginHookHandler
+    matcher_name: str | None = Field(default=None, min_length=1)
 
 
 class PluginInfo(BaseModel):
@@ -176,6 +341,12 @@ class PluginInfo(BaseModel):
     rate_limit_rules: tuple[RateLimitRule, ...] = ()
     trusted_origins: tuple[str, ...] = ()
     event_handler_count: int = 0
+    error_codes: tuple[PluginErrorCode, ...] = ()
+    schemas: tuple[PluginSchema, ...] = ()
+    middleware_count: int = 0
+    request_hook_count: int = 0
+    response_hook_count: int = 0
+    endpoint_hook_count: int = 0
     server_api_name: str | None = None
 
 
@@ -289,6 +460,24 @@ class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses
     def rate_limit_rules(self) -> Sequence[RateLimitRule]:
         return []
 
+    def error_codes(self) -> Sequence[PluginErrorCode]:
+        return []
+
+    def schemas(self) -> Sequence[PluginSchema]:
+        return []
+
+    def middlewares(self) -> Sequence[PluginMiddlewareSpec]:
+        return []
+
+    def request_hooks(self) -> Sequence[RequestHookSpec]:
+        return []
+
+    def response_hooks(self) -> Sequence[ResponseHookSpec]:
+        return []
+
+    def endpoint_hooks(self) -> Sequence[EndpointHookSpec]:
+        return []
+
     async def extend_session_response(self, user: User, response: Response) -> None:
         return None
 
@@ -310,9 +499,18 @@ class PluginRegistry:
         self._trusted_origins_by_plugin_id: dict[str, tuple[str, ...]] = {}
         self._rate_limit_rules_by_plugin_id: dict[str, tuple[RateLimitRule, ...]] = {}
         self._event_handlers_by_plugin_id: dict[str, tuple[EventHandlerPair, ...]] = {}
+        self._error_codes_by_plugin_id: dict[str, tuple[PluginErrorCode, ...]] = {}
+        self._schemas_by_plugin_id: dict[str, tuple[PluginSchema, ...]] = {}
+        self._middlewares_by_plugin_id: dict[str, tuple[PluginMiddlewareSpec, ...]] = {}
+        self._request_hooks_by_plugin_id: dict[str, tuple[RequestHookSpec, ...]] = {}
+        self._response_hooks_by_plugin_id: dict[str, tuple[ResponseHookSpec, ...]] = {}
+        self._endpoint_hooks_by_plugin_id: dict[str, tuple[EndpointHookSpec, ...]] = {}
         self._server_api_namespaces: tuple[PluginApiNamespace, ...] = ()
         capabilities: dict[str, str] = {}
         routes: dict[tuple[str, str], str] = {}
+        operation_ids: dict[str, str] = {}
+        client_namespaces: dict[str, str] = {}
+        error_codes: dict[str, str] = {}
         for plugin in self.plugins:
             if not plugin.id:
                 raise ValueError(f"plugin {plugin.__class__.__name__} must set 'id'")
@@ -327,6 +525,12 @@ class PluginRegistry:
             self._trusted_origins_by_plugin_id[plugin.id] = tuple(plugin.trusted_origins())
             self._rate_limit_rules_by_plugin_id[plugin.id] = tuple(plugin.rate_limit_rules())
             self._event_handlers_by_plugin_id[plugin.id] = tuple(plugin.event_handlers())
+            self._error_codes_by_plugin_id[plugin.id] = tuple(plugin.error_codes())
+            self._schemas_by_plugin_id[plugin.id] = tuple(plugin.schemas())
+            self._middlewares_by_plugin_id[plugin.id] = tuple(plugin.middlewares())
+            self._request_hooks_by_plugin_id[plugin.id] = tuple(plugin.request_hooks())
+            self._response_hooks_by_plugin_id[plugin.id] = tuple(plugin.response_hooks())
+            self._endpoint_hooks_by_plugin_id[plugin.id] = tuple(plugin.endpoint_hooks())
 
             for capability in plugin_capabilities:
                 if capability.id in capabilities:
@@ -335,8 +539,17 @@ class PluginRegistry:
                         f"{capability.id} from {capabilities[capability.id]} and {plugin.id}",
                     )
                 capabilities[capability.id] = plugin.id
+            plugin_routes: set[tuple[str, str]] = set()
+            plugin_operation_ids: set[str] = set()
+            plugin_client_namespaces: set[str] = set()
             for endpoint in plugin_endpoints:
                 route_key = (endpoint.method, endpoint.path)
+                if route_key in plugin_routes:
+                    raise ValueError(
+                        "duplicate plugin endpoint "
+                        f"{endpoint.method} {endpoint.path} within {plugin.id}",
+                    )
+                plugin_routes.add(route_key)
                 if route_key in routes:
                     raise ValueError(
                         "duplicate plugin endpoint "
@@ -344,6 +557,48 @@ class PluginRegistry:
                         f"from {routes[route_key]} and {plugin.id}",
                     )
                 routes[route_key] = plugin.id
+                if endpoint.operation_id is not None:
+                    if endpoint.operation_id in plugin_operation_ids:
+                        raise ValueError(
+                            "duplicate plugin endpoint operation_id "
+                            f"{endpoint.operation_id} within {plugin.id}",
+                        )
+                    plugin_operation_ids.add(endpoint.operation_id)
+                    if endpoint.operation_id in operation_ids:
+                        raise ValueError(
+                            "duplicate plugin endpoint operation_id "
+                            f"{endpoint.operation_id} "
+                            f"from {operation_ids[endpoint.operation_id]} and {plugin.id}",
+                        )
+                    operation_ids[endpoint.operation_id] = plugin.id
+                if endpoint.client_namespace is not None:
+                    if endpoint.client_namespace in plugin_client_namespaces:
+                        raise ValueError(
+                            "duplicate plugin endpoint client_namespace "
+                            f"{endpoint.client_namespace} within {plugin.id}",
+                        )
+                    plugin_client_namespaces.add(endpoint.client_namespace)
+                    if endpoint.client_namespace in client_namespaces:
+                        raise ValueError(
+                            "duplicate plugin endpoint client_namespace "
+                            f"{endpoint.client_namespace} "
+                            f"from {client_namespaces[endpoint.client_namespace]} and {plugin.id}",
+                        )
+                    client_namespaces[endpoint.client_namespace] = plugin.id
+            for error_code in self._error_codes_by_plugin_id[plugin.id]:
+                if error_code.code in error_codes:
+                    raise ValueError(
+                        "duplicate plugin error code "
+                        f"{error_code.code} from {error_codes[error_code.code]} "
+                        f"and {plugin.id}",
+                    )
+                error_codes[error_code.code] = plugin.id
+            for schema in self._schemas_by_plugin_id[plugin.id]:
+                if schema.plugin_id != plugin.id:
+                    raise ValueError(
+                        f"plugin schema plugin_id {schema.plugin_id!r} "
+                        f"does not match plugin id {plugin.id!r}",
+                    )
 
     def bind_plugins(self, context: AuthContext) -> None:
         for plugin in self.plugins:
@@ -388,6 +643,48 @@ class PluginRegistry:
             for rule in self._rate_limit_rules_by_plugin_id.get(plugin.id, ())
         ]
 
+    def all_error_codes(self) -> list[PluginErrorCode]:
+        return [
+            error_code
+            for plugin in self.plugins
+            for error_code in self._error_codes_by_plugin_id.get(plugin.id, ())
+        ]
+
+    def all_schemas(self) -> list[PluginSchema]:
+        return [
+            schema
+            for plugin in self.plugins
+            for schema in self._schemas_by_plugin_id.get(plugin.id, ())
+        ]
+
+    def all_middlewares(self) -> list[PluginMiddlewareSpec]:
+        return [
+            middleware
+            for plugin in self.plugins
+            for middleware in self._middlewares_by_plugin_id.get(plugin.id, ())
+        ]
+
+    def all_request_hooks(self) -> list[RequestHookSpec]:
+        return [
+            hook
+            for plugin in self.plugins
+            for hook in self._request_hooks_by_plugin_id.get(plugin.id, ())
+        ]
+
+    def all_response_hooks(self) -> list[ResponseHookSpec]:
+        return [
+            hook
+            for plugin in self.plugins
+            for hook in self._response_hooks_by_plugin_id.get(plugin.id, ())
+        ]
+
+    def all_endpoint_hooks(self) -> list[EndpointHookSpec]:
+        return [
+            hook
+            for plugin in self.plugins
+            for hook in self._endpoint_hooks_by_plugin_id.get(plugin.id, ())
+        ]
+
     def all_event_handlers(self) -> list[EventHandlerPair]:
         return [
             pair
@@ -427,6 +724,12 @@ class PluginRegistry:
                     rate_limit_rules=self._rate_limit_rules_by_plugin_id.get(plugin.id, ()),
                     trusted_origins=self._trusted_origins_by_plugin_id.get(plugin.id, ()),
                     event_handler_count=len(self._event_handlers_by_plugin_id.get(plugin.id, ())),
+                    error_codes=self._error_codes_by_plugin_id.get(plugin.id, ()),
+                    schemas=self._schemas_by_plugin_id.get(plugin.id, ()),
+                    middleware_count=len(self._middlewares_by_plugin_id.get(plugin.id, ())),
+                    request_hook_count=len(self._request_hooks_by_plugin_id.get(plugin.id, ())),
+                    response_hook_count=len(self._response_hooks_by_plugin_id.get(plugin.id, ())),
+                    endpoint_hook_count=len(self._endpoint_hooks_by_plugin_id.get(plugin.id, ())),
                     server_api_name=(
                         server_api_namespace.name if server_api_namespace is not None else None
                     ),

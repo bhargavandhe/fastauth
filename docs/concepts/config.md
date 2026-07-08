@@ -15,7 +15,6 @@ final values you pass to the constructor.
 
 ```python
 from pydantic import SecretStr
-from datetime import timedelta
 from pymongo import AsyncMongoClient
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo, postgres
@@ -35,12 +34,12 @@ mongo_database = mongo_client["myapp"]
 options = FastAuthOptions(
     secret_key=SecretStr(app_secret),
     database=mongo(
-        mongo_database,
+        database=mongo_database,
         collection_prefix="tenant_",
         collection_suffix="_auth",
     ),
     app=AppOptions(base_url="https://app.example.com"),
-    session=SessionOptions(expires_in=timedelta(days=7)),
+    session=SessionOptions(expires_in="7d"),
     cookie=CookieOptions(same_site="strict"),
     rate_limit=RateLimitOptions(storage="database"),
 )
@@ -50,7 +49,7 @@ print(options.database.collection_prefix)
 postgres_options = FastAuthOptions(
     secret_key=SecretStr(app_secret),
     database=postgres(
-        "postgresql+asyncpg://user:pass@db.example.com/app",
+        url="postgresql+asyncpg://user:pass@db.example.com/app",
         table_prefix="fastauth_",
         table_suffix="_auth",
     ),
@@ -82,7 +81,7 @@ configuration layer and pass the resulting strings into `FastAuthOptions`.
 | `rate_limit` | Window, max requests, storage backend (memory or DB). |
 | `csrf` | Trusted origins, relative-path policy, enable/disable. |
 | `lockout` | Account-lockout policy (`max_failures`, `window`). |
-| `database` | Database option object from `memory()`, `mongo(database)`, `postgres(url)`, or `custom(adapter, backend=...)`. |
+| `database` | Database option object from `memory()`, `mongo(database=...)`, `postgres(url=...)`, or `custom(adapter=..., backend=...)`. |
 | `proxy` | Trusted reverse proxies and the forwarding header to honor for client IP resolution. |
 | `advanced` | IPv6 subnet bucket size and `__Secure-` cookie prefix flag. |
 
@@ -93,11 +92,11 @@ Plugins are behavior objects passed to `FastAuth(..., plugins=[...])`, not a
 `FastAuthOptions` field. Plugin presence is the feature switch.
 
 `database` defaults to `memory()`. For persistent deployments, pass
-`mongo(database)` or `postgres(url)` explicitly.
+`mongo(database=...)` or `postgres(url=...)` explicitly.
 
-`custom(adapter)` defaults to `DatabaseBackendKind.MEMORY`, which production
+`custom(adapter=adapter)` defaults to `DatabaseBackendKind.MEMORY`, which production
 validation rejects. Custom production adapters must declare their real backend,
-for example `custom(adapter, backend=DatabaseBackendKind.POSTGRES)`.
+for example `custom(adapter=adapter, backend=DatabaseBackendKind.POSTGRES)`.
 
 ## HTTP field names
 
@@ -136,7 +135,7 @@ from pydantic import SecretStr
 
 options = FastAuthOptions(
     secret_key=SecretStr(app_settings.auth_secret),
-    database=mongo(app_settings.mongo_database),
+    database=mongo(database=app_settings.mongo_database),
 )
 auth = FastAuth(options, plugins=[email_password()])
 ```

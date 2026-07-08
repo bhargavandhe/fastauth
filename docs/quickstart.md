@@ -11,18 +11,18 @@ them.
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import create_auth
+from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.options import CookieOptions
 from fastauth import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-auth = create_auth(
+options = FastAuthOptions(
     secret_key=SecretStr(app_secret),
     database=memory(),
     cookie=CookieOptions(secure=False),
-    plugins=[email_password()],
 )
+auth = FastAuth(options, plugins=[email_password()])
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
 auth.mount(app)
@@ -33,8 +33,8 @@ middleware on the host FastAPI application. If you use `auth.as_asgi()` as a
 standalone app instead, fastauth returns an app with the same routes and
 middleware already installed.
 
-`memory()` is suitable for tests and local demos. Pick `mongo(database)` or
-`postgres(url)` explicitly for persistent deployments.
+`memory()` is suitable for tests and local demos. Pick `mongo(database=...)` or
+`postgres(url=...)` explicitly for persistent deployments.
 
 `CookieOptions(secure=False)` is only for local HTTP development. Keep secure
 cookies enabled for HTTPS deployments; production validation requires it.
@@ -52,7 +52,7 @@ from fastauth import email_password, jwt
 
 options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
-    database=postgres("postgresql+asyncpg://user:pass@localhost/myapp"),
+    database=postgres(url="postgresql+asyncpg://user:pass@localhost/myapp"),
 )
 auth = FastAuth(options, plugins=[email_password(), jwt()])
 
@@ -62,13 +62,12 @@ auth.mount(app)
 
 ## Protecting routes with `CurrentUser` / `CurrentSession`
 
-The `FastAuth` instance exposes public DTO dependencies for application routes,
-plus lower-level domain/session dependencies for advanced cases:
+The `FastAuth` instance exposes one dependency namespace for application routes:
 
 | Dependency | Returns | On anonymous request |
 |---|---|---|
-| `auth.depends.user_view()` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
-| `auth.depends.optional_user_view()` | `UserView \| None` | returns `None` (never raises) |
+| `auth.depends.user()` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
+| `auth.depends.optional_user()` | `UserView \| None` | returns `None` (never raises) |
 | `auth.depends.session()` | `SessionContext` | raises HTTP 401 |
 | `auth.depends.optional_session()` | `SessionContext \| None` | returns `None` |
 
@@ -83,7 +82,7 @@ from fastapi import Depends
 from fastauth import UserView
 
 @app.get("/me")
-async def me(user: UserView = Depends(auth.require_user)) -> UserView:
+async def me(user: UserView = Depends(auth.depends.user())) -> UserView:
     return user
 
 # Style 2 — `Annotated` type alias (idiomatic, requires `auth` to be a
@@ -92,7 +91,7 @@ from typing import Annotated
 from fastapi import Depends
 from fastauth import UserView
 
-CurrentUser = Annotated[UserView, Depends(auth.depends.user_view())]
+CurrentUser = Annotated[UserView, Depends(auth.depends.user())]
 
 @app.get("/me")
 async def me(user: CurrentUser) -> UserView:

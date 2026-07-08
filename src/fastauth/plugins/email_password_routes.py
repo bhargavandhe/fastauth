@@ -53,6 +53,7 @@ from fastauth.flows.verification import (
     verify_email,
 )
 from fastauth.plugins.base import EndpointSpec
+from fastauth.web.callbacks import resolve_request_base_url
 from fastauth.web.fastapi import clear_session_cookie, client_ip, set_session_cookie
 
 if TYPE_CHECKING:
@@ -143,6 +144,7 @@ class EmailPasswordRouteHandlers:
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
+            app_base_url=resolve_request_base_url(request, context),
         )
 
     async def verify_email_handler(
@@ -177,6 +179,7 @@ class EmailPasswordRouteHandlers:
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
+            app_base_url=resolve_request_base_url(request, context),
         )
 
     async def reset_password_handler(
@@ -281,6 +284,7 @@ class EmailPasswordRouteHandlers:
             session_context.user,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
+            app_base_url=resolve_request_base_url(request, context),
         )
 
     async def confirm_delete_account_handler(
@@ -314,6 +318,7 @@ class EmailPasswordRouteHandlers:
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
+            app_base_url=resolve_request_base_url(request, context),
         )
 
     async def confirm_email_change_handler(
