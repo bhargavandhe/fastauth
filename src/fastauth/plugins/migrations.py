@@ -202,8 +202,7 @@ class PluginSchemaPlan(PluginSchemaModel):
             name_key = (migration.plugin_id, migration.name)
             if name_key in seen_migration_names:
                 raise ValueError(
-                    f"duplicate migration in schema plan: "
-                    f"{migration.plugin_id}.{migration.name}",
+                    f"duplicate migration in schema plan: {migration.plugin_id}.{migration.name}",
                 )
             seen_migration_names.add(name_key)
 

@@ -115,8 +115,7 @@ def test_build_schema_plan_reports_duplicate_table_and_field_conflicts() -> None
         "plugin_ids": ["alpha", "beta"],
         "field_name": "external_id",
         "message": (
-            "field shared_records.external_id has conflicting declarations from "
-            "'alpha' and 'beta'"
+            "field shared_records.external_id has conflicting declarations from 'alpha' and 'beta'"
         ),
     }
 

@@ -252,14 +252,10 @@ class ExtendedContractPlugin(Plugin):
         ]
 
     def request_hooks(self) -> list[RequestHookSpec]:
-        return [
-            RequestHookSpec(name="extended_request", handler=plugin_hook_handler)
-        ]
+        return [RequestHookSpec(name="extended_request", handler=plugin_hook_handler)]
 
     def response_hooks(self) -> list[ResponseHookSpec]:
-        return [
-            ResponseHookSpec(name="extended_response", handler=plugin_hook_handler)
-        ]
+        return [ResponseHookSpec(name="extended_response", handler=plugin_hook_handler)]
 
     def endpoint_hooks(self) -> list[EndpointHookSpec]:
         return [

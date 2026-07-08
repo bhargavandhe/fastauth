@@ -210,10 +210,14 @@ def hook_kwargs_for(
     for parameter in signature.parameters.values():
         if parameter.kind is inspect.Parameter.VAR_KEYWORD:
             return kwargs
-        if parameter.kind in {
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            inspect.Parameter.KEYWORD_ONLY,
-        } and parameter.name in kwargs:
+        if (
+            parameter.kind
+            in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+            and parameter.name in kwargs
+        ):
             selected[parameter.name] = kwargs[parameter.name]
     return selected
 

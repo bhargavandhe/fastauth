@@ -35,8 +35,7 @@ async def configured_client(
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
-            app=app_options
-            or AppOptions.model_validate({"base_url": "https://api.example.com"}),
+            app=app_options or AppOptions.model_validate({"base_url": "https://api.example.com"}),
             database=custom(adapter=InMemoryAdapter()),
             csrf=CsrfOptions(enabled=False),
             cookie=CookieOptions(secure=False),
