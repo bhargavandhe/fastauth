@@ -313,7 +313,6 @@ class PluginRegistry:
         self._server_api_namespaces: tuple[PluginApiNamespace, ...] = ()
         capabilities: dict[str, str] = {}
         routes: dict[tuple[str, str], str] = {}
-        server_api_namespaces: list[PluginApiNamespace] = []
         for plugin in self.plugins:
             if not plugin.id:
                 raise ValueError(f"plugin {plugin.__class__.__name__} must set 'id'")
@@ -328,17 +327,6 @@ class PluginRegistry:
             self._trusted_origins_by_plugin_id[plugin.id] = tuple(plugin.trusted_origins())
             self._rate_limit_rules_by_plugin_id[plugin.id] = tuple(plugin.rate_limit_rules())
             self._event_handlers_by_plugin_id[plugin.id] = tuple(plugin.event_handlers())
-
-            server_api = plugin.server_api()
-            if server_api is not None:
-                name = plugin.server_api_name()
-                if name is None:
-                    raise ValueError(
-                        f"plugin {plugin.id} returned server_api without server_api_name",
-                    )
-                server_api_namespaces.append(
-                    PluginApiNamespace(plugin_id=plugin.id, name=name, api=server_api),
-                )
 
             for capability in plugin_capabilities:
                 if capability.id in capabilities:
@@ -356,6 +344,27 @@ class PluginRegistry:
                         f"from {routes[route_key]} and {plugin.id}",
                     )
                 routes[route_key] = plugin.id
+
+    def bind_plugins(self, context: AuthContext) -> None:
+        for plugin in self.plugins:
+            plugin.bind(context)
+        self.collect_server_api_namespaces()
+
+    def collect_server_api_namespaces(self) -> None:
+        server_api_namespaces: list[PluginApiNamespace] = []
+        for plugin in self.plugins:
+            server_api = plugin.server_api()
+            if server_api is None:
+                continue
+            name = plugin.server_api_name()
+            if name is None:
+                raise ValueError(
+                    f"plugin {plugin.id} returned server_api without server_api_name",
+                )
+            server_api_namespaces.append(
+                PluginApiNamespace(plugin_id=plugin.id, name=name, api=server_api),
+            )
+        PluginApiRegistry(server_api_namespaces)
         self._server_api_namespaces = tuple(server_api_namespaces)
 
     def all_endpoints(self) -> list[EndpointSpec]:

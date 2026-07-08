@@ -271,6 +271,10 @@ def add_plugin_route(router: APIRouter, spec: EndpointSpec) -> None:
         response_model=spec.response_model,
         response_class=JSONResponse,
     )
+    for route in reversed(router.routes):
+        if isinstance(route, APIRoute) and route.name == spec.name:
+            route.fastauth_source = "plugin"  # type: ignore[attr-defined]
+            break
 
 
 def register_session_routes(router: APIRouter, context: AuthContext) -> None:

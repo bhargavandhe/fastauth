@@ -4,6 +4,16 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-07-08
+
+### Fixed
+
+- Plugin server API namespaces are now snapshotted after plugins are bound to
+  `AuthContext`, so context-aware plugin API objects can be constructed
+  directly in `server_api()`.
+- `auth.inspect().routes` now reports plugin route sources from explicit route
+  metadata instead of inferring source from the route path prefix.
+
 ## [0.10.0] — 2026-07-08
 
 ### Added
@@ -621,7 +631,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/bhargavandhe/fastauth/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bhargavandhe/fastauth/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/bhargavandhe/fastauth/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/bhargavandhe/fastauth/compare/v0.7.0...v0.8.0

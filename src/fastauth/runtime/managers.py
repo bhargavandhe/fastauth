@@ -545,12 +545,12 @@ class AuthInspector:
 
     def routes(self) -> list[RouteInfo]:
         routes: list[RouteInfo] = []
-        base_path = self._auth.context.config.app.base_path
         for route in self._auth.router.routes:
             methods = getattr(route, "methods", None)
             path = getattr(route, "path", "")
             name = getattr(route, "name", "")
             tags = tuple(getattr(route, "tags", ()) or ())
+            source = getattr(route, "fastauth_source", "core")
             for method in sorted(methods or ()):
                 if method in {"HEAD", "OPTIONS"}:
                     continue
@@ -560,7 +560,7 @@ class AuthInspector:
                         path=path,
                         name=name,
                         tags=tags,
-                        source="plugin" if not str(path).startswith(base_path) else "core",
+                        source=source,
                     )
                 )
         return routes

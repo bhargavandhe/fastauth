@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi import Request
@@ -11,6 +12,7 @@ from fastauth.exceptions import ConfigError, FeatureNotEnabledError, InvalidCred
 from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import Capability, EndpointInfo, EndpointSpec, Plugin, PluginRegistry
 from fastauth.runtime.auth import FastAuth
+from fastauth.runtime.context import AuthContext
 from fastauth.storage.base import AuditLogStore
 from fastauth.storage.memory import InMemoryAdapter
 
@@ -110,6 +112,11 @@ class HelloPluginApi:
         return "pong"
 
 
+class ContextAwarePluginApi:
+    def __init__(self, plugin: Plugin) -> None:
+        self.context = plugin.require_context()
+
+
 class ServerApiPlugin(Plugin):
     id = "server-api-plugin"
 
@@ -135,6 +142,16 @@ class MissingServerApiNamePlugin(Plugin):
 
     def server_api(self) -> HelloPluginApi:
         return HelloPluginApi()
+
+
+class ContextAwareServerApiPlugin(Plugin):
+    id = "context-aware-server-api-plugin"
+
+    def server_api_name(self) -> str:
+        return "context_aware"
+
+    def server_api(self) -> ContextAwarePluginApi:
+        return ContextAwarePluginApi(self)
 
 
 def test_registry_records_endpoints() -> None:
@@ -210,6 +227,7 @@ def test_registry_snapshots_plugin_surfaces() -> None:
 
 def test_registry_reports_plugin_server_api_namespace() -> None:
     registry = PluginRegistry([ServerApiPlugin()])
+    registry.bind_plugins(cast(AuthContext, SimpleNamespace()))
 
     namespaces = registry.all_server_api_namespaces()
     info = registry.plugin_info()
@@ -220,8 +238,21 @@ def test_registry_reports_plugin_server_api_namespace() -> None:
 
 
 def test_registry_rejects_missing_server_api_name() -> None:
+    registry = PluginRegistry([MissingServerApiNamePlugin()])
+
     with pytest.raises(ValueError, match="server_api_name"):
-        PluginRegistry([MissingServerApiNamePlugin()])
+        registry.bind_plugins(cast(AuthContext, SimpleNamespace()))
+
+
+def test_registry_snapshots_plugin_server_api_after_binding() -> None:
+    context = cast(AuthContext, SimpleNamespace(marker="bound"))
+    registry = PluginRegistry([ContextAwareServerApiPlugin()])
+
+    registry.bind_plugins(context)
+
+    namespace = registry.all_server_api_namespaces()[0]
+    assert isinstance(namespace.api, ContextAwarePluginApi)
+    assert namespace.api.context is context
 
 
 def test_auth_api_exposes_plugin_server_api_namespace() -> None:

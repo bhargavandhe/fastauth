@@ -203,16 +203,15 @@ class FastAuth:
             refresh_token_service=refresh_token_service,
         )
 
-        for event_type, handler in self.context.plugins.all_event_handlers():
-            self.context.event_bus.subscribe(event_type, handler)  # type: ignore[arg-type]
-
-        # Late-bind the context into every plugin that declares a ``bind`` hook.
+        # Late-bind the context into every plugin before building server API
+        # namespaces. Third-party API objects may legitimately need bound
+        # context during construction.
         # The context can't be passed via __init__ because the PluginRegistry it
         # owns must already contain the plugin instances.
-        for plugin in self.context.plugins.plugins:
-            bind = getattr(plugin, "bind", None)
-            if callable(bind):
-                bind(self.context)
+        self.context.plugins.bind_plugins(self.context)
+
+        for event_type, handler in self.context.plugins.all_event_handlers():
+            self.context.event_bus.subscribe(event_type, handler)  # type: ignore[arg-type]
 
         self.events: EventBus = event_bus
         self.capabilities: CapabilityRegistry = CapabilityRegistry(

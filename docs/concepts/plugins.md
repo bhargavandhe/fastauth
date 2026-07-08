@@ -113,6 +113,11 @@ This keeps core `auth.api.sign_in`, `auth.api.session`, `auth.api.password`,
 and `auth.api.user` stable while letting plugins publish their own command /
 result based server API.
 
+`server_api()` is called after FastAuth binds the plugin to `AuthContext`, so
+plugin API objects may read `self.require_context()` or capabilities during
+construction. Keep declaration hooks such as `endpoints()` and
+`capabilities()` context-free; those are snapshotted before binding.
+
 ## Authoring template
 
 Use this shape for plugins that need fastauth context, authentication, optional

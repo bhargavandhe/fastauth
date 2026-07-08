@@ -36,6 +36,7 @@ from fastauth.database import memory
 from fastauth.exceptions import FeatureNotEnabledError, InvalidCredentialsError
 from fastauth.messaging.email import EmailMessage
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
+from fastauth.plugins.base import EndpointSpec, Plugin
 from fastauth.plugins.email_password import EmailPasswordOptions
 
 
@@ -219,6 +220,37 @@ def test_fastauth_exposes_pythonic_manager_namespaces() -> None:
     assert inspection.version
     assert inspection.model_dump(mode="json")["routes"]
     assert auth.plugin_info()[0].id == "fastauth-email-password"
+
+
+def test_auth_inspector_reports_plugin_route_sources_explicitly() -> None:
+    class InspectRoutePlugin(Plugin):
+        id = "inspect-route-plugin"
+
+        def endpoints(self) -> list[EndpointSpec]:
+            async def ping() -> dict[str, bool]:
+                return {"ok": True}
+
+            return [
+                EndpointSpec.get(
+                    "/inspect-plugin/ping",
+                    name="inspect_plugin_ping",
+                    handler=ping,
+                    tags=("InspectRoutePlugin",),
+                )
+            ]
+
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("g" * 64), database=memory()),
+        plugins=[InspectRoutePlugin()],
+    )
+
+    routes = auth.inspect().routes
+    health_route = next(route for route in routes if route.name == "fastauth_health")
+    plugin_route = next(route for route in routes if route.name == "inspect_plugin_ping")
+
+    assert health_route.source == "core"
+    assert plugin_route.path == "/auth/inspect-plugin/ping"
+    assert plugin_route.source == "plugin"
 
 
 def test_auth_api_public_methods_do_not_expose_transport_kwargs_or_tuple_results() -> None:
