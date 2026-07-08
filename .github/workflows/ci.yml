@@ -19,6 +19,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --extra dev --extra jwt --extra cli --extra beanie --extra postgres
+      - run: uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres ruff format --check src tests examples docs
       - run: uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres ruff check src tests examples
       - run: uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres pyright
 
@@ -41,6 +42,7 @@ jobs:
           tests/integration
           tests/cli
           tests/adapters/test_memory_adapter.py
+          --cov-fail-under=80
 
   docker-tests:
     name: Docker-backed adapter tests

@@ -53,9 +53,11 @@ Local development uses [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync --all-extras            # install runtime + dev + docs dependencies
+uv run ruff format --check src tests examples docs
 uv run ruff check               # lint
 uv run pyright                  # type-check (strict)
 uv run pytest                   # run the test suite
+uv run pytest -m "unit and not docker"
 ```
 
 Once your environment is wired up, generate the project scaffold via the CLI

@@ -1,6 +1,6 @@
 [project]
 name = "fastauth-py"
-version = "0.10.1"
+version = "0.10.2"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -102,6 +102,13 @@ reportUnknownMemberType = "warning"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --cov=fastauth --cov-report=term-missing"
+markers = [
+  "unit: fast unit tests that do not require external services",
+  "integration: integration tests that exercise mounted FastAuth flows",
+  "cli: command-line interface tests",
+  "adapter: storage adapter contract and adapter behavior tests",
+  "docker: tests that require Docker-backed services",
+]
 
 [tool.coverage.run]
 branch = true

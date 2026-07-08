@@ -4,6 +4,20 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-07-08
+
+### Changed
+
+- Split the public SDK manager implementation into focused runtime modules
+  while preserving the stable `fastauth.runtime.managers` export path.
+
+### Added
+
+- Added CI formatting enforcement with `ruff format --check`.
+- Added pytest markers for unit, integration, CLI, adapter, and Docker-backed
+  tests, with automatic marker assignment by test path.
+- Added an 80% coverage floor to the non-Docker CI test slice.
+
 ## [0.10.1] — 2026-07-08
 
 ### Fixed
@@ -631,7 +645,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/bhargavandhe/fastauth/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/bhargavandhe/fastauth/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/bhargavandhe/fastauth/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/bhargavandhe/fastauth/compare/v0.8.0...v0.9.0
