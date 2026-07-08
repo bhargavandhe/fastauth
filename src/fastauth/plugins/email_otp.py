@@ -65,6 +65,7 @@ class EmailOtpPlugin(Plugin):
         self.context: AuthContext | None = None
 
     def bind(self, context: AuthContext) -> None:
+        super().bind(context)
         self.context = context
 
     def assert_bound(self) -> AuthContext:

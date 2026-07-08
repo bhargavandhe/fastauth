@@ -25,7 +25,8 @@ def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     # NOT pull from any env-only loader.
     body = auth_py.read_text(encoding="utf-8")
     assert "FastAuthOptions" in body
-    assert "FastAuth(create_options(secret_key), plugins=[email_password()])" in body
+    assert "create_auth(" in body
+    assert "plugins=[email_password()]" in body
     assert "FastAuthEnvConfig" not in body
     assert "memory()" in body
     assert "email_password()" in body

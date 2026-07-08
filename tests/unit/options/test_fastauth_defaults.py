@@ -3,12 +3,11 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthOptions
+from fastauth import FastAuth, FastAuthOptions, email_password
 from fastauth.database import custom, memory
 from fastauth.domain.enums import DatabaseBackendKind
 from fastauth.exceptions import ConfigError
 from fastauth.options import AppOptions, CustomDatabaseOptions, MongoDatabaseOptions
-from fastauth.providers import email_password
 from fastauth.storage.memory import InMemoryAdapter
 
 

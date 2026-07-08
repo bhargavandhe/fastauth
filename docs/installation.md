@@ -31,7 +31,7 @@ from pymongo import AsyncMongoClient
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
-from fastauth.providers import email_password
+from fastauth import email_password
 
 mongo_client = AsyncMongoClient("mongodb://localhost:27017", uuidRepresentation="standard")
 mongo_database = mongo_client["myapp"]

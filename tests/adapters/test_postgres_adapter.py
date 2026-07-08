@@ -15,7 +15,7 @@ from testcontainers.postgres import PostgresContainer  # pyright: ignore[reportM
 
 from fastauth.domain.models import RefreshToken, Session, User, new_id
 from fastauth.storage.postgres import PostgresAdapter
-from tests.adapters.adapter_contract import AdapterContract
+from tests.adapters.adapter_contract import FullAdapterContract
 
 
 @pytest.fixture(scope="session")
@@ -93,7 +93,7 @@ async def postgres_engine(postgres_url: str) -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
-class TestPostgresAdapter(AdapterContract):
+class TestPostgresAdapter(FullAdapterContract):
     @pytest.fixture
     async def adapter(self, postgres_engine: AsyncEngine) -> PostgresAdapter:
         adapter = PostgresAdapter(

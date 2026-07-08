@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from joserfc import jwk, jwt
 from pydantic import SecretStr
 
+from fastauth import email_password
 from fastauth.database import custom
 from fastauth.domain.enums import SessionStrategyKind
 from fastauth.messaging.email import ConsoleEmailSender
@@ -28,7 +29,6 @@ from fastauth.options import (
     SessionOptions,
 )
 from fastauth.plugins.jwt import JwtOptions, JwtPlugin
-from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 

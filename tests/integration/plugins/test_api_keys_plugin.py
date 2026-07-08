@@ -7,8 +7,9 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from pydantic import SecretStr
 
-from fastauth.plugins.api_key import ApiKeyOptions, ApiKeyPlugin
+from fastauth.plugins.api_key import ApiKeyOptions, ApiKeyPlugin, ApiKeysApi, CreateApiKeyRequest
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
@@ -36,6 +37,25 @@ async def test_create_api_key_returns_plain_key(client: httpx.AsyncClient) -> No
     assert body["key"].startswith("ak_")
     assert body["apiKey"]["name"] == "ci"
     assert "keyHash" not in body["apiKey"]
+
+
+async def test_server_api_can_create_and_verify_key(auth: FastAuth) -> None:
+    signed_up = await auth.sign_up.email(
+        "server-api-key@example.com",
+        SecretStr("correct-horse-staple"),
+    )
+    api_keys = auth.plugins.get(ApiKeysApi)
+
+    created = await api_keys.create(
+        signed_up.user.id,
+        CreateApiKeyRequest(name="ci"),
+    )
+    verified = await api_keys.verify(created.key)
+
+    assert created.key.startswith("ak_")
+    assert verified.valid is True
+    assert verified.api_key is not None
+    assert verified.api_key.name == "ci"
 
 
 async def test_verify_round_trip(client: httpx.AsyncClient) -> None:

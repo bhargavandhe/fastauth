@@ -19,7 +19,7 @@ from pydantic import ConfigDict, Field, SecretStr, model_validator
 from fastauth.api.responses import ApiKeyView, api_key_view
 from fastauth.domain.events import ApiKeyCreated, ApiKeyRevoked, ApiKeyVerifyFailed
 from fastauth.domain.models import ApiKey, WireModel
-from fastauth.domain.value_objects import ApiKeyId, ApiKeyMetadata, PermissionSet
+from fastauth.domain.value_objects import ApiKeyId, ApiKeyMetadata, PermissionSet, UserId
 from fastauth.exceptions import ConfigError, InvalidCredentialsError, NotFoundError
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
@@ -30,6 +30,7 @@ from fastauth.storage.base import ApiKeyStore
 __all__ = [
     "ApiKeyOptions",
     "ApiKeyPlugin",
+    "ApiKeysApi",
     "CreateApiKeyRequest",
     "CreateApiKeyResponse",
     "DeleteApiKeyRequest",
@@ -143,6 +144,15 @@ class DeleteExpiredApiKeysResponse(WireModel):
     deleted: int
 
 
+UserIdInput = UserId | str
+
+
+def to_user_id_value(value: UserIdInput) -> str:
+    if isinstance(value, UserId):
+        return value.root
+    return value
+
+
 def encode_api_key(prefix: str, plain: str) -> str:
     """Compose a user-facing API key by prepending ``prefix`` to ``plain``."""
     return f"{prefix}{plain}"
@@ -167,6 +177,7 @@ class ApiKeyPlugin(Plugin):
 
     def bind(self, context: AuthContext) -> None:
         """Attach the assembled ``AuthContext``. Called by ``FastAuth.__init__``."""
+        super().bind(context)
         if not isinstance(context.adapter, ApiKeyStore):
             raise ConfigError(message="ApiKeyPlugin requires an adapter implementing ApiKeyStore")
         self.context = context
@@ -186,6 +197,12 @@ class ApiKeyPlugin(Plugin):
                 plugin_id=self.id,
             )
         ]
+
+    def server_api_name(self) -> str:
+        return "api_keys"
+
+    def server_api(self) -> ApiKeysApi:
+        return ApiKeysApi(self)
 
     def assert_store(self) -> ApiKeyStore:
         """Return the bound API-key store or raise if ``bind`` was never invoked."""
@@ -268,9 +285,17 @@ class ApiKeyPlugin(Plugin):
         body: CreateApiKeyRequest,
         request: Request,
     ) -> CreateApiKeyResponse:
+        user_id = await self.current_user_id(request)
+        return await self.create_for_user(user_id, body)
+
+    async def create_for_user(
+        self,
+        user_id: UserIdInput,
+        body: CreateApiKeyRequest,
+    ) -> CreateApiKeyResponse:
         context = self.assert_bound()
         store = self.assert_store()
-        user_id = await self.current_user_id(request)
+        resolved_user_id = to_user_id_value(user_id)
         plain = secrets.token_urlsafe(32)
         prefix = self.options.default_prefix
         full_key = encode_api_key(prefix, plain)
@@ -279,7 +304,7 @@ class ApiKeyPlugin(Plugin):
         expires_in = body.expires_in or self.options.default_expires_in
         now = datetime.now(UTC)
         api_key = ApiKey(
-            user_id=user_id,
+            user_id=resolved_user_id,
             name=body.name,
             key_hash=TokenService().hash_only(plain),
             key_prefix=prefix,
@@ -308,11 +333,14 @@ class ApiKeyPlugin(Plugin):
         )
         await store.create_api_key(api_key)
         await context.event_bus.publish(
-            ApiKeyCreated(user_id=user_id, api_key_id=api_key.id),
+            ApiKeyCreated(user_id=resolved_user_id, api_key_id=api_key.id),
         )
         return CreateApiKeyResponse(api_key=api_key_view(api_key), key=full_key)
 
     async def verify_handler(self, body: VerifyApiKeyRequest) -> VerifyApiKeyResponse:
+        return await self.verify_key(body)
+
+    async def verify_key(self, body: VerifyApiKeyRequest) -> VerifyApiKeyResponse:
         context = self.assert_bound()
         store = self.assert_store()
         key_value = body.key.get_secret_value()
@@ -426,17 +454,17 @@ class ApiKeyPlugin(Plugin):
 
         return VerifyApiKeyResponse(valid=True, api_key=api_key_view(api_key))
 
-    async def list_handler(
+    async def list_for_user(
         self,
-        request: Request,
-        limit: Annotated[int, Query(ge=1, le=100)] = 50,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        user_id: UserIdInput,
+        *,
+        limit: int = 50,
+        offset: int = 0,
     ) -> ListApiKeysResponse:
         self.assert_bound()
         store = self.assert_store()
-        user_id = await self.current_user_id(request)
         items, total = await store.list_api_keys_for_user(
-            user_id,
+            to_user_id_value(user_id),
             limit=limit,
             offset=offset,
         )
@@ -447,16 +475,33 @@ class ApiKeyPlugin(Plugin):
             offset=offset,
         )
 
+    async def list_handler(
+        self,
+        request: Request,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> ListApiKeysResponse:
+        user_id = await self.current_user_id(request)
+        return await self.list_for_user(user_id, limit=limit, offset=offset)
+
     async def update_handler(
         self,
         body: UpdateApiKeyRequest,
         request: Request,
     ) -> ApiKeyView:
+        user_id = await self.current_user_id(request)
+        return await self.update_for_user(user_id, body)
+
+    async def update_for_user(
+        self,
+        user_id: UserIdInput,
+        body: UpdateApiKeyRequest,
+    ) -> ApiKeyView:
         self.assert_bound()
         store = self.assert_store()
-        user_id = await self.current_user_id(request)
+        resolved_user_id = to_user_id_value(user_id)
         api_key = await store.get_api_key_by_id(body.id.root)
-        if api_key is None or api_key.user_id != user_id:
+        if api_key is None or api_key.user_id != resolved_user_id:
             raise NotFoundError(resource="api_key")
         if body.name is not None:
             api_key.name = body.name
@@ -474,19 +519,79 @@ class ApiKeyPlugin(Plugin):
         body: DeleteApiKeyRequest,
         request: Request,
     ) -> EmptyResponse:
+        user_id = await self.current_user_id(request)
+        return await self.delete_for_user(user_id, body)
+
+    async def delete_for_user(
+        self,
+        user_id: UserIdInput,
+        body: DeleteApiKeyRequest,
+    ) -> EmptyResponse:
         context = self.assert_bound()
         store = self.assert_store()
-        user_id = await self.current_user_id(request)
+        resolved_user_id = to_user_id_value(user_id)
         api_key = await store.get_api_key_by_id(body.id.root)
-        if api_key is None or api_key.user_id != user_id:
+        if api_key is None or api_key.user_id != resolved_user_id:
             raise NotFoundError(resource="api_key")
         await store.delete_api_key(api_key.id)
         await context.event_bus.publish(
-            ApiKeyRevoked(user_id=user_id, api_key_id=api_key.id),
+            ApiKeyRevoked(user_id=resolved_user_id, api_key_id=api_key.id),
         )
         return EmptyResponse(success=True)
 
     async def delete_expired_handler(self) -> DeleteExpiredApiKeysResponse:
         self.assert_bound()
         count = await self.assert_store().delete_expired_api_keys()
+        return DeleteExpiredApiKeysResponse(deleted=count)
+
+
+class ApiKeysApi:
+    """Typed server API exposed by ``ApiKeyPlugin``."""
+
+    def __init__(self, plugin: ApiKeyPlugin) -> None:
+        self.plugin = plugin
+
+    async def create(
+        self,
+        user_id: UserIdInput,
+        request: CreateApiKeyRequest,
+    ) -> CreateApiKeyResponse:
+        return await self.plugin.create_for_user(user_id, request)
+
+    async def verify(
+        self,
+        key: SecretStr | str,
+        *,
+        permissions: PermissionSet | None = None,
+    ) -> VerifyApiKeyResponse:
+        secret = key if isinstance(key, SecretStr) else SecretStr(key)
+        return await self.plugin.verify_key(
+            VerifyApiKeyRequest(key=secret, permissions=permissions)
+        )
+
+    async def list(
+        self,
+        user_id: UserIdInput,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> ListApiKeysResponse:
+        return await self.plugin.list_for_user(user_id, limit=limit, offset=offset)
+
+    async def update(
+        self,
+        user_id: UserIdInput,
+        request: UpdateApiKeyRequest,
+    ) -> ApiKeyView:
+        return await self.plugin.update_for_user(user_id, request)
+
+    async def revoke(
+        self,
+        user_id: UserIdInput,
+        request: DeleteApiKeyRequest,
+    ) -> EmptyResponse:
+        return await self.plugin.delete_for_user(user_id, request)
+
+    async def delete_expired(self) -> DeleteExpiredApiKeysResponse:
+        count = await self.plugin.assert_store().delete_expired_api_keys()
         return DeleteExpiredApiKeysResponse(deleted=count)

@@ -25,9 +25,9 @@ This scaffold demonstrates explicit dependency injection. Build your
 """
 from __future__ import annotations
 
-from fastauth import FastAuth, FastAuthOptions
+from fastauth import FastAuthOptions, create_auth
 from fastauth.database import memory
-from fastauth.providers import email_password
+from fastauth import email_password
 
 
 def create_options(secret_key: str) -> FastAuthOptions:
@@ -37,8 +37,12 @@ def create_options(secret_key: str) -> FastAuthOptions:
     )
 
 
-def create_auth(secret_key: str):
-    return FastAuth(create_options(secret_key), plugins=[email_password()])
+def build_auth(secret_key: str):
+    return create_auth(
+        secret_key=secret_key,
+        database=memory(),
+        plugins=[email_password()],
+    )
 '''
 
 
@@ -58,7 +62,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
-from fastauth.providers import email_password
+from fastauth import email_password
 from fastauth.storage.beanie import init_beanie_documents
 
 
@@ -118,7 +122,7 @@ from fastapi import FastAPI
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
-from fastauth.providers import email_password
+from fastauth import email_password
 
 
 def create_options(

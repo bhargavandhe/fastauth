@@ -118,8 +118,8 @@ def test_readme_quickstart_uses_auth_mount() -> None:
     text = read_project_file("README.md")
 
     assert "auth.mount(app)" in text
-    assert "FastAuthOptions" in text
-    assert "FastAuth(options, plugins=[email_password()])" in text
+    assert "create_auth" in text
+    assert "plugins=[email_password()]" in text
     assert (
         "with CSRF, rate-limiting, account-lockout, refresh\n"
         "tokens, and security headers all on by default."
@@ -138,7 +138,7 @@ def test_quickstart_route_protection_uses_public_user_view() -> None:
     text = read_project_file("docs/quickstart.md")
 
     assert "auth.get_current_user` | `User`" not in text
-    assert "auth.require_user` | `UserView`" in text
+    assert "auth.depends.user_view()` | `UserView`" in text
     assert "from fastauth import UserView" in text
     assert "Depends(auth.require_user)" in text
 

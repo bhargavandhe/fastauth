@@ -15,6 +15,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
+from fastauth import email_password
 from fastauth.database import custom
 from fastauth.messaging.email import ConsoleEmailSender
 from fastauth.options import (
@@ -24,7 +25,6 @@ from fastauth.options import (
     LockoutOptions,
     RateLimitOptions,
 )
-from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 

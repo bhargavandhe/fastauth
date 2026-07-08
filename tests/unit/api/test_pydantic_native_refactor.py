@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import BaseModel, SecretStr, ValidationError
 
-from fastauth import FastAuth, FastAuthOptions
+from fastauth import FastAuth, FastAuthOptions, email_password
 from fastauth.database import memory
 from fastauth.options import (
     CookieOptions,
@@ -17,7 +17,6 @@ from fastauth.options import (
     SessionOptions,
 )
 from fastauth.plugins.email_otp import EmailOtpOptions
-from fastauth.providers import email_password
 from fastauth.runtime.context import AuthContext
 
 

@@ -93,6 +93,7 @@ class AuditLogsPlugin(Plugin):
 
     def bind(self, context: AuthContext) -> None:
         """Attach the assembled ``AuthContext`` and subscribe the catch-all handler."""
+        super().bind(context)
         if not isinstance(context.adapter, AuditLogStore):
             raise ConfigError(
                 message="AuditLogsPlugin requires an adapter implementing AuditLogStore",

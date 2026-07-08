@@ -27,5 +27,5 @@ deletion as well: `UserUpdated`, `UserDeleteRequested`, and `UserDeleted`.
 
 Events are observational side effects. They should be used for audit logs,
 notifications, metrics, and abuse detection, not as the only authority for
-mutating auth state. AuthKit flows update storage first, then publish events
+mutating auth state. FastAuth flows update storage first, then publish events
 for consumers that need to react.

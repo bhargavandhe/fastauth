@@ -1,8 +1,22 @@
 # Server API
 
-`auth.api` is the typed server-side API for application code that wants to run
-FastAuth flows without going through HTTP. Commands are frozen Pydantic models
-and must use explicit principal objects.
+The primary server-side API is method based and hangs directly off the
+`FastAuth` object. It runs FastAuth flows without going through HTTP while
+still returning the same safe DTOs:
+
+```python
+await auth.users.update(user_id, name="Ada Lovelace")
+
+await auth.passwords.change(
+    user_id=user_id,
+    session_id=session_id,
+    current_password=old_password,
+    new_password=new_password,
+)
+```
+
+`auth.api` remains the lower-level command API for applications that want
+explicit frozen Pydantic command objects.
 
 ```python
 from fastauth.api import UpdateUserCommand, UserPrincipal

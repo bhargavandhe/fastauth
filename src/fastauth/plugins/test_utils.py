@@ -126,6 +126,7 @@ class TestUtilsPlugin(Plugin):
 
     def bind(self, context: AuthContext) -> None:
         """Attach the assembled ``AuthContext`` and instantiate the helpers."""
+        super().bind(context)
         self.context = context
         helpers = TestHelpers(context)
         self.helpers = helpers

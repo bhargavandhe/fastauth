@@ -11,18 +11,16 @@ them.
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthOptions
+from fastauth import create_auth
 from fastauth.database import memory
 from fastauth.options import CookieOptions
-from fastauth.providers import email_password
+from fastauth import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
-auth = FastAuth(
-    FastAuthOptions(
-        secret_key=SecretStr(app_secret),
-        database=memory(),
-        cookie=CookieOptions(secure=False),
-    ),
+auth = create_auth(
+    secret_key=SecretStr(app_secret),
+    database=memory(),
+    cookie=CookieOptions(secure=False),
     plugins=[email_password()],
 )
 
@@ -50,7 +48,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
-from fastauth.providers import email_password, jwt
+from fastauth import email_password, jwt
 
 options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),
@@ -69,10 +67,10 @@ plus lower-level domain/session dependencies for advanced cases:
 
 | Dependency | Returns | On anonymous request |
 |---|---|---|
-| `auth.require_user` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
-| `auth.optional_user` | `UserView \| None` | returns `None` (never raises) |
-| `auth.require_session` | `SessionContext` | raises HTTP 401 |
-| `auth.optional_session` | `SessionContext \| None` | returns `None` |
+| `auth.depends.user_view()` | `UserView` | raises HTTP 401 with `code: INVALID_CREDENTIALS` |
+| `auth.depends.optional_user_view()` | `UserView \| None` | returns `None` (never raises) |
+| `auth.depends.session()` | `SessionContext` | raises HTTP 401 |
+| `auth.depends.optional_session()` | `SessionContext \| None` | returns `None` |
 
 Both cookie and `Authorization: Bearer` transports are honoured automatically.
 
@@ -94,7 +92,7 @@ from typing import Annotated
 from fastapi import Depends
 from fastauth import UserView
 
-CurrentUser = Annotated[UserView, Depends(auth.require_user)]
+CurrentUser = Annotated[UserView, Depends(auth.depends.user_view())]
 
 @app.get("/me")
 async def me(user: CurrentUser) -> UserView:

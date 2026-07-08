@@ -16,14 +16,27 @@ from fastauth.domain.models import User
 from fastauth.exceptions import ConfigError, FastAuthDependencyError, FastAuthError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
 from fastauth.options import (
+    CookieOptions,
     FastAuthOptions,
 )
-from fastauth.plugins.base import Plugin, PluginRegistry
+from fastauth.plugins.base import Plugin, PluginInfo, PluginRegistry
 from fastauth.runtime.api import AuthApi
 from fastauth.runtime.capabilities import Capability, CapabilityRegistry
 from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks
+from fastauth.runtime.managers import (
+    AuthInspector,
+    AuthRoutes,
+    DependsManager,
+    EmailChangesManager,
+    PasswordsManager,
+    PluginsManager,
+    SessionsManager,
+    SignInManager,
+    SignUpManager,
+    UsersManager,
+)
 from fastauth.security.lockout import AccountLockoutTracker
 from fastauth.security.passwords import Argon2idHasher, CredentialService, PasswordHasher
 from fastauth.security.rate_limit import (
@@ -39,7 +52,7 @@ from fastauth.web.csrf import CsrfMiddleware
 from fastauth.web.fastapi import build_router, extract_session_token, http_status_for
 from fastauth.web.security_headers import SecurityHeadersMiddleware
 
-__all__ = ["FastAuth"]
+__all__ = ["FastAuth", "create_auth"]
 
 EventT = TypeVar("EventT", bound=AuthEvent)
 
@@ -71,7 +84,7 @@ class FastAuth:
         token_service: TokenService | None = None,
     ) -> None:
         self.options = options
-        self.plugins = tuple(plugins)
+        self.installed_plugins = tuple(plugins)
         config = options
         self.database_runtime = options.database.build_runtime()
         adapter = self.database_runtime.adapter
@@ -92,7 +105,7 @@ class FastAuth:
             list(config.secret_key_rotation),
         )
 
-        plugin_registry = PluginRegistry(self.plugins)
+        plugin_registry = PluginRegistry(self.installed_plugins)
 
         if session_strategy is None:
             if config.session.strategy is SessionStrategyKind.DATABASE:
@@ -217,6 +230,70 @@ class FastAuth:
         )
         self.api = AuthApi(self.context)
         self.router = build_router(self.context, self.api)
+        self.plugins = PluginsManager(self.context.plugins.plugins, self.api.plugins)
+        self.sign_up = SignUpManager(self)
+        self.sign_in = SignInManager(self)
+        self.sessions = SessionsManager(self)
+        self.users = UsersManager(self)
+        self.passwords = PasswordsManager(self)
+        self.email_changes = EmailChangesManager(self)
+        self.depends = DependsManager(self)
+        self.routes = AuthRoutes.from_base_path(self.context.config.app.base_path)
+        self.inspect = AuthInspector(self)
+
+    @classmethod
+    def configure(
+        cls,
+        *,
+        plugins: Sequence[Plugin] = (),
+        email_sender: EmailSender | None = None,
+        password_hasher: PasswordHasher | None = None,
+        session_strategy: SessionStrategy | None = None,
+        token_service: TokenService | None = None,
+        **options: object,
+    ) -> FastAuth:
+        """Construct ``FastAuth`` directly from ``FastAuthOptions`` keyword fields."""
+        return cls(
+            FastAuthOptions.model_validate(options),
+            plugins=plugins,
+            email_sender=email_sender,
+            password_hasher=password_hasher,
+            session_strategy=session_strategy,
+            token_service=token_service,
+        )
+
+    @classmethod
+    def local_dev(
+        cls,
+        *,
+        plugins: Sequence[Plugin] = (),
+        email_sender: EmailSender | None = None,
+        **options: object,
+    ) -> FastAuth:
+        """Construct a local HTTP development instance with insecure cookies."""
+        options.setdefault("cookie", CookieOptions(secure=False))
+        options.setdefault("deployment", "development")
+        return cls(
+            FastAuthOptions.model_validate(options),
+            plugins=plugins,
+            email_sender=email_sender,
+        )
+
+    @classmethod
+    def production(
+        cls,
+        *,
+        plugins: Sequence[Plugin] = (),
+        email_sender: EmailSender | None = None,
+        **options: object,
+    ) -> FastAuth:
+        """Construct a production instance and apply production validators."""
+        options["deployment"] = "production"
+        return cls(
+            FastAuthOptions.model_validate(options),
+            plugins=plugins,
+            email_sender=email_sender,
+        )
 
     def on_event(
         self,
@@ -225,6 +302,10 @@ class FastAuth:
     ) -> None:
         """Subscribe an async handler to structured FastAuth security events."""
         self.events.subscribe(event_type, handler)
+
+    def plugin_info(self) -> list[PluginInfo]:
+        """Return serializable metadata for installed plugins."""
+        return self.context.plugins.plugin_info()
 
     def as_asgi(self) -> FastAPI:
         """Return a standalone ``FastAPI`` app wrapping the fastauth router."""
@@ -392,3 +473,23 @@ class FastAuth:
     async def optional_user(self, request: Request) -> UserView | None:
         """Alias for ``get_optional_current_user_view``."""
         return await self.get_optional_current_user_view(request)
+
+
+def create_auth(
+    *,
+    plugins: Sequence[Plugin] = (),
+    email_sender: EmailSender | None = None,
+    password_hasher: PasswordHasher | None = None,
+    session_strategy: SessionStrategy | None = None,
+    token_service: TokenService | None = None,
+    **options: object,
+) -> FastAuth:
+    """Construct ``FastAuth`` from ``FastAuthOptions`` keyword fields."""
+    return FastAuth.configure(
+        plugins=plugins,
+        email_sender=email_sender,
+        password_hasher=password_hasher,
+        session_strategy=session_strategy,
+        token_service=token_service,
+        **options,
+    )

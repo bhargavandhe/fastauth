@@ -10,17 +10,17 @@ pip install fastauth-py
 from fastapi import FastAPI
 from pydantic import SecretStr
 
-from fastauth import FastAuth, FastAuthOptions
+from fastauth import create_auth
 from fastauth.database import memory
-from fastauth.providers import email_password
+from fastauth.options import CookieOptions
+from fastauth import email_password
 
 app_secret = "replace-me-with-a-secret-from-your-application-config"
 
-auth = FastAuth(
-    FastAuthOptions(
-        secret_key=SecretStr(app_secret),
-        database=memory(),
-    ),
+auth = create_auth(
+    secret_key=SecretStr(app_secret),
+    database=memory(),
+    cookie=CookieOptions(secure=False),
     plugins=[email_password()],
 )
 
@@ -205,7 +205,7 @@ from fastauth.options import (
     AppOptions, CookieOptions, CsrfOptions,
     LockoutOptions, RefreshTokenOptions, SecurityHeadersOptions,
 )
-from fastauth.providers import email_password
+from fastauth import email_password
 
 options = FastAuthOptions(
     secret_key=SecretStr("…"),
@@ -227,7 +227,8 @@ auth = FastAuth(options, plugins=[email_password()])
 `email_verification`, `password_reset`, `email_change`, `delete_account`,
 `rate_limit`, `csrf`, `lockout`, `refresh_token`, `security_headers`,
 `advanced`, plus the top-level `database` backend. Plugins are behavior
-objects passed to `FastAuth(..., plugins=[...])`.
+objects passed to `create_auth(..., plugins=[...])` or
+`FastAuth(..., plugins=[...])`.
 
 See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.
 
@@ -264,7 +265,7 @@ fastauth/
 
 ## Status
 
-**v0.8.0** — current release. Coverage spans unit tests, adapter-contract
+**v0.10.0** — current release. Coverage spans unit tests, adapter-contract
 tests, integration flows, CLI behavior, and the quickstart example.
 `pyright --strict` is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed
 feature list.

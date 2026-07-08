@@ -9,6 +9,7 @@ import httpx
 from fastapi import FastAPI
 from pydantic import SecretStr
 
+from fastauth import email_password
 from fastauth.database import custom
 from fastauth.domain.enums import VerificationPurpose
 from fastauth.domain.events import PasswordResetRequested
@@ -20,7 +21,6 @@ from fastauth.options import (
     PasswordResetOptions,
     RateLimitOptions,
 )
-from fastauth.providers import email_password
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 

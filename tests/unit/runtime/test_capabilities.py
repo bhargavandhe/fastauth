@@ -3,14 +3,23 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
+from fastauth import email_otp, email_password
+from fastauth import test_utils as make_test_utils_plugin
 from fastauth.database import custom
 from fastauth.exceptions import FeatureNotEnabledError
 from fastauth.options import FastAuthOptions
 from fastauth.plugins.email_password import EmailPasswordOptions
-from fastauth.providers import email_otp, email_password
-from fastauth.providers import test_utils as make_test_utils_plugin
 from fastauth.runtime.auth import FastAuth
-from fastauth.runtime.capabilities import Capability, CapabilityRegistry
+from fastauth.runtime.capabilities import (
+    CORE_REFRESH_TOKENS,
+    CORE_SESSIONS,
+    EMAIL_OTP,
+    EMAIL_PASSWORD,
+    TEST_UTILS,
+    USERNAME_SIGN_IN,
+    Capability,
+    CapabilityRegistry,
+)
 from fastauth.storage.memory import InMemoryAdapter
 
 
@@ -38,14 +47,14 @@ def test_fastauth_exposes_core_and_plugin_capabilities() -> None:
 
     ids = {capability.id for capability in auth.capabilities.list()}
 
-    assert "core.sessions" in ids
-    assert "core.refresh-tokens" in ids
-    assert "email-password" in ids
-    assert "username-sign-in" in ids
-    assert "email-otp" in ids
-    assert "test-utils" in ids
-    assert auth.capabilities.has("email-password")
-    assert auth.capabilities.require("email-password").plugin_id == "fastauth-email-password"
+    assert str(CORE_SESSIONS) in ids
+    assert str(CORE_REFRESH_TOKENS) in ids
+    assert str(EMAIL_PASSWORD) in ids
+    assert str(USERNAME_SIGN_IN) in ids
+    assert str(EMAIL_OTP) in ids
+    assert str(TEST_UTILS) in ids
+    assert auth.capabilities.has(EMAIL_PASSWORD)
+    assert auth.capabilities.require(EMAIL_PASSWORD).plugin_id == "fastauth-email-password"
 
 
 def test_disabled_nested_feature_is_not_reported_as_capability() -> None:

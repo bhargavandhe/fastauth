@@ -21,11 +21,11 @@ from fastauth.domain.models import (
     new_id,
 )
 from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
-from tests.adapters.adapter_contract import AdapterContract
+from tests.adapters.adapter_contract import FullAdapterContract
 
 
 @pytest.mark.usefixtures("beanie_database")
-class TestBeanieAdapter(AdapterContract):
+class TestBeanieAdapter(FullAdapterContract):
     @pytest.fixture
     async def adapter(self, beanie_database: AsyncDatabase[Any]) -> BeanieAdapter:
         # Wipe collections between tests for isolation.

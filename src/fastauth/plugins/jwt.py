@@ -151,6 +151,7 @@ class JwtPlugin(Plugin):
         the plugin's ``/token``/``/jwks`` endpoints and the session strategy
         share the same registry and produce the same kid space.
         """
+        super().bind(context)
         self.context = context
         if not isinstance(context.adapter, JwksKeyStore):
             raise ConfigError(message="JwtPlugin requires an adapter implementing JwksKeyStore")

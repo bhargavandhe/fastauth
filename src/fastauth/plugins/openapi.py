@@ -66,6 +66,7 @@ class OpenApiPlugin(Plugin):
 
     def bind(self, context: AuthContext) -> None:
         """Attach the assembled ``AuthContext`` so handlers can read app config."""
+        super().bind(context)
         self.context = context
 
     def assert_bound(self) -> AuthContext:

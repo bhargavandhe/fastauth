@@ -38,7 +38,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.jwt import JwtOptions
-from fastauth.providers import email_password, jwt
+from fastauth import email_password, jwt
 
 auth = FastAuth(
     FastAuthOptions(

@@ -23,7 +23,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.openapi import OpenApiOptions
-from fastauth.providers import email_password, openapi
+from fastauth import email_password, openapi
 
 auth = FastAuth(
     FastAuthOptions(

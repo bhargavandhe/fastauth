@@ -20,7 +20,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
-from fastauth.providers import email_password
+from fastauth import email_password
 
 mongo_client = AsyncMongoClient("mongodb://localhost:27017", uuidRepresentation="standard")
 mongo_database = mongo_client["myapp"]
@@ -72,7 +72,7 @@ engine or URL:
 ```python
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
-from fastauth.providers import email_password
+from fastauth import email_password
 from pydantic import SecretStr
 
 auth = FastAuth(
@@ -110,22 +110,53 @@ Adapters are async-only and operate on the Pydantic domain models directly —
 there is no separate ORM layer. To plug in a new backend, implement
 `DatabaseAdapter` first. Then add the optional store protocols for the plugins
 or configuration you support. Adapter authors should install
-`fastauth-py[testing]` and run the packaged pytest contract in
-`fastauth.testing.adapter_contract`, which verifies the full first-party
-capability set.
+`fastauth-py[testing]` and run the packaged pytest contracts from
+`fastauth.testing.adapter_contract`. The contracts are split by capability so
+custom backends can test exactly what they implement:
+
+- `CoreAdapterContract` for users, sessions, accounts, and verifications.
+- `RefreshTokenAdapterContract` for refresh-token creation and rotation.
+- `ApiKeyAdapterContract` for API key storage.
+- `JwksAdapterContract` for JWT signing key storage.
+- `AuditLogAdapterContract` for audit log writes and filtering.
+- `RateLimitAdapterContract` for database-backed rate limit counters.
+- `FullAdapterContract` for the full first-party capability set.
+
+`AdapterContract` remains an alias for `FullAdapterContract` for existing
+test suites.
 
 ```python
-from fastauth.testing import AdapterContract
+import pytest
+
+from fastauth.testing import CoreAdapterContract, RefreshTokenAdapterContract
 
 
-class TestMyAdapter(AdapterContract):
+class TestMyCoreAdapter(CoreAdapterContract):
+    @pytest.fixture
+    async def adapter(self):
+        return MyAdapter(...)
+
+
+class TestMyRefreshTokenAdapter(RefreshTokenAdapterContract):
+    @pytest.fixture
     async def adapter(self):
         return MyAdapter(...)
 ```
 
-The contract assumes the adapter supports every built-in optional store. If
-your backend intentionally supports only core auth, copy the relevant core
-tests and keep plugin-specific tests beside the plugin that requires them.
+Use `FullAdapterContract` when your backend supports every built-in optional
+store, matching the first-party adapters:
+
+```python
+import pytest
+
+from fastauth.testing import FullAdapterContract
+
+
+class TestMyFullAdapter(FullAdapterContract):
+    @pytest.fixture
+    async def adapter(self):
+        return MyAdapter(...)
+```
 
 ## Minimum viable adapter
 

@@ -8,11 +8,23 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr, ValidationError
 
-from fastauth import AuthenticationResponse, FastAuth, FastAuthOptions, SessionView, UserView
+from fastauth import (
+    AuthenticationResponse,
+    FastAuth,
+    FastAuthOptions,
+    SessionId,
+    SessionView,
+    UserId,
+    UserView,
+    create_auth,
+    email_password,
+    openapi,
+)
 from fastauth.api.commands import (
     ChangePasswordCommand,
     GetSessionCommand,
     ListSessionsCommand,
+    RevokeSessionCommand,
     SessionPrincipal,
     SignInUsernameCommand,
     SignOutCommand,
@@ -25,7 +37,6 @@ from fastauth.exceptions import FeatureNotEnabledError, InvalidCredentialsError
 from fastauth.messaging.email import EmailMessage
 from fastauth.options import CookieOptions, CsrfOptions, RateLimitOptions
 from fastauth.plugins.email_password import EmailPasswordOptions
-from fastauth.providers import email_password, openapi
 
 
 class FakeEmailSender:
@@ -47,6 +58,30 @@ def test_fastauth_class_builds_auth_from_pydantic_options() -> None:
 
     assert auth.options.database.kind == "memory"
     assert auth.router.prefix == "/auth"
+
+
+def test_create_auth_factory_builds_fastauth_from_keyword_options() -> None:
+    auth = create_auth(
+        secret_key=SecretStr("a" * 64),
+        database=memory(),
+        plugins=[email_password()],
+    )
+
+    assert isinstance(auth, FastAuth)
+    assert auth.options.database.kind == "memory"
+
+
+def test_fastauth_configure_and_local_dev_helpers() -> None:
+    configured = FastAuth.configure(
+        secret_key=SecretStr("a" * 64),
+        database=memory(),
+        plugins=[email_password()],
+    )
+    local = FastAuth.local_dev(secret_key=SecretStr("b" * 64), plugins=[email_password()])
+
+    assert isinstance(configured, FastAuth)
+    assert local.options.cookie.secure is False
+    assert local.options.database.kind == "memory"
 
 
 def test_fastauth_factory_accepts_dependency_overrides() -> None:
@@ -129,11 +164,14 @@ async def test_email_password_routes_are_not_core_routes() -> None:
 
 
 def test_public_plugins_are_factories_with_pydantic_options() -> None:
+    import fastauth
+
     plugin = openapi()
 
     assert plugin.id == "fastauth-openapi"
     assert hasattr(plugin.options, "model_dump")
     assert not hasattr(plugin, "config")
+    assert fastauth.openapi().id == "fastauth-openapi"
 
 
 def test_old_config_names_are_not_exported() -> None:
@@ -158,6 +196,29 @@ def test_fastauth_exposes_concise_dependency_aliases() -> None:
     assert callable(auth.optional_user)
     assert callable(auth.require_session)
     assert callable(auth.optional_session)
+    assert callable(auth.depends.user_view())
+    assert callable(auth.depends.session())
+    assert callable(auth.depends.optional_user_view())
+    assert callable(auth.depends.optional_session())
+
+
+def test_fastauth_exposes_pythonic_manager_namespaces() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("g" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+
+    assert callable(auth.users.update)
+    assert callable(auth.sessions.list)
+    assert callable(auth.passwords.change)
+    assert callable(auth.email_changes.request)
+    assert callable(auth.sign_up.email)
+    assert callable(auth.sign_in.email)
+    assert auth.routes.sign_up.email.path == "/auth/sign-up/email"
+    inspection = auth.inspect()
+    assert inspection.version
+    assert inspection.model_dump(mode="json")["routes"]
+    assert auth.plugin_info()[0].id == "fastauth-email-password"
 
 
 def test_auth_api_public_methods_do_not_expose_transport_kwargs_or_tuple_results() -> None:
@@ -274,13 +335,43 @@ async def test_session_api_accepts_immutable_principal() -> None:
 
     result = await auth.api.session.list(
         ListSessionsCommand(
-            principal=UserPrincipal(user_id=signed_up.user.id.root),
+            principal=UserPrincipal(user_id=signed_up.user.id),
         )
     )
 
     assert len(result.sessions) == 1
+    assert isinstance(UserPrincipal(user_id=signed_up.user.id).user_id, UserId)
     with pytest.raises(ValidationError):
-        UserPrincipal(user_id="")
+        UserPrincipal.model_validate({"user_id": ""})
+
+
+async def test_pythonic_managers_delegate_to_command_api() -> None:
+    auth = FastAuth(
+        FastAuthOptions(secret_key=SecretStr("k" * 64), database=memory()),
+        plugins=[email_password()],
+    )
+    signed_up = await auth.sign_up.email(
+        "manager@example.com",
+        SecretStr("correct-horse-battery"),
+        username="manager",
+    )
+
+    listed = await auth.sessions.list(signed_up.user.id)
+    updated = await auth.users.update(signed_up.user.id, name="Manager")
+
+    assert len(listed.sessions) == 1
+    assert updated.name == "Manager"
+
+
+def test_principals_use_typed_id_wrappers() -> None:
+    user_id = UserId("a" * 24)
+    session_id = SessionId("b" * 24)
+
+    principal = SessionPrincipal(user_id=user_id, session_id=session_id)
+
+    assert principal.user_id == user_id
+    assert principal.session_id == session_id
+    assert RevokeSessionCommand(principal=UserPrincipal(user_id=user_id), session_id=session_id)
 
 
 def test_canonical_principal_commands_do_not_expose_legacy_identity_fields() -> None:
@@ -319,7 +410,7 @@ async def test_server_api_requires_canonical_principal_commands() -> None:
 
     updated = await auth.api.user.update(
         UpdateUserCommand(
-            principal=UserPrincipal(user_id=signed_up.user.id.root),
+            principal=UserPrincipal(user_id=signed_up.user.id),
             name="Canonical",
         )
     )
@@ -348,8 +439,8 @@ async def test_session_principal_rejects_mismatched_user_and_session() -> None:
         await auth.api.password.change(
             ChangePasswordCommand(
                 principal=SessionPrincipal(
-                    user_id=first.user.id.root,
-                    session_id=second.session.id.root,
+                    user_id=first.user.id,
+                    session_id=second.session.id,
                 ),
                 current_password=SecretStr("correct-horse-battery"),
                 new_password=SecretStr("new-correct-horse-battery"),

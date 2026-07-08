@@ -3,12 +3,42 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import NewType
 
 from pydantic import ConfigDict, Field
 
 from fastauth.domain.models import WireModel
 
-__all__ = ["Capability", "CapabilityRegistry"]
+CapabilityId = NewType("CapabilityId", str)
+
+CORE_SESSIONS = CapabilityId("core.sessions")
+CORE_REFRESH_TOKENS = CapabilityId("core.refresh-tokens")
+EMAIL_PASSWORD = CapabilityId("email-password")
+USERNAME_SIGN_IN = CapabilityId("username-sign-in")
+BEARER_TOKENS = CapabilityId("bearer-tokens")
+EMAIL_OTP = CapabilityId("email-otp")
+API_KEYS = CapabilityId("api-keys")
+JWT = CapabilityId("jwt")
+AUDIT_LOGS = CapabilityId("audit-logs")
+OPENAPI_REFERENCE = CapabilityId("openapi-reference")
+TEST_UTILS = CapabilityId("test-utils")
+
+__all__ = [
+    "API_KEYS",
+    "AUDIT_LOGS",
+    "BEARER_TOKENS",
+    "CORE_REFRESH_TOKENS",
+    "CORE_SESSIONS",
+    "EMAIL_OTP",
+    "EMAIL_PASSWORD",
+    "JWT",
+    "OPENAPI_REFERENCE",
+    "TEST_UTILS",
+    "USERNAME_SIGN_IN",
+    "Capability",
+    "CapabilityId",
+    "CapabilityRegistry",
+]
 
 
 class Capability(WireModel):
@@ -31,15 +61,15 @@ class CapabilityRegistry:
         if len(self.by_id) != len(collected):
             raise ValueError("duplicate capability id")
 
-    def has(self, capability_id: str) -> bool:
-        return capability_id in self.by_id
+    def has(self, capability_id: CapabilityId | str) -> bool:
+        return str(capability_id) in self.by_id
 
-    def require(self, capability_id: str) -> Capability:
+    def require(self, capability_id: CapabilityId | str) -> Capability:
         from fastauth.exceptions import FeatureNotEnabledError
 
-        capability = self.by_id.get(capability_id)
+        capability = self.by_id.get(str(capability_id))
         if capability is None:
-            raise FeatureNotEnabledError(feature=capability_id)
+            raise FeatureNotEnabledError(feature=str(capability_id))
         return capability
 
     def list(self) -> list[Capability]:

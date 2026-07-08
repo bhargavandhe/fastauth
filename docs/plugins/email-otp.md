@@ -30,7 +30,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions
-from fastauth.providers import email_otp, email_password
+from fastauth import email_otp, email_password
 
 auth = FastAuth(
     FastAuthOptions(
@@ -249,7 +249,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.test_utils import TestUtilsOptions
-from fastauth.providers import email_otp, test_utils
+from fastauth import email_otp, test_utils
 
 auth = FastAuth(
     FastAuthOptions(

@@ -14,7 +14,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
-from fastauth.domain.value_objects import UserMetadata, Username, normalize_email
+from fastauth.domain.value_objects import SessionId, UserId, UserMetadata, Username, normalize_email
 
 __all__ = [
     "BearerCredentialDelivery",
@@ -77,11 +77,11 @@ class RequestContext(CommandModel):
 
 
 class UserPrincipal(CommandModel):
-    user_id: str = Field(min_length=1)
+    user_id: UserId
 
 
 class SessionPrincipal(UserPrincipal):
-    session_id: str = Field(min_length=1)
+    session_id: SessionId
 
 
 class SignInEmailCommand(CommandModel):
@@ -137,7 +137,7 @@ class ListSessionsCommand(CommandModel):
 
 class RevokeSessionCommand(CommandModel):
     principal: UserPrincipal
-    session_id: str
+    session_id: SessionId
 
 
 class RevokeOtherSessionsCommand(CommandModel):

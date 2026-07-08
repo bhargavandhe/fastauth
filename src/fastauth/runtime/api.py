@@ -162,7 +162,7 @@ PrincipalCommandInput = (
 def command_user_id(command: PrincipalCommandInput) -> str:
     principal = getattr(command, "principal", None)
     if isinstance(principal, UserPrincipal):
-        return principal.user_id
+        return principal.user_id.root
     raise InvalidRequestError(message="principal is required")
 
 
@@ -178,7 +178,7 @@ def command_session_id(
 ) -> str | None:
     principal = getattr(command, "principal", None)
     if isinstance(principal, SessionPrincipal):
-        return principal.session_id
+        return principal.session_id.root
     return None
 
 
@@ -612,7 +612,7 @@ class SessionApi:
         return await revoke_session_flow(
             self._api.context,
             user=user,
-            session_id=command.session_id,
+            session_id=command.session_id.root,
         )
 
     async def revoke_other(
@@ -689,6 +689,7 @@ class UserApi:
         payload = command.model_dump(
             include={"name", "image", "metadata"},
             exclude_unset=True,
+            exclude_none=True,
         )
         updated = await update_user_flow(
             self._api.context,

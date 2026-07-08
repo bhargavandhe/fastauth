@@ -26,7 +26,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.audit_logs import AuditLogsOptions
-from fastauth.providers import audit_logs, email_password
+from fastauth import audit_logs, email_password
 
 auth = FastAuth(
     FastAuthOptions(

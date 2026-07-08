@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastauth.plugins.base import (
     Capability,
+    EndpointInfo,
     EndpointSpec,
     Plugin,
     PluginApiNamespace,
@@ -16,6 +17,7 @@ from fastauth.plugins.base import (
 
 __all__ = [
     "Capability",
+    "EndpointInfo",
     "EndpointSpec",
     "Plugin",
     "PluginApiNamespace",

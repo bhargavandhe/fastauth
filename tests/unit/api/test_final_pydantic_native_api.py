@@ -63,7 +63,7 @@ def test_fastauth_class_is_primary_entrypoint_with_explicit_options() -> None:
     )
 
     assert auth.options.database.kind == "memory"
-    plugin = cast(EmailPasswordPlugin, auth.plugins[0])
+    plugin = cast(EmailPasswordPlugin, auth.plugins.at(0))
     assert plugin.options.allow_username_sign_in is False
 
 

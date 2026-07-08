@@ -9,7 +9,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.plugins.test_utils import TestUtilsOptions
-from fastauth.providers import email_password, test_utils
+from fastauth import email_password, test_utils
 
 auth = FastAuth(
     FastAuthOptions(

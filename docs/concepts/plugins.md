@@ -13,7 +13,7 @@ from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
 from fastauth.domain.models import WireModel
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin
-from fastauth.providers import email_password
+from fastauth import email_password
 
 class HelloResponse(WireModel):
     message: str
@@ -61,8 +61,9 @@ down in reverse order. If startup fails, already-started plugins are shut down
 before the error is reported.
 
 `EndpointSpec` is only an HTTP route descriptor: method, path, name, tags,
-handler, and request/response models. It does not declare authentication or
-rate-limit behavior. Plugin handlers should enforce authentication with
+handler, and response model. Request bodies are inferred from handler type
+annotations. It does not declare authentication or rate-limit behavior. Plugin
+handlers should enforce authentication with
 `self.require_session(request)`, and plugins should contribute rate limits
 through `rate_limit_rules()`.
 
@@ -79,17 +80,26 @@ A production plugin should declare every surface it contributes:
 - `trusted_origins()` for callback origins that should pass CSRF origin checks.
 - `lifespan_startup()` / `lifespan_shutdown()` for managed external resources.
 
-Applications can inspect installed capabilities through `auth.capabilities`:
+Applications can inspect installed capabilities through `auth.capabilities`.
+Prefer typed constants for first-party features:
 
 ```python
-if auth.capabilities.has("username-sign-in"):
+from fastauth import EMAIL_PASSWORD, USERNAME_SIGN_IN
+
+if auth.capabilities.has(USERNAME_SIGN_IN):
     ...
 
-auth.capabilities.require("email-password")
+auth.capabilities.require(EMAIL_PASSWORD)
 ```
 
-`auth.context.plugins.plugin_info()` returns typed plugin metadata for
-diagnostics, generated docs, and plugin conformance tests.
+`auth.plugin_info()` returns typed plugin metadata for diagnostics, generated
+docs, and plugin conformance tests. Endpoint metadata is exposed as
+`EndpointInfo`, a serializable DTO containing method, path, name, tags, and
+model names. It does not expose live handler callables.
+
+Plugin surfaces are snapshotted when `FastAuth` builds its `PluginRegistry`.
+Do not make `endpoints()`, `capabilities()`, or related declaration hooks
+depend on mutable runtime state after construction.
 
 Plugin server APIs are exposed under `auth.api.plugins` by name and by plugin
 id:

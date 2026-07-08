@@ -5,10 +5,10 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
+from fastauth import api_key, email_otp, jwt
 from fastauth.plugins.api_key import ApiKeyOptions, ApiKeyPlugin
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions, EmailOtpPlugin
 from fastauth.plugins.jwt import JwtOptions, JwtPlugin
-from fastauth.providers import api_key, email_otp, jwt
 
 
 def test_api_key_options_are_strict_frozen_and_duration_native() -> None:

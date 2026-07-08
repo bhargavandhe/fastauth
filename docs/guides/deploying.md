@@ -51,7 +51,7 @@ from pydantic import SecretStr
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
 from fastauth.options import AppOptions
-from fastauth.providers import email_password
+from fastauth import email_password
 
 options = FastAuthOptions(
     secret_key=SecretStr("replace-me-with-your-application-secret"),

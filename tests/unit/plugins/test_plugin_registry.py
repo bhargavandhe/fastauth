@@ -7,9 +7,9 @@ from fastapi import Request
 from pydantic import SecretStr
 
 from fastauth.database import custom
-from fastauth.exceptions import ConfigError, InvalidCredentialsError
+from fastauth.exceptions import ConfigError, FeatureNotEnabledError, InvalidCredentialsError
 from fastauth.options import FastAuthOptions
-from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginRegistry
+from fastauth.plugins.base import Capability, EndpointInfo, EndpointSpec, Plugin, PluginRegistry
 from fastauth.runtime.auth import FastAuth
 from fastauth.storage.base import AuditLogStore
 from fastauth.storage.memory import InMemoryAdapter
@@ -165,6 +165,47 @@ def test_registry_reports_plugin_info() -> None:
 
     assert info[0].id == "capability-plugin"
     assert info[0].capabilities[0].id == "example-capability"
+    assert all(isinstance(endpoint, EndpointInfo) for endpoint in info[0].endpoints)
+
+
+def test_registry_reports_metadata_only_plugin_endpoints() -> None:
+    registry = PluginRegistry([HelloPlugin()])
+
+    info = registry.plugin_info()
+
+    assert info[0].endpoints[0] == EndpointInfo(
+        method="GET",
+        path="/hello-plugin/ping",
+        name="hello_ping",
+        tags=("HelloPlugin",),
+        request_model_name=None,
+        response_model_name=None,
+    )
+    assert info[0].model_dump(mode="json")["endpoints"][0]["path"] == "/hello-plugin/ping"
+    assert "handler" not in info[0].model_dump(mode="json")["endpoints"][0]
+
+
+def test_registry_snapshots_plugin_surfaces() -> None:
+    class DynamicPlugin(Plugin):
+        id = "dynamic-plugin"
+
+        def __init__(self) -> None:
+            self.path = "/initial"
+
+        def endpoints(self) -> list[EndpointSpec]:
+            return [EndpointSpec.get(self.path, name="dynamic", handler=None)]
+
+        def capabilities(self) -> list[Capability]:
+            return [Capability(id=f"dynamic{self.path}", description="Dynamic")]
+
+    plugin = DynamicPlugin()
+    registry = PluginRegistry([plugin])
+
+    plugin.path = "/changed"
+
+    assert registry.all_endpoints()[0].path == "/initial"
+    assert registry.all_capabilities()[0].id == "dynamic/initial"
+    assert registry.plugin_info()[0].endpoints[0].path == "/initial"
 
 
 def test_registry_reports_plugin_server_api_namespace() -> None:
@@ -179,10 +220,8 @@ def test_registry_reports_plugin_server_api_namespace() -> None:
 
 
 def test_registry_rejects_missing_server_api_name() -> None:
-    registry = PluginRegistry([MissingServerApiNamePlugin()])
-
     with pytest.raises(ValueError, match="server_api_name"):
-        registry.all_server_api_namespaces()
+        PluginRegistry([MissingServerApiNamePlugin()])
 
 
 def test_auth_api_exposes_plugin_server_api_namespace() -> None:
@@ -196,6 +235,22 @@ def test_auth_api_exposes_plugin_server_api_namespace() -> None:
 
     assert isinstance(auth.api.plugins.by_name["hello"], HelloPluginApi)
     assert isinstance(auth.api.plugins.by_plugin_id["server-api-plugin"], HelloPluginApi)
+    assert isinstance(auth.api.plugins.get(HelloPluginApi), HelloPluginApi)
+    assert isinstance(auth.plugins.get(HelloPluginApi), HelloPluginApi)
+    assert auth.plugins.try_get(HelloPluginApi) is not None
+
+
+def test_typed_plugin_api_lookup_rejects_missing_api() -> None:
+    auth = FastAuth(
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            database=custom(InMemoryAdapter()),
+        ),
+    )
+
+    assert auth.plugins.try_get(HelloPluginApi) is None
+    with pytest.raises(FeatureNotEnabledError, match="HelloPluginApi"):
+        auth.plugins.get(HelloPluginApi)
 
 
 def test_auth_api_rejects_duplicate_plugin_server_api_names() -> None:
@@ -224,6 +279,7 @@ def test_endpoint_spec_convenience_constructors() -> None:
     assert spec.path == "/hello-plugin/ping"
     assert spec.tags == ["HelloPlugin"]
     assert spec.handler is handler
+    assert "request_model" not in EndpointSpec.model_fields
 
 
 def test_plugin_base_stores_bound_context() -> None:

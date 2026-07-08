@@ -13,6 +13,7 @@ from fastauth.runtime.capabilities import Capability
 
 __all__ = [
     "Capability",
+    "EndpointInfo",
     "EndpointSpec",
     "HttpMethod",
     "Plugin",
@@ -36,6 +37,7 @@ HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 EndpointHandler = Callable[..., Awaitable[Any]] | None
 EventHandlerPair = tuple[type[BaseModel], Callable[[Any], Awaitable[None]]]
 CapabilityT = TypeVar("CapabilityT")
+PluginApiT = TypeVar("PluginApiT")
 
 
 class EndpointSpec(BaseModel):
@@ -48,7 +50,6 @@ class EndpointSpec(BaseModel):
     name: str
     tags: list[str] = Field(default_factory=list)
     handler: EndpointHandler = None
-    request_model: type[BaseModel] | None = None
     response_model: type[BaseModel] | None = None
 
     @classmethod
@@ -60,7 +61,6 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
-        request_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
     ) -> EndpointSpec:
         return cls(
@@ -69,7 +69,6 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=list(tags),
             handler=handler,
-            request_model=request_model,
             response_model=response_model,
         )
 
@@ -100,7 +99,6 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
-        request_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
     ) -> EndpointSpec:
         return cls.route(
@@ -109,7 +107,6 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=tags,
             handler=handler,
-            request_model=request_model,
             response_model=response_model,
         )
 
@@ -121,7 +118,6 @@ class EndpointSpec(BaseModel):
         name: str,
         handler: EndpointHandler,
         tags: Sequence[str] = (),
-        request_model: type[BaseModel] | None = None,
         response_model: type[BaseModel] | None = None,
     ) -> EndpointSpec:
         return cls.route(
@@ -130,8 +126,34 @@ class EndpointSpec(BaseModel):
             name=name,
             tags=tags,
             handler=handler,
-            request_model=request_model,
             response_model=response_model,
+        )
+
+
+class EndpointInfo(BaseModel):
+    """Serializable public metadata for a registered HTTP endpoint."""
+
+    model_config = ConfigDict(frozen=True)
+
+    method: HttpMethod
+    path: str
+    name: str
+    tags: tuple[str, ...] = ()
+    request_model_name: str | None = None
+    response_model_name: str | None = None
+
+    @classmethod
+    def from_spec(cls, spec: EndpointSpec) -> EndpointInfo:
+        response_model_name = (
+            spec.response_model.__name__ if spec.response_model is not None else None
+        )
+        return cls(
+            method=spec.method,
+            path=spec.path,
+            name=spec.name,
+            tags=tuple(spec.tags),
+            request_model_name=None,
+            response_model_name=response_model_name,
         )
 
 
@@ -149,7 +171,7 @@ class PluginInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str
-    endpoints: tuple[EndpointSpec, ...] = ()
+    endpoints: tuple[EndpointInfo, ...] = ()
     capabilities: tuple[Capability, ...] = ()
     rate_limit_rules: tuple[RateLimitRule, ...] = ()
     trusted_origins: tuple[str, ...] = ()
@@ -181,6 +203,20 @@ class PluginApiRegistry:
                 raise ValueError(f"duplicate plugin server API plugin id: {namespace.plugin_id}")
             self.by_name[namespace.name] = namespace.api
             self.by_plugin_id[namespace.plugin_id] = namespace.api
+
+    def try_get(self, api_type: type[PluginApiT]) -> PluginApiT | None:
+        for namespace in self.items:
+            if isinstance(namespace.api, api_type):
+                return namespace.api
+        return None
+
+    def get(self, api_type: type[PluginApiT]) -> PluginApiT:
+        from fastauth.exceptions import FeatureNotEnabledError
+
+        api = self.try_get(api_type)
+        if api is None:
+            raise FeatureNotEnabledError(feature=api_type.__name__)
+        return api
 
 
 class PluginOptions(BaseModel):
@@ -269,22 +305,49 @@ class PluginRegistry:
     def __init__(self, plugins: Sequence[Plugin]) -> None:
         self.plugins = list(plugins)
         self.by_id: dict[str, Plugin] = {}
+        self._endpoints_by_plugin_id: dict[str, tuple[EndpointSpec, ...]] = {}
+        self._capabilities_by_plugin_id: dict[str, tuple[Capability, ...]] = {}
+        self._trusted_origins_by_plugin_id: dict[str, tuple[str, ...]] = {}
+        self._rate_limit_rules_by_plugin_id: dict[str, tuple[RateLimitRule, ...]] = {}
+        self._event_handlers_by_plugin_id: dict[str, tuple[EventHandlerPair, ...]] = {}
+        self._server_api_namespaces: tuple[PluginApiNamespace, ...] = ()
         capabilities: dict[str, str] = {}
         routes: dict[tuple[str, str], str] = {}
+        server_api_namespaces: list[PluginApiNamespace] = []
         for plugin in self.plugins:
             if not plugin.id:
                 raise ValueError(f"plugin {plugin.__class__.__name__} must set 'id'")
             if plugin.id in self.by_id:
                 raise ValueError(f"duplicate plugin id: {plugin.id}")
             self.by_id[plugin.id] = plugin
-            for capability in plugin.capabilities():
+
+            plugin_capabilities = tuple(plugin.capabilities())
+            plugin_endpoints = tuple(plugin.endpoints())
+            self._capabilities_by_plugin_id[plugin.id] = plugin_capabilities
+            self._endpoints_by_plugin_id[plugin.id] = plugin_endpoints
+            self._trusted_origins_by_plugin_id[plugin.id] = tuple(plugin.trusted_origins())
+            self._rate_limit_rules_by_plugin_id[plugin.id] = tuple(plugin.rate_limit_rules())
+            self._event_handlers_by_plugin_id[plugin.id] = tuple(plugin.event_handlers())
+
+            server_api = plugin.server_api()
+            if server_api is not None:
+                name = plugin.server_api_name()
+                if name is None:
+                    raise ValueError(
+                        f"plugin {plugin.id} returned server_api without server_api_name",
+                    )
+                server_api_namespaces.append(
+                    PluginApiNamespace(plugin_id=plugin.id, name=name, api=server_api),
+                )
+
+            for capability in plugin_capabilities:
                 if capability.id in capabilities:
                     raise ValueError(
                         "duplicate plugin capability "
                         f"{capability.id} from {capabilities[capability.id]} and {plugin.id}",
                     )
                 capabilities[capability.id] = plugin.id
-            for endpoint in plugin.endpoints():
+            for endpoint in plugin_endpoints:
                 route_key = (endpoint.method, endpoint.path)
                 if route_key in routes:
                     raise ValueError(
@@ -293,47 +356,71 @@ class PluginRegistry:
                         f"from {routes[route_key]} and {plugin.id}",
                     )
                 routes[route_key] = plugin.id
+        self._server_api_namespaces = tuple(server_api_namespaces)
 
     def all_endpoints(self) -> list[EndpointSpec]:
-        return [spec for plugin in self.plugins for spec in plugin.endpoints()]
+        return [
+            spec
+            for plugin in self.plugins
+            for spec in self._endpoints_by_plugin_id.get(plugin.id, ())
+        ]
 
     def all_trusted_origins(self) -> list[str]:
-        return [origin for plugin in self.plugins for origin in plugin.trusted_origins()]
+        return [
+            origin
+            for plugin in self.plugins
+            for origin in self._trusted_origins_by_plugin_id.get(plugin.id, ())
+        ]
 
     def all_rate_limit_rules(self) -> list[RateLimitRule]:
-        return [rule for plugin in self.plugins for rule in plugin.rate_limit_rules()]
+        return [
+            rule
+            for plugin in self.plugins
+            for rule in self._rate_limit_rules_by_plugin_id.get(plugin.id, ())
+        ]
 
     def all_event_handlers(self) -> list[EventHandlerPair]:
-        return [pair for plugin in self.plugins for pair in plugin.event_handlers()]
+        return [
+            pair
+            for plugin in self.plugins
+            for pair in self._event_handlers_by_plugin_id.get(plugin.id, ())
+        ]
 
     def all_capabilities(self) -> list[Capability]:
-        return [capability for plugin in self.plugins for capability in plugin.capabilities()]
+        return [
+            capability
+            for plugin in self.plugins
+            for capability in self._capabilities_by_plugin_id.get(plugin.id, ())
+        ]
 
     def all_server_api_namespaces(self) -> list[PluginApiNamespace]:
-        namespaces: list[PluginApiNamespace] = []
-        for plugin in self.plugins:
-            api = plugin.server_api()
-            if api is None:
-                continue
-            name = plugin.server_api_name()
-            if name is None:
-                raise ValueError(f"plugin {plugin.id} returned server_api without server_api_name")
-            namespaces.append(PluginApiNamespace(plugin_id=plugin.id, name=name, api=api))
-        return namespaces
+        return list(self._server_api_namespaces)
 
     def plugin_info(self) -> list[PluginInfo]:
         info: list[PluginInfo] = []
         for plugin in self.plugins:
-            server_api = plugin.server_api()
+            server_api_namespace = next(
+                (
+                    namespace
+                    for namespace in self._server_api_namespaces
+                    if namespace.plugin_id == plugin.id
+                ),
+                None,
+            )
             info.append(
                 PluginInfo(
                     id=plugin.id,
-                    endpoints=tuple(plugin.endpoints()),
-                    capabilities=tuple(plugin.capabilities()),
-                    rate_limit_rules=tuple(plugin.rate_limit_rules()),
-                    trusted_origins=tuple(plugin.trusted_origins()),
-                    event_handler_count=len(plugin.event_handlers()),
-                    server_api_name=plugin.server_api_name() if server_api is not None else None,
+                    endpoints=tuple(
+                        EndpointInfo.from_spec(spec)
+                        for spec in self._endpoints_by_plugin_id.get(plugin.id, ())
+                    ),
+                    capabilities=self._capabilities_by_plugin_id.get(plugin.id, ()),
+                    rate_limit_rules=self._rate_limit_rules_by_plugin_id.get(plugin.id, ()),
+                    trusted_origins=self._trusted_origins_by_plugin_id.get(plugin.id, ()),
+                    event_handler_count=len(self._event_handlers_by_plugin_id.get(plugin.id, ())),
+                    server_api_name=(
+                        server_api_namespace.name if server_api_namespace is not None else None
+                    ),
                 ),
             )
         return info

@@ -4,6 +4,40 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-07-08
+
+### Added
+
+- Added `create_auth(...)`, `FastAuth.configure(...)`,
+  `FastAuth.local_dev(...)`, and `FastAuth.production(...)` construction
+  helpers.
+- Added Pythonic manager namespaces on `FastAuth`: `auth.sign_up`,
+  `auth.sign_in`, `auth.users`, `auth.sessions`, `auth.passwords`,
+  `auth.email_changes`, `auth.depends`, `auth.routes`, and `auth.inspect`.
+- Added public typed id exports (`UserId`, `SessionId`, `RefreshTokenId`,
+  `ApiKeyId`) and capability id constants such as `EMAIL_PASSWORD`,
+  `USERNAME_SIGN_IN`, and `API_KEYS`.
+- Added split adapter contract classes under `fastauth.testing` so extension
+  authors can test only the storage capabilities their backend implements.
+
+### Changed
+
+- `UserPrincipal`, `SessionPrincipal`, and session-revocation commands now use
+  the public Pydantic id value objects instead of plain strings.
+- Plugin surfaces are snapshotted during `PluginRegistry` construction, so
+  validation and runtime mounting observe the same endpoints, capabilities,
+  rate limits, event handlers, trusted origins, and server API namespaces.
+- `PluginInfo.endpoints` now exposes serializable `EndpointInfo` metadata
+  instead of live `EndpointSpec` handlers.
+- First-party plugin factories are exported from the package root for concise
+  application setup.
+- First-party plugin `bind()` overrides now call the base context-binding hook.
+
+### Removed
+
+- Removed the unused `EndpointSpec.request_model` field. Request bodies are
+  inferred from typed FastAPI handler signatures.
+
 ## [0.9.0] — 2026-07-08
 
 ### Added
@@ -587,7 +621,9 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/bhargavandhe/fastauth/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/bhargavandhe/fastauth/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/bhargavandhe/fastauth/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/bhargavandhe/fastauth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/bhargavandhe/fastauth/compare/v0.5.0...v0.6.0

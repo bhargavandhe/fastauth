@@ -25,7 +25,7 @@ from fastauth.options import (
     RateLimitOptions,
     SessionOptions,
 )
-from fastauth.providers import email_password
+from fastauth import email_password
 
 app_secret = "replace-me-with-your-application-secret"
 mongo_url = "mongodb://db.example.com:27017"
@@ -131,7 +131,7 @@ The application boundary should look like any other dependency injection:
 ```python
 from fastauth import FastAuthOptions
 from fastauth.database import mongo
-from fastauth.providers import email_password
+from fastauth import email_password
 from pydantic import SecretStr
 
 options = FastAuthOptions(
