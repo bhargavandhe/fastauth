@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from fastauth.api.responses import UserView
-from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
+from fastauth.domain.enums import HookPhase, RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.events import AuthEvent
 from fastauth.exceptions import ConfigError, FastAuthError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
@@ -20,7 +20,7 @@ from fastauth.runtime.api import AuthApi
 from fastauth.runtime.capabilities import Capability, CapabilityRegistry
 from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
-from fastauth.runtime.hooks import DatabaseHooks
+from fastauth.runtime.hooks import DatabaseHooks, HookHandler
 from fastauth.runtime.managers import (
     AuthInspector,
     AuthRoutes,
@@ -54,6 +54,7 @@ from fastauth.web.fastapi import (
 __all__ = ["FastAuth"]
 
 EventT = TypeVar("EventT", bound=AuthEvent)
+HookHandlerT = TypeVar("HookHandlerT", bound=HookHandler)
 
 
 async def fastauth_error_handler(
@@ -250,13 +251,36 @@ class FastAuth:
         self.routes = AuthRoutes.relative()
         self.inspect = AuthInspector(self)
 
-    def on_event(
+    def on(
         self,
         event_type: type[EventT],
-        handler: Callable[[EventT], Awaitable[None]],
-    ) -> None:
-        """Subscribe an async handler to structured FastAuth security events."""
-        self.events.subscribe(event_type, handler)
+    ) -> Callable[
+        [Callable[[EventT], Awaitable[None]]],
+        Callable[[EventT], Awaitable[None]],
+    ]:
+        """Decorate an async handler for a structured FastAuth event."""
+
+        def decorator(
+            handler: Callable[[EventT], Awaitable[None]],
+        ) -> Callable[[EventT], Awaitable[None]]:
+            self.events.subscribe(event_type, handler)
+            return handler
+
+        return decorator
+
+    def hook(
+        self,
+        phase: HookPhase,
+        *,
+        target: str,
+    ) -> Callable[[HookHandlerT], HookHandlerT]:
+        """Decorate an async database hook for a phase and target."""
+
+        def decorator(handler: HookHandlerT) -> HookHandlerT:
+            self.context.hooks.register(phase, target, handler)
+            return handler
+
+        return decorator
 
     def plugin_info(self) -> list[PluginInfo]:
         """Return serializable metadata for installed plugins."""

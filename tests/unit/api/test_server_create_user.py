@@ -70,15 +70,18 @@ async def test_create_user_runs_before_and_after_user_hooks() -> None:
     auth = make_auth()
     after_payloads: list[str] = []
 
-    async def add_seed_metadata(hook: HookContext) -> User:
+    @auth.hook(HookPhase.BEFORE_CREATE, target="user")
+    async def add_seed_metadata(  # pyright: ignore[reportUnusedFunction]
+        hook: HookContext,
+    ) -> User:
         user = cast(User, hook.payload)
         return user.model_copy(update={"metadata": {"source": "seed"}})
 
-    async def record_created_user(hook: HookContext) -> None:
+    @auth.hook(HookPhase.AFTER_CREATE, target="user")
+    async def record_created_user(  # pyright: ignore[reportUnusedFunction]
+        hook: HookContext,
+    ) -> None:
         after_payloads.append(cast(User, hook.payload).id)
-
-    auth.context.hooks.register(HookPhase.BEFORE_CREATE, "user", add_seed_metadata)
-    auth.context.hooks.register(HookPhase.AFTER_CREATE, "user", record_created_user)
 
     user = await auth.api.create_user(
         email="seed@app.com",
@@ -93,10 +96,11 @@ async def test_create_user_publishes_user_created_event() -> None:
     auth = make_auth()
     received: list[UserCreated] = []
 
-    async def record_event(event: UserCreated) -> None:
+    @auth.on(UserCreated)
+    async def record_event(  # pyright: ignore[reportUnusedFunction]
+        event: UserCreated,
+    ) -> None:
         received.append(event)
-
-    auth.events.subscribe(UserCreated, record_event)
 
     user = await auth.api.create_user(
         email="event@app.com",

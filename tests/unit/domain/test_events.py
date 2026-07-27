@@ -39,7 +39,7 @@ async def test_handler_exception_does_not_block_others() -> None:
     assert received == ["user-2"]
 
 
-async def test_fastauth_exposes_public_event_subscription() -> None:
+async def test_fastauth_exposes_public_event_decorator() -> None:
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("a" * 64),
@@ -48,10 +48,12 @@ async def test_fastauth_exposes_public_event_subscription() -> None:
     )
     received: list[str] = []
 
-    async def handler(event: UserSignedIn) -> None:
+    @auth.on(UserSignedIn)
+    async def handler(  # pyright: ignore[reportUnusedFunction]
+        event: UserSignedIn,
+    ) -> None:
         received.append(event.user_id)
 
-    auth.on_event(UserSignedIn, handler)
     await auth.events.publish(UserSignedIn(user_id="user-3", identifier="cara@example.com"))
 
     assert received == ["user-3"]
