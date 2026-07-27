@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from pydantic import SecretStr
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
@@ -36,9 +36,11 @@ __all__ = [
 
 
 class AuthRuntime(Protocol):
+    router: APIRouter
+
     def lifespan(self, app: FastAPI) -> AbstractAsyncContextManager[None]: ...
 
-    def mount(self, app: FastAPI) -> None: ...
+    def add_middleware(self, app: FastAPI) -> None: ...
 
 
 MONGO_URL = "mongodb://localhost:27017"
@@ -77,7 +79,8 @@ def build_auth(options: FastAuthOptions) -> AuthRuntime:
 
 def create_app(auth: AuthRuntime) -> FastAPI:
     app_instance = FastAPI(title="fastauth quickstart", lifespan=auth.lifespan)
-    auth.mount(app_instance)
+    app_instance.include_router(auth.router, prefix="/auth")
+    auth.add_middleware(app_instance)
 
     @app_instance.get("/")
     async def root() -> dict[str, str]:
