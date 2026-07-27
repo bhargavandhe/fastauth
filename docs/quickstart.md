@@ -26,16 +26,15 @@ auth = FastAuth(options, plugins=[email_password()])
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+auth.add_middleware(app)
 ```
 
 `auth.router` is prefix-free, so the host application owns its final prefix,
-tags, and global dependencies. Direct `include_router()` integration does not
-install application-wide middleware.
-
-Use `auth.mount(app)` when you want FastAuth to include the router at
-`options.app.base_path` and install CSRF/security-header middleware. If you use
-`auth.as_asgi()` as a standalone app instead, FastAuth returns an app with the
-same routes and middleware already installed.
+tags, and global dependencies. `auth.add_middleware(app)` installs the
+FastAuth exception handler, CSRF middleware, and security headers without
+including routes. If you use `auth.as_asgi()` as a standalone app instead,
+FastAuth returns an app with the configured base path and middleware already
+installed.
 
 `memory()` is suitable for tests and local demos. Pick `mongo(database=...)` or
 `postgres(url=...)` explicitly for persistent deployments.
@@ -62,6 +61,7 @@ auth = FastAuth(options, plugins=[email_password(), jwt()])
 
 app = FastAPI(title="My App", lifespan=auth.lifespan)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+auth.add_middleware(app)
 ```
 
 ## Protecting routes with `CurrentUser` / `CurrentSession`

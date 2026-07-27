@@ -294,7 +294,8 @@ def build_custom_auth(
 
 async def client_for_auth(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

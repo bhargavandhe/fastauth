@@ -171,7 +171,8 @@ async def test_global_password_reset_ttl_option_controls_expiry() -> None:
         email_sender=email_outbox,
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

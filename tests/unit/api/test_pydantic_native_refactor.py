@@ -67,7 +67,8 @@ async def test_authentication_response_does_not_expose_internal_fields() -> None
         plugins=[email_password()],
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),

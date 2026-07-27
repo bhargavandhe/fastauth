@@ -4,6 +4,27 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Added trusted `auth.api.create_user(...)` provisioning for server-side seeds,
+  workers, webhooks, and administrative code.
+- Added bound `auth.CurrentUser` and `auth.CurrentSession` FastAPI dependency
+  aliases.
+- Added `auth.add_middleware(app)` for explicit FastAuth exception handling,
+  CSRF middleware, and security headers.
+
+### Changed
+
+- Made `auth.router` prefix-free so applications choose its prefix with
+  `app.include_router(...)`.
+- Route constants and inspection output now expose relative FastAuth paths.
+
+### Removed
+
+- Removed `auth.mount(app)`. Include `auth.router` explicitly and call
+  `auth.add_middleware(app)` when FastAuth should install its application-wide
+  HTTP integration.
+
 ## [0.11.0] — 2026-07-09
 
 ### Changed

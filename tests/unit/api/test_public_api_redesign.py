@@ -87,7 +87,7 @@ def test_options_reject_old_adapter_style() -> None:
         )
 
 
-async def test_mount_installs_email_password_plugin_routes() -> None:
+async def test_explicit_integration_installs_email_password_plugin_routes() -> None:
     auth = FastAuth(
         FastAuthOptions(
             secret_key=SecretStr("b" * 64),
@@ -99,7 +99,8 @@ async def test_mount_installs_email_password_plugin_routes() -> None:
         plugins=[email_password()],
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
@@ -125,7 +126,8 @@ async def test_email_password_routes_are_not_core_routes() -> None:
         ),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),

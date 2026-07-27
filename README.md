@@ -26,6 +26,7 @@ auth = FastAuth(options, plugins=[email_password()])
 
 app = FastAPI(lifespan=auth.lifespan)
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+auth.add_middleware(app)
 ```
 
 That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
@@ -40,11 +41,10 @@ application. Rate-limiting, account-lockout, and refresh tokens are part of
 the router.
 
 Direct `include_router()` integration lets your application choose the prefix,
-tags, and global dependencies. It does not install application-wide CSRF or
-security-header middleware. Use `auth.mount(app)` when you want FastAuth to
-include the router at `options.app.base_path` and install both middleware
-components, or `auth.as_asgi()` for a standalone app with the same high-level
-setup.
+tags, and global dependencies. `auth.add_middleware(app)` separately installs
+FastAuth's exception handler, CSRF middleware, and security headers.
+`auth.as_asgi()` provides a standalone app with both routes and middleware
+already installed.
 
 ## Why fastauth
 
@@ -137,9 +137,10 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **Explicit storage wiring** — choose `memory()`, `mongo(database=...)`,
   `postgres(url=...)`, or `custom(adapter=..., backend=...)`. Fastauth never reads
   storage settings from the process environment.
-- **`auth.mount(app)`** — install routes, CSRF, and security headers on your
-  FastAPI app in one call. `FastAuth.as_asgi()` still returns a standalone app
-  when you want fastauth mounted separately.
+- **`auth.router` + `auth.add_middleware(app)`** — choose route placement
+  explicitly, then install FastAuth's exception handler, CSRF middleware, and
+  security headers. `FastAuth.as_asgi()` returns a standalone app when you want
+  FastAuth hosted separately.
 - **Typer CLI** — `fastauth init --backend memory|mongo|postgres`,
   `fastauth migrate`, `fastauth generate-secret`.
 - **mkdocs-material docs** + quickstart example app with its own test suite.

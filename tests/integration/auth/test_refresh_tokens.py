@@ -75,7 +75,8 @@ def auth(adapter: InMemoryAdapter) -> FastAuth:
 @pytest.fixture
 async def client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -138,7 +139,8 @@ async def test_disabled_refresh_tokens_never_issued() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -293,7 +295,8 @@ async def test_refresh_revokes_family_when_old_session_cleanup_fails() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -322,7 +325,8 @@ async def test_refresh_preserves_cleanup_and_compensation_failures() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -351,7 +355,8 @@ async def test_refresh_rotation_cancellation_cleans_replacement_session() -> Non
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     async def cancelled_rotate(
         plain_token: str,
@@ -406,7 +411,8 @@ async def test_refresh_endpoint_disabled_returns_400() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -430,7 +436,8 @@ async def test_refresh_with_absolute_max_age_revokes_chain() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -465,7 +472,8 @@ async def test_refresh_absolute_max_age_does_not_reset_after_rotation() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

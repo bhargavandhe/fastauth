@@ -114,10 +114,11 @@ def test_installation_docs_match_fastauth_init_output() -> None:
     assert "writes auth.py" in text
 
 
-def test_readme_quickstart_uses_auth_mount() -> None:
+def test_readme_quickstart_uses_explicit_fastapi_integration() -> None:
     text = read_project_file("README.md")
 
-    assert "auth.mount(app)" in text
+    assert 'app.include_router(auth.router, prefix="/auth"' in text
+    assert "auth.add_middleware(app)" in text
     assert "FastAuth(options, plugins=[email_password()])" in text
     assert "plugins=[email_password()]" in text
     assert (

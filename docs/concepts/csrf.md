@@ -19,7 +19,6 @@ app.add_middleware(
 
 Trusted-origin patterns support a leading `*.` wildcard
 (`https://*.app.test`) and can include relative paths when
-`csrf.allow_relative_paths` is enabled (default). `auth.mount(app)` and
-`FastAuth.as_asgi()` install the middleware automatically. If you need
-lower-level control, call `fastauth.web.fastapi.install_csrf(app, auth.context)`
-directly.
+`csrf.allow_relative_paths` is enabled (default). `auth.add_middleware(app)` and
+`FastAuth.as_asgi()` install the middleware. If you need lower-level control,
+call `fastauth.web.fastapi.install_csrf(app, auth.context)` directly.

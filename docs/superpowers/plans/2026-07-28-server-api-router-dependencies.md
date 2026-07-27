@@ -4,7 +4,7 @@
 
 **Goal:** Add trusted server-side user creation, a prefix-free FastAPI router, and bound `CurrentUser`/`CurrentSession` dependency aliases.
 
-**Architecture:** A dedicated administrative creation flow will reuse FastAuth's domain validation, password policy, storage adapter, database hooks, and event bus without invoking the interactive sign-up flow. The router will own only relative paths; direct consumers select the prefix in `include_router()`, while `mount()` applies `options.app.base_path`. Dependency aliases will wrap the existing bound dependency manager, so there remains one request-authentication implementation.
+**Architecture:** A dedicated administrative creation flow will reuse FastAuth's domain validation, password policy, storage adapter, database hooks, and event bus without invoking the interactive sign-up flow. The router will own only relative paths; direct consumers select the prefix in `include_router()` and explicitly install application-wide security integration with `add_middleware()`. Dependency aliases will wrap the existing bound dependency manager, so there remains one request-authentication implementation.
 
 **Tech Stack:** Python 3.11+, FastAPI 0.115+, Pydantic 2.8+, pytest/pytest-asyncio, httpx, Ruff, Pyright.
 
@@ -14,7 +14,8 @@
 - User database hooks and the event bus must remain active for server-created users.
 - `auth.router` must contain relative paths and no embedded prefix.
 - Backward compatibility with the router's old embedded-prefix behavior is not required.
-- `auth.mount(app)` must continue to install routes, CSRF, and security headers.
+- `auth.add_middleware(app)` must install the FastAuth exception handler, CSRF,
+  and security headers without including routes.
 - Direct `app.include_router(auth.router, ...)` must not silently install application-wide middleware.
 - Do not introduce a storage transaction API as part of this change.
 - Preserve unrelated changes in `skills-lock.json` and the untracked `better-auth/` directory.
@@ -317,7 +318,7 @@ Expected: lint and type checks pass; commit contains only Task 1 files.
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: `FastAuth.router`, `FastAuth.mount()`,
+- Consumes: `FastAuth.router`, `FastAuth.add_middleware()`,
   `FastAuthOptions.app.base_path`, `FastAuthRoute`, and FastAPI's
   `request.scope["route"]`.
 - Produces:
@@ -325,7 +326,7 @@ Expected: lint and type checks pass; commit contains only Task 1 files.
 ```python
 auth.router.prefix == ""
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-auth.mount(app)  # includes the same router at options.app.base_path
+auth.add_middleware(app)
 ```
 
 - `RouteRef.path` and `AuthInspection.routes[*].path` become relative FastAuth
@@ -349,10 +350,11 @@ async def test_router_can_be_included_at_consumer_selected_prefix(auth: FastAuth
     assert auth.router.prefix == ""
 
 
-async def test_mount_applies_configured_base_path() -> None:
+async def test_explicit_integration_applies_selected_prefix() -> None:
     auth = make_auth(base_path="/configured/auth")
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix="/configured/auth")
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
@@ -378,7 +380,7 @@ uv run pytest tests/integration/web/test_router_inclusion.py tests/unit/api/test
 Expected: FAIL because `auth.router.prefix` is the configured base path and
 direct inclusion produces a doubled prefix.
 
-- [ ] **Step 3: Remove the router prefix and move it into `mount()`**
+- [ ] **Step 3: Remove the router prefix**
 
 Change `build_router()` to construct:
 
@@ -391,13 +393,14 @@ router = APIRouter(
 )
 ```
 
-Change `FastAuth.mount()` to:
+Consumers include the router explicitly:
 
 ```python
 app.include_router(
-    self.router,
-    prefix=self.context.config.app.base_path,
+    auth.router,
+    prefix="/api/auth",
 )
+auth.add_middleware(app)
 ```
 
 Change `AuthRoutes` construction and inspection expectations to expose relative
@@ -489,7 +492,8 @@ Expected: PASS.
 
 Make direct `include_router()` the primary example in `README.md` and
 `docs/quickstart.md`. Explain that direct inclusion does not install CSRF or
-security-header middleware; show `auth.mount(app)` as the high-level alternative.
+security-header middleware; show `auth.add_middleware(app)` as the explicit
+application-wide integration.
 
 Run:
 
@@ -534,7 +538,8 @@ runtime annotation expressions:
 ```python
 async def test_current_user_alias_resolves_authenticated_user(auth: FastAuth) -> None:
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix="/auth")
+    auth.add_middleware(app)
 
     @app.get("/me")
     async def me(user: auth.CurrentUser) -> UserView:
@@ -642,7 +647,7 @@ Expected: checks pass; commit contains only Task 3 files.
 
 - [ ] **Step 1: Add concise API reference entries**
 
-Document `auth.api.create_user`, `auth.router`, `auth.mount`,
+Document `auth.api.create_user`, `auth.router`, `auth.add_middleware`,
 `auth.CurrentUser`, and `auth.CurrentSession` in `docs/reference/index.md`,
 including their trust and middleware boundaries.
 

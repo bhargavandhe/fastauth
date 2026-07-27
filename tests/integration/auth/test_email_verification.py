@@ -141,7 +141,11 @@ async def require_verified_client(
     from fastapi import FastAPI
 
     app = FastAPI(lifespan=require_verified_auth.lifespan)
-    require_verified_auth.mount(app)
+    app.include_router(
+        require_verified_auth.router,
+        prefix=require_verified_auth.context.config.app.base_path,
+    )
+    require_verified_auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

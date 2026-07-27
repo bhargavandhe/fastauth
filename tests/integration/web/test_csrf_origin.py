@@ -31,7 +31,8 @@ async def csrf_client() -> AsyncIterator[httpx.AsyncClient]:
     sender = ConsoleEmailSender()
     auth = FastAuth(csrf_options(adapter), plugins=[email_password()], email_sender=sender)
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

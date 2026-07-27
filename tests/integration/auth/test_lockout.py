@@ -45,7 +45,8 @@ async def lockout_client() -> AsyncIterator[httpx.AsyncClient]:
     )
     auth = FastAuth(options, plugins=[email_password()], email_sender=ConsoleEmailSender())
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -140,7 +141,8 @@ async def test_lockout_disabled_never_triggers() -> None:
     )
     auth = FastAuth(options, plugins=[email_password()], email_sender=ConsoleEmailSender())
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:

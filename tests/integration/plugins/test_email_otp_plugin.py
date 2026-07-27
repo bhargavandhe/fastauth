@@ -435,7 +435,8 @@ async def test_otp_only_auth_mounts_shared_session_routes() -> None:
     )
     helpers = get_helpers(auth)
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

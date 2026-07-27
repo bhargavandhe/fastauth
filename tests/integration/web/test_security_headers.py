@@ -43,7 +43,8 @@ async def secure_client() -> AsyncIterator[httpx.AsyncClient]:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -71,7 +72,8 @@ async def test_disabled_middleware_emits_no_headers() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -91,7 +93,8 @@ async def test_csp_and_permissions_policy_can_be_configured() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -111,7 +114,8 @@ async def test_individual_headers_can_be_disabled() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:

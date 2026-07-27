@@ -10,7 +10,8 @@ from fastauth.security.sessions import SessionContext
 
 async def test_current_user_alias_resolves_authenticated_user(auth: FastAuth) -> None:
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     @app.get("/me")
     async def me(  # pyright: ignore[reportUnusedFunction]
@@ -37,7 +38,8 @@ async def test_current_user_alias_resolves_authenticated_user(auth: FastAuth) ->
 
 async def test_current_user_alias_rejects_anonymous_request(auth: FastAuth) -> None:
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     @app.get("/me")
     async def me(  # pyright: ignore[reportUnusedFunction]
@@ -60,7 +62,8 @@ async def test_current_user_alias_rejects_anonymous_request(auth: FastAuth) -> N
 
 async def test_current_session_alias_resolves_authenticated_session(auth: FastAuth) -> None:
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     @app.get("/my-session")
     async def my_session(  # pyright: ignore[reportUnusedFunction]
@@ -92,7 +95,8 @@ async def test_current_session_alias_resolves_authenticated_session(auth: FastAu
 
 async def test_current_session_alias_rejects_anonymous_request(auth: FastAuth) -> None:
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     @app.get("/my-session")
     async def my_session(  # pyright: ignore[reportUnusedFunction]

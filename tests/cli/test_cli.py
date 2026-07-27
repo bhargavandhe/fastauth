@@ -229,7 +229,8 @@ def test_init_can_write_postgres_scaffold(tmp_path: pathlib.Path) -> None:
     assert "postgres_url" in body
     assert "table_prefix=table_prefix" in body
     assert "table_suffix=table_suffix" in body
-    assert "auth.mount(app)" in body
+    assert 'app.include_router(auth.router, prefix="/auth")' in body
+    assert "auth.add_middleware(app)" in body
 
 
 def test_init_can_write_mongo_scaffold(tmp_path: pathlib.Path) -> None:

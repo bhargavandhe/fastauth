@@ -45,19 +45,20 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 This installs authentication routes only. It does not install FastAuth's
 exception handler, CSRF middleware, or security-headers middleware.
 
-### `auth.mount(app)`
+### `auth.add_middleware(app)`
 
-The high-level integration helper. It includes `auth.router` at
-`options.app.base_path` and installs the FastAuth exception handler, CSRF
-middleware, and security-headers middleware:
+Installs the FastAuth exception handler, CSRF middleware, and security-headers
+middleware without including routes or selecting a prefix:
 
 ```python
-auth.mount(app)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+auth.add_middleware(app)
 ```
 
-Choose direct router inclusion when the application manages those cross-cutting
-concerns itself. Choose `mount()` when FastAuth should install the complete
-HTTP integration.
+Applications can omit `add_middleware()` only when they intentionally provide
+equivalent exception handling and application-wide security middleware.
+`FastAuth.as_asgi()` includes the router at `options.app.base_path` and installs
+this integration automatically.
 
 ### `auth.CurrentUser` and `auth.CurrentSession`
 

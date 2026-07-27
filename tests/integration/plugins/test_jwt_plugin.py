@@ -48,7 +48,8 @@ async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
     # httpx's ASGITransport doesn't drive lifespan events, so run the
     # FastAuth lifespan manually to ensure JwtPlugin's startup hook creates
     # the JWKS key before any request hits the app.
@@ -113,7 +114,8 @@ async def test_set_auth_jwt_header_uses_json_serializable_default_audience() -> 
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     async with auth.lifespan(app):
         async with httpx.AsyncClient(
@@ -153,7 +155,8 @@ async def test_jwt_defaults_use_dynamic_base_url_fallback() -> None:
         email_sender=ConsoleEmailSender(),
     )
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     async with auth.lifespan(app):
         async with httpx.AsyncClient(

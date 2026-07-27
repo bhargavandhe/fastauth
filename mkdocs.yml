@@ -46,6 +46,7 @@ nav:
       - OpenAPI / Scalar: plugins/openapi.md
       - Test utils: plugins/test-utils.md
   - Guides:
+      - Migrating to 0.12: migrating/0.12.md
       - Migrating to 0.11: migrating/0.11.md
       - Email verification: guides/email-verification.md
       - Password reset: guides/password-reset.md

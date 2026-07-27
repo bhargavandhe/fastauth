@@ -151,7 +151,8 @@ def create_options(
 def create_app(options: FastAuthOptions) -> FastAPI:
     auth = FastAuth(options, plugins=[email_password()])
     app = FastAPI(lifespan=auth.lifespan)
-    auth.mount(app)
+    app.include_router(auth.router, prefix="/auth")
+    auth.add_middleware(app)
     return app
 '''
 
