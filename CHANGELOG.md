@@ -4,6 +4,8 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-28
+
 ### Added
 
 - Added trusted `auth.api.create_user(...)` provisioning for server-side seeds,
@@ -700,7 +702,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/bhargavandhe/fastauth/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/bhargavandhe/fastauth/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/bhargavandhe/fastauth/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/bhargavandhe/fastauth/compare/v0.10.0...v0.10.1
