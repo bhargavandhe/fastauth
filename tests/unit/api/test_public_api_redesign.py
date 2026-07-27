@@ -57,7 +57,7 @@ def test_fastauth_class_builds_auth_from_pydantic_options() -> None:
     )
 
     assert auth.options.database.kind == "memory"
-    assert auth.router.prefix == "/auth"
+    assert auth.router.prefix == ""
 
 
 def test_fastauth_factory_accepts_dependency_overrides() -> None:
@@ -191,7 +191,7 @@ def test_fastauth_exposes_pythonic_manager_namespaces() -> None:
     assert callable(auth.email_changes.request)
     assert callable(auth.sign_up.email)
     assert callable(auth.sign_in.email)
-    assert auth.routes.sign_up.email.path == "/auth/sign-up/email"
+    assert auth.routes.sign_up.email.path == "/sign-up/email"
     inspection = auth.inspect()
     assert inspection.version
     assert inspection.model_dump(mode="json")["routes"]
@@ -225,7 +225,7 @@ def test_auth_inspector_reports_plugin_route_sources_explicitly() -> None:
     plugin_route = next(route for route in routes if route.name == "inspect_plugin_ping")
 
     assert health_route.source == "core"
-    assert plugin_route.path == "/auth/inspect-plugin/ping"
+    assert plugin_route.path == "/inspect-plugin/ping"
     assert plugin_route.source == "plugin"
 
 

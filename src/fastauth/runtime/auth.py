@@ -235,7 +235,7 @@ class FastAuth:
         self.passwords = PasswordsManager(self)
         self.email_changes = EmailChangesManager(self)
         self.depends = DependsManager(self)
-        self.routes = AuthRoutes.from_base_path(self.context.config.app.base_path)
+        self.routes = AuthRoutes.relative()
         self.inspect = AuthInspector(self)
 
     def on_event(
@@ -260,7 +260,10 @@ class FastAuth:
         """Mount fastauth routes and middleware on an existing ``FastAPI`` app."""
         if FastAuthError not in app.exception_handlers:
             app.add_exception_handler(FastAuthError, fastauth_error_handler)
-        app.include_router(self.router)
+        app.include_router(
+            self.router,
+            prefix=self.context.config.app.base_path,
+        )
         app.add_middleware(
             CsrfMiddleware,
             config=self.context.config.csrf,

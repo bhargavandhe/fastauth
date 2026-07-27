@@ -125,11 +125,15 @@ class OpenApiPlugin(Plugin):
         self.cached_schema = schema
         return schema
 
-    async def reference_handler(self) -> HTMLResponse:
+    async def reference_handler(self, request: Request) -> HTMLResponse:
         """``GET {options.path}`` — serve the Scalar HTML reference page."""
-        context = self.assert_bound()
+        from fastauth.web.fastapi import matched_route_path
+
+        self.assert_bound()
         nonce_attribute = f' nonce="{self.options.nonce}"' if self.options.nonce else ""
-        openapi_url = context.config.app.base_path + "/openapi.json"
+        relative_path = matched_route_path(request)
+        prefix = request.url.path.removesuffix(relative_path)
+        openapi_url = f"{prefix}/openapi.json"
         html = SCALAR_TEMPLATE.format(
             title=self.options.title,
             openapi_url=openapi_url,

@@ -25,7 +25,7 @@ options = FastAuthOptions(
 auth = FastAuth(options, plugins=[email_password()])
 
 app = FastAPI(lifespan=auth.lifespan)
-auth.mount(app)
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 ```
 
 That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
@@ -37,9 +37,14 @@ That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
 `/auth/change-email/{request,confirm}`, `/auth/sessions` (list / revoke /
 revoke-others), `/auth/refresh`, and `/auth/health` wired into your FastAPI
 application. Rate-limiting, account-lockout, and refresh tokens are part of
-the router. CSRF and security headers are ASGI middleware installed by
-`auth.mount(app)`. If you use `auth.as_asgi()` instead, fastauth returns a
-standalone app with the same routes and middleware already installed.
+the router.
+
+Direct `include_router()` integration lets your application choose the prefix,
+tags, and global dependencies. It does not install application-wide CSRF or
+security-header middleware. Use `auth.mount(app)` when you want FastAuth to
+include the router at `options.app.base_path` and install both middleware
+components, or `auth.as_asgi()` for a standalone app with the same high-level
+setup.
 
 ## Why fastauth
 

@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
 from fastauth.plugins.openapi import OpenApiOptions, OpenApiPlugin
 from fastauth.runtime.auth import FastAuth
@@ -35,3 +36,17 @@ async def test_openapi_json_returns_3_1_schema(client: httpx.AsyncClient) -> Non
 async def test_auth_api_generate_schema(auth: FastAuth) -> None:
     schema = await auth.api.generate_openapi_schema()
     assert schema["info"]["title"] == "fastauth API"
+
+
+async def test_reference_uses_consumer_selected_router_prefix(auth: FastAuth) -> None:
+    app = FastAPI()
+    app.include_router(auth.router, prefix="/api/auth")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/auth/reference")
+
+    assert response.status_code == 200
+    assert 'data-url="/api/auth/openapi.json"' in response.text

@@ -239,7 +239,7 @@ def endpoint_metadata(request: Request, route: APIRoute) -> dict[str, object]:
     return {
         "method": request.method,
         "name": route.name,
-        "path": route.path,
+        "path": relative_route_path(route, request.method),
         "source": getattr(route, "fastauth_source", "core"),
     }
 
@@ -255,13 +255,10 @@ def plugin_path_matches(
     route: APIRoute,
 ) -> bool:
     request_path = request.url.path
-    candidate_paths = {request_path, route.path}
-    base_path = context.config.app.base_path
-    if base_path and request_path.startswith(base_path):
-        relative_path = request_path.removeprefix(base_path)
-        candidate_paths.add(relative_path or "/")
-    if base_path and route.path.startswith(base_path):
-        candidate_paths.add(route.path.removeprefix(base_path) or "/")
+    candidate_paths = {
+        request_path,
+        relative_route_path(route, request.method),
+    }
     return any(fnmatchcase(candidate, pattern) for candidate in candidate_paths)
 
 
@@ -299,6 +296,7 @@ class FastAuthRoute(APIRoute):
     """
 
     fastauth_context: ClassVar[AuthContext | None] = None
+    relative_paths: ClassVar[dict[tuple[str, str], str]] = {}
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         original = super().get_route_handler()
@@ -453,15 +451,32 @@ def rate_limit_dependency(
     """Return an async FastAPI dependency that enforces the rate limit."""
 
     async def dependency(request: Request) -> None:
-        path = request.url.path.removeprefix(context.config.app.base_path)
+        path = matched_route_path(request)
         await context.rate_limiter.check(path, client_ip(request, context))
 
     return dependency
 
 
+def relative_route_path(route: APIRoute, method: str) -> str:
+    """Return the FastAuth-relative path retained by the route class."""
+    key = (method.upper(), route.name)
+    if isinstance(route, FastAuthRoute):
+        return route.relative_paths.get(key, route.path)
+    return route.path
+
+
+def matched_route_path(request: Request) -> str:
+    """Return the matched FastAuth-relative path for a request."""
+    route = request.scope.get("route")
+    if isinstance(route, APIRoute):
+        return relative_route_path(route, request.method)
+    return request.url.path
+
+
 def fastauth_route_class(context: AuthContext) -> type[FastAuthRoute]:
     class ContextFastAuthRoute(FastAuthRoute):
         fastauth_context: ClassVar[AuthContext | None] = context
+        relative_paths: ClassVar[dict[tuple[str, str], str]] = {}
 
     return ContextFastAuthRoute
 
@@ -605,10 +620,10 @@ def register_session_routes(router: APIRouter, context: AuthContext) -> None:
 
 def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     """Build the fastauth ``APIRouter`` with health + credentials flow endpoints."""
+    route_class = fastauth_route_class(context)
     router = APIRouter(
-        prefix=context.config.app.base_path,
         tags=["fastauth"],
-        route_class=fastauth_route_class(context),
+        route_class=route_class,
         dependencies=[Depends(rate_limit_dependency(context))],
         default_response_class=JSONResponse,
     )
@@ -627,6 +642,11 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
         if spec.handler is None:
             continue
         add_plugin_route(router, spec)
+    for route in router.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        for method in route.methods or ():
+            route_class.relative_paths[(method, route.name)] = route.path
     return router
 
 

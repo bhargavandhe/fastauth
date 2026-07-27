@@ -50,9 +50,9 @@ class AuthRoutes:
     sessions: SessionRoutes
 
     @classmethod
-    def from_base_path(cls, base_path: str) -> AuthRoutes:
+    def relative(cls) -> AuthRoutes:
         def ref(method: str, path: str, name: str) -> RouteRef:
-            return RouteRef(method=method, path=f"{base_path}{path}", name=name)
+            return RouteRef(method=method, path=path, name=name)
 
         return cls(
             sign_up=SignUpRoutes(
