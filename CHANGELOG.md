@@ -12,6 +12,8 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
   aliases.
 - Added `auth.add_middleware(app)` for explicit FastAuth exception handling,
   CSRF middleware, and security headers.
+- Added typed `auth.on(EventType)` and
+  `auth.hook(HookPhase, target=...)` registration decorators.
 
 ### Changed
 
@@ -24,6 +26,8 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 - Removed `auth.mount(app)`. Include `auth.router` explicitly and call
   `auth.add_middleware(app)` when FastAuth should install its application-wide
   HTTP integration.
+- Removed `auth.on_event()`. Register application event handlers with
+  `auth.on(EventType)`.
 
 ## [0.11.0] — 2026-07-09
 

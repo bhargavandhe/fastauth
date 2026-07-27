@@ -8,19 +8,27 @@ listen to everything.
 ```python
 from fastauth.domain.events import UserSignedUp
 
+@auth.on(UserSignedUp)
 async def welcome(event: UserSignedUp) -> None:
     print(f"new user {event.user_id} ({event.identifier})")
-
-auth.on_event(UserSignedUp, welcome)
 ```
 
-For advanced use, `auth.events` exposes the underlying `EventBus`.
+The decorator returns the original function. Conditional registration can use
+the same decorator factory imperatively:
+
+```python
+auth.on(UserSignedUp)(welcome)
+```
+
+For advanced infrastructure use, `auth.events` exposes the underlying
+`EventBus`.
 
 Every domain event carries `event_id`, `occurred_at`, `audit_event_type`, and
-optional `ip_address` / `user_agent` fields. Handlers never raise — the bus
-swallows and logs handler errors so a misbehaving subscriber cannot break
-sign-in. The `AuditLogsPlugin` ships a catch-all subscriber that turns every
-event into a row in the `audit_logs` collection.
+optional `ip_address` / `user_agent` fields. Handler exceptions are logged and
+isolated so a misbehaving subscriber cannot break sign-in or prevent later
+handlers from running. Handlers run in registration order. The
+`AuditLogsPlugin` ships a catch-all subscriber that turns every event into a row
+in the `audit_logs` collection.
 
 Core account-management flows publish typed events for profile updates and
 deletion as well: `UserUpdated`, `UserDeleteRequested`, and `UserDeleted`.

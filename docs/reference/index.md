@@ -82,6 +82,34 @@ binding so FastAPI can resolve the annotation. Factory- or closure-scoped
 instances can use `Depends(auth.depends.user())` and
 `Depends(auth.depends.session())` explicitly.
 
+### `auth.on(EventType)`
+
+Registers a typed async event handler and returns the original function:
+
+```python
+@auth.on(UserCreated)
+async def send_welcome_email(event: UserCreated) -> None:
+    await email_client.send(event.user_id, "Welcome!")
+```
+
+Matching events are delivered in registration order. Handler exceptions are
+logged and isolated so later handlers continue to run.
+
+### `auth.hook(phase, target=...)`
+
+Registers an async database hook for an exact phase and target:
+
+```python
+@auth.hook(HookPhase.BEFORE_CREATE, target="user")
+async def prepare_user(context: HookContext) -> User:
+    ...
+```
+
+Before-hook return values replace the payload passed to subsequent hooks.
+After-hook return values are ignored, and hook exceptions propagate to the
+calling mutation flow. Both decorator factories also support imperative
+registration, such as `auth.on(UserCreated)(handler)`.
+
 ## Configuration
 
 ::: fastauth.options
