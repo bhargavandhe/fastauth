@@ -82,9 +82,7 @@ class AuthInspector:
         endpoint_info_by_route: dict[tuple[str, str, str], EndpointInfo] = {}
         for plugin in self.plugins():
             for endpoint in plugin.endpoints:
-                endpoint_info_by_route[
-                    (endpoint.method, endpoint.path, endpoint.name)
-                ] = endpoint
+                endpoint_info_by_route[(endpoint.method, endpoint.path, endpoint.name)] = endpoint
         return endpoint_info_by_route
 
     def routes(self) -> list[RouteInfo]:

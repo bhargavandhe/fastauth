@@ -36,9 +36,7 @@ def make_auth(*, email_sender: RecordingEmailSender | None = None) -> FastAuth:
     )
 
 
-async def test_create_user_persists_hashed_credential_without_interactive_side_effects() -> (
-    None
-):
+async def test_create_user_persists_hashed_credential_without_interactive_side_effects() -> None:
     sender = RecordingEmailSender()
     auth = make_auth(email_sender=sender)
     adapter = cast(InMemoryAdapter, auth.context.adapter)

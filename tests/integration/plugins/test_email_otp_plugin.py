@@ -164,7 +164,7 @@ async def test_sign_in_disallowed_sign_up_rejects_unknown_user(
     from fastapi import FastAPI
 
     app = FastAPI()
-    app.include_router(auth.router)
+    app.include_router(auth.router, prefix="/auth")
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",

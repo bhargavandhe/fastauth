@@ -56,7 +56,7 @@ def test_auth_inspector_routes_include_plugin_endpoint_metadata() -> None:
 
     route = next(route for route in auth.inspect().routes if route.name == "metadata_ping")
 
-    assert route.path == "/auth/metadata/ping"
+    assert route.path == "/metadata/ping"
     assert route.source == "plugin"
     assert route.operation_id == "metadataPing"
     assert route.request_model_name == "InspectRequest"
