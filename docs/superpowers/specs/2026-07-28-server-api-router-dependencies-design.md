@@ -16,6 +16,7 @@ user = await auth.api.create_user(
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+auth.add_middleware(app)
 
 @app.get("/me")
 async def get_me(user: auth.CurrentUser) -> UserView:
@@ -82,15 +83,22 @@ plugin route will therefore be relative to the router:
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 ```
 
-`FastAuth.mount(app)` remains the high-level integration and will perform:
+Route inclusion and application-wide HTTP integration are separate explicit
+operations:
 
 ```python
-app.include_router(auth.router, prefix=auth.options.app.base_path)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+auth.add_middleware(app)
 ```
 
-before installing the FastAuth exception handler, CSRF middleware, and security
-headers. `FastAuth.as_asgi()` continues to use `mount()`, so its routes retain
-the configured base path.
+`FastAuth.add_middleware(app)` installs the FastAuth exception handler, CSRF
+middleware, and security-headers middleware. It does not include routes or
+select a prefix. `FastAuth.mount(app)` is removed; backward compatibility is
+not required.
+
+`FastAuth.as_asgi()` remains the batteries-included standalone adapter. It
+includes `auth.router` at `options.app.base_path` and then calls
+`auth.add_middleware(app)`.
 
 Route-sensitive internals must not derive relative endpoint identity by removing
 `options.app.base_path` from the incoming URL. FastAPI clones routes when a
@@ -156,10 +164,11 @@ Input validation and duplicate errors use existing FastAuth exception types.
 Plaintext passwords are accepted for ergonomic server usage but are immediately
 validated and hashed; they are never stored or returned.
 
-Router inclusion does not install application-wide middleware. Consumers using
-`include_router()` directly are responsible for installing CSRF and security
-header middleware if desired. `mount()` remains the explicit convenience method
-that installs them.
+Router inclusion does not install application-wide middleware or exception
+handlers. Consumers opt into the complete FastAuth HTTP integration by calling
+`auth.add_middleware(app)` after including the router. The helper registers the
+FastAuth exception handler without replacing unrelated host exception handlers,
+then installs CSRF and security-header middleware.
 
 ## Testing
 
@@ -174,7 +183,11 @@ Focused tests will prove:
 - Duplicate email and username failures use canonical errors.
 - `auth.router` has no embedded prefix.
 - Direct `include_router()` works with an arbitrary prefix and custom tags.
-- `mount()` still uses `options.app.base_path` and installs its middleware.
+- `add_middleware()` installs the FastAuth exception handler, CSRF middleware,
+  and security headers without including routes.
+- `mount()` is absent from the public API.
+- `as_asgi()` includes the router at `options.app.base_path` and installs the
+  complete middleware integration.
 - Rate limiting, plugin middleware matching, OpenAPI references, and inspection
   remain correct under a consumer-selected prefix.
 - `auth.CurrentUser` and `auth.CurrentSession` resolve authenticated requests
