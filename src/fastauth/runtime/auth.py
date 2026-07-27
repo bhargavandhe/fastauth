@@ -44,9 +44,12 @@ from fastauth.security.refresh_tokens import RefreshTokenService
 from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
 from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import JwksKeyStore, RateLimitStore
-from fastauth.web.csrf import CsrfMiddleware
-from fastauth.web.fastapi import build_router, http_status_for
-from fastauth.web.security_headers import SecurityHeadersMiddleware
+from fastauth.web.fastapi import (
+    build_router,
+    http_status_for,
+    install_csrf,
+    install_security_headers,
+)
 
 __all__ = ["FastAuth"]
 
@@ -262,27 +265,19 @@ class FastAuth:
     def as_asgi(self) -> FastAPI:
         """Return a standalone ``FastAPI`` app wrapping the fastauth router."""
         app = FastAPI(title="fastauth", lifespan=self.lifespan)
-        self.mount(app)
-        return app
-
-    def mount(self, app: FastAPI) -> None:
-        """Mount fastauth routes and middleware on an existing ``FastAPI`` app."""
-        if FastAuthError not in app.exception_handlers:
-            app.add_exception_handler(FastAuthError, fastauth_error_handler)
         app.include_router(
             self.router,
             prefix=self.context.config.app.base_path,
         )
-        app.add_middleware(
-            CsrfMiddleware,
-            config=self.context.config.csrf,
-            additional_trusted_origins=self.context.plugins.all_trusted_origins(),
-            cookie_name=self.context.config.cookie.name,
-        )
-        app.add_middleware(
-            SecurityHeadersMiddleware,
-            config=self.context.config.security_headers,
-        )
+        self.add_middleware(app)
+        return app
+
+    def add_middleware(self, app: FastAPI) -> None:
+        """Install FastAuth's exception handler and security middleware."""
+        if FastAuthError not in app.exception_handlers:
+            app.add_exception_handler(FastAuthError, fastauth_error_handler)
+        install_csrf(app, self.context)
+        install_security_headers(app, self.context)
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:

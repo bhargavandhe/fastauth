@@ -43,7 +43,8 @@ from fastauth.storage.memory import InMemoryAdapter
 async def authed_client(auth: FastAuth) -> AsyncIterator[httpx.AsyncClient]:
     """A FastAPI app with three protected routes + an httpx client."""
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix=auth.context.config.app.base_path)
+    auth.add_middleware(app)
 
     @app.get("/me")
     async def me_required(  # pyright: ignore[reportUnusedFunction]
@@ -95,7 +96,9 @@ async def test_current_user_returns_401_when_anonymous(
     }
 
 
-async def test_mount_preserves_host_http_exception_handler(auth: FastAuth) -> None:
+async def test_add_middleware_preserves_host_http_exception_handler(
+    auth: FastAuth,
+) -> None:
     app = FastAPI()
 
     @app.exception_handler(HTTPException)
@@ -109,7 +112,8 @@ async def test_mount_preserves_host_http_exception_handler(auth: FastAuth) -> No
             content={"handled_by": "host", "detail": exc.detail},
         )
 
-    auth.mount(app)
+    app.include_router(auth.router, prefix="/auth")
+    auth.add_middleware(app)
 
     @app.get("/host-error")
     async def host_error():  # pyright: ignore[reportUnusedFunction]

@@ -71,10 +71,11 @@ async def test_router_can_be_included_at_consumer_selected_prefix() -> None:
     assert auth.router.prefix == ""
 
 
-async def test_mount_applies_configured_base_path() -> None:
+async def test_explicit_integration_uses_consumer_selected_prefix() -> None:
     auth = make_auth(base_path="/configured/auth")
     app = FastAPI()
-    auth.mount(app)
+    app.include_router(auth.router, prefix="/configured/auth")
+    auth.add_middleware(app)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
@@ -85,6 +86,20 @@ async def test_mount_applies_configured_base_path() -> None:
 
     assert mounted.status_code == 200
     assert unprefixed.status_code == 404
+
+
+async def test_add_middleware_does_not_include_routes() -> None:
+    auth = make_auth()
+    app = FastAPI()
+    auth.add_middleware(app)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 404
 
 
 async def test_rate_limit_rules_use_relative_path_under_custom_prefix() -> None:
