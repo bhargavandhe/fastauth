@@ -169,31 +169,29 @@ Python 3.11+ required. FastAPI 0.115+, Pydantic 2.8+.
 ## Protecting routes
 
 ```python
-from fastapi import Depends
 from fastauth import UserView
 
+@app.get("/me")
+async def me(user: auth.CurrentUser) -> UserView:
+    return user
+```
+
+`auth.CurrentUser` and `auth.CurrentSession` are bound `Annotated` dependencies
+created with the FastAuth instance. Cookie auth and
+`Authorization: Bearer …` both work transparently.
+
+When postponed annotations are enabled, keep `auth` as a module-level binding
+so FastAPI can resolve `auth.CurrentUser`. For factory- or closure-scoped auth
+instances, use the explicit dependency form:
+
+```python
+from fastapi import Depends
 @app.get("/me")
 async def me(user: UserView = Depends(auth.depends.user())) -> UserView:
     return user
 ```
 
-Or with the `Annotated` style (FastAPI's idiom):
-
-```python
-from typing import Annotated
-from fastapi import Depends
-from fastauth import UserView
-
-CurrentUser = Annotated[UserView, Depends(auth.depends.user())]
-
-@app.get("/me")
-async def me(user: CurrentUser) -> UserView:
-    return user
-```
-
-Cookie auth and `Authorization: Bearer …` both work — fastauth handles either
-transparently. Use `auth.depends.optional_user()` if anonymous requests
-are allowed.
+Use `auth.depends.optional_user()` if anonymous requests are allowed.
 
 ## Configuration
 

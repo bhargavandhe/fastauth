@@ -77,36 +77,35 @@ The `FastAuth` instance exposes one dependency namespace for application routes:
 
 Both cookie and `Authorization: Bearer` transports are honoured automatically.
 
-**Two equivalent ways to use them** — pick whichever fits your codebase style:
+The initialized instance exposes bound aliases for the two required
+dependencies:
 
 ```python
-# Style 1 — `Depends` as default value (always works, even with
-# `from __future__ import annotations`):
+from fastauth import UserView
+
+@app.get("/me")
+async def me(user: auth.CurrentUser) -> UserView:
+    return user
+
+@app.get("/my-session")
+async def my_session(session: auth.CurrentSession) -> dict[str, str]:
+    return {"session_id": session.session.id}
+```
+
+If you use `from __future__ import annotations`, keep `auth` as a module-level
+binding. FastAPI resolves the string annotation through the route function's
+module globals.
+
+For an auth instance created inside a factory or closure, use the explicit form:
+
+```python
 from fastapi import Depends
 from fastauth import UserView
 
 @app.get("/me")
 async def me(user: UserView = Depends(auth.depends.user())) -> UserView:
     return user
-
-# Style 2 — `Annotated` type alias (idiomatic, requires `auth` to be a
-# module-level name so PEP 563 string-annotation resolution can find it):
-from typing import Annotated
-from fastapi import Depends
-from fastauth import UserView
-
-CurrentUser = Annotated[UserView, Depends(auth.depends.user())]
-
-@app.get("/me")
-async def me(user: CurrentUser) -> UserView:
-    return user
 ```
-
-If you use `from __future__ import annotations` AND want the `Annotated`
-style, make sure `auth` is a module-level binding (not a closure variable in
-a fixture or factory function) — FastAPI's `get_type_hints` call resolves
-string annotations against the function's `__globals__`, which only contains
-module-level names.
 
 ## Run migrations and serve
 

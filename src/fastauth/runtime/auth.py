@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import TypeVar, cast
+from typing import Annotated, Any, TypeVar, cast
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from fastauth.api.responses import UserView
 from fastauth.domain.enums import RateLimitStorageKind, SessionStrategyKind
 from fastauth.domain.events import AuthEvent
 from fastauth.exceptions import ConfigError, FastAuthError
@@ -40,7 +41,7 @@ from fastauth.security.rate_limit import (
     RateLimiter,
 )
 from fastauth.security.refresh_tokens import RefreshTokenService
-from fastauth.security.sessions import DatabaseSessionStrategy, SessionStrategy
+from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
 from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import JwksKeyStore, RateLimitStore
 from fastauth.web.csrf import CsrfMiddleware
@@ -235,6 +236,14 @@ class FastAuth:
         self.passwords = PasswordsManager(self)
         self.email_changes = EmailChangesManager(self)
         self.depends = DependsManager(self)
+        self.CurrentUser: Any = Annotated[
+            UserView,
+            Depends(self.depends.user()),
+        ]
+        self.CurrentSession: Any = Annotated[
+            SessionContext,
+            Depends(self.depends.session()),
+        ]
         self.routes = AuthRoutes.relative()
         self.inspect = AuthInspector(self)
 
