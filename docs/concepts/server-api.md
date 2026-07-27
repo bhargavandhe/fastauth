@@ -1,5 +1,32 @@
 # Server API
 
+## Trusted user provisioning
+
+Create credential users directly from trusted server code with
+`auth.api.create_user()`:
+
+```python
+user = await auth.api.create_user(
+    email="admin@app.com",
+    password="secure-password",
+    name="Admin",
+    metadata={"role": "admin"},
+)
+```
+
+This path validates the normal password policy, hashes the password, runs user
+database hooks, and emits a `UserCreated` event. It returns a safe `UserView`.
+It deliberately creates no session or refresh token and sends no verification
+email, making it suitable for seeds, workers, webhooks, and administrative
+provisioning.
+
+`create_user()` is an in-process operation and is not exposed as an HTTP
+endpoint. Access to the initialized `FastAuth` instance is therefore the trust
+boundary; do not make it callable from untrusted request data without adding
+your own authorization policy.
+
+## Authentication actions
+
 The primary server-side API is method based and hangs directly off the
 `FastAuth` object. It runs FastAuth flows without going through HTTP while
 still returning the same safe DTOs:

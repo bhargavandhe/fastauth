@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, EmailStr, JsonValue, SecretStr
 
 from fastauth.api.commands import (
     ChangePasswordCommand,
@@ -32,6 +33,7 @@ from fastauth.api.commands import (
 )
 from fastauth.api.responses import AuthenticationResponse, UserView, user_view
 from fastauth.domain.models import User, WireModel
+from fastauth.domain.value_objects import UserMetadata, Username
 from fastauth.exceptions import InvalidCredentialsError, InvalidRequestError
 from fastauth.flows.change_email import (
     ConfirmEmailChangeRequest,
@@ -79,6 +81,7 @@ from fastauth.flows.password_reset import (
 )
 from fastauth.flows.refresh import RefreshTokenRequest
 from fastauth.flows.refresh import refresh_session as refresh_session_flow
+from fastauth.flows.server_users import create_user as create_user_flow
 from fastauth.flows.sessions import (
     ListSessionsResponse,
     RevokeSessionsResponse,
@@ -486,6 +489,25 @@ class AuthApi:
 
     async def health(self) -> HealthResponse:
         return HealthResponse(status="ok", name=self.context.config.app.name)
+
+    async def create_user(
+        self,
+        *,
+        email: EmailStr | str,
+        password: SecretStr | str,
+        name: str | None = None,
+        username: Username | str | None = None,
+        metadata: UserMetadata | Mapping[str, JsonValue] | None = None,
+    ) -> UserView:
+        """Provision a credential user from trusted server code."""
+        return await create_user_flow(
+            self.context,
+            email=email,
+            password=password,
+            name=name,
+            username=username,
+            metadata=metadata,
+        )
 
     async def sign_out(self, command: SignOutCommand) -> EmptyResponse:
         token = command.token.get_secret_value() if command.token is not None else None

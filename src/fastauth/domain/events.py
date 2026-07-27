@@ -29,6 +29,7 @@ __all__ = [
     "SessionCreated",
     "SessionRevoked",
     "SessionsRevokedAll",
+    "UserCreated",
     "UserDeleteRequested",
     "UserDeleted",
     "UserEmailChangeRequested",
@@ -53,6 +54,12 @@ class AuthEvent(BaseModel):
 
 class UserSignedUp(AuthEvent):
     audit_event_type: AuditEventType = AuditEventType.USER_SIGNED_UP
+    user_id: str
+    identifier: str
+
+
+class UserCreated(AuthEvent):
+    audit_event_type: AuditEventType = AuditEventType.USER_CREATED
     user_id: str
     identifier: str
 

@@ -35,6 +35,7 @@ class VerificationPurpose(StrEnum):
 
 
 class AuditEventType(StrEnum):
+    USER_CREATED = "user_created"
     USER_SIGNED_UP = "user_signed_up"
     USER_SIGNED_IN = "user_signed_in"
     USER_SIGNED_OUT = "user_signed_out"
