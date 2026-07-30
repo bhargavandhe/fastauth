@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastauth.api.responses import AuthenticationResponse, SessionView, UserView
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.value_objects import ApiKeyId, RefreshTokenId, SessionId, UserId
-from fastauth.options import FastAuthOptions
+from fastauth.options import FastAuthOptions, ProductionSafetyOptions
 from fastauth.providers import (
     api_key,
     audit_logs,
@@ -55,6 +55,7 @@ __all__ = [
     "EventBus",
     "FastAuth",
     "FastAuthOptions",
+    "ProductionSafetyOptions",
     "RefreshTokenId",
     "SessionId",
     "SessionView",

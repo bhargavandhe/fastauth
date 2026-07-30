@@ -11,8 +11,17 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from fastauth.database import custom
+from fastauth.domain.enums import VerificationPurpose
+from fastauth.flows.email_otp import subject_for_purpose
 from fastauth.messaging.email import ConsoleEmailSender
-from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
+from fastauth.options import (
+    CookieOptions,
+    CsrfOptions,
+    EmailChangeOptions,
+    EmailOptions,
+    FastAuthOptions,
+    RateLimitOptions,
+)
 from fastauth.plugins.email_otp import EmailChangeOtpOptions, EmailOtpOptions, EmailOtpPlugin
 from fastauth.plugins.test_utils import TestHelpers, TestUtilsOptions, TestUtilsPlugin
 from fastauth.runtime.auth import FastAuth
@@ -49,6 +58,31 @@ def disable_signup_auth(auth_factory: Callable[..., FastAuth]) -> FastAuth:
 
 
 # --- Send / check ----------------------------------------------------------
+
+
+def test_otp_subjects_use_configured_core_email_subjects() -> None:
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        email=EmailOptions(
+            verification_subject="Brand verify",
+            password_reset_subject="Brand reset",
+        ),
+        email_change=EmailChangeOptions(subject="Brand email change"),
+    )
+
+    assert (
+        subject_for_purpose(options, VerificationPurpose.EMAIL_OTP_VERIFICATION) == "Brand verify"
+    )
+    assert (
+        subject_for_purpose(options, VerificationPurpose.EMAIL_OTP_PASSWORD_RESET) == "Brand reset"
+    )
+    assert (
+        subject_for_purpose(options, VerificationPurpose.EMAIL_OTP_EMAIL_CHANGE)
+        == "Brand email change"
+    )
+    assert (
+        subject_for_purpose(options, VerificationPurpose.EMAIL_OTP_SIGN_IN) == "Your sign-in code"
+    )
 
 
 async def test_send_otp_for_sign_in(client: httpx.AsyncClient, auth: FastAuth) -> None:

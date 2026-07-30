@@ -97,6 +97,7 @@ __all__ = [
     "reset_password_with_otp",
     "send_otp",
     "sign_in_with_otp",
+    "subject_for_purpose",
     "verify_email_with_otp",
 ]
 
@@ -201,6 +202,18 @@ KIND_BY_PURPOSE: dict[VerificationPurpose, EmailMessageKind] = {
 }
 
 
+def subject_for_purpose(
+    config: FastAuthOptions,
+    purpose: VerificationPurpose,
+) -> str:
+    configured = {
+        VerificationPurpose.EMAIL_OTP_VERIFICATION: config.email.verification_subject,
+        VerificationPurpose.EMAIL_OTP_PASSWORD_RESET: config.email.password_reset_subject,
+        VerificationPurpose.EMAIL_OTP_EMAIL_CHANGE: config.email_change.subject,
+    }
+    return configured.get(purpose, SUBJECTS_BY_PURPOSE[purpose])
+
+
 async def issue_otp(
     context: AuthContext,
     *,
@@ -243,7 +256,7 @@ async def issue_otp(
         EmailMessage(
             kind=KIND_BY_PURPOSE[purpose],
             to=identifier,
-            subject=SUBJECTS_BY_PURPOSE[purpose],
+            subject=subject_for_purpose(context.config, purpose),
             html=html,
             text=text,
         ),

@@ -116,7 +116,8 @@ v2 + async-only + MongoDB or Postgres persistence:
 
 ### Plugins (each optional)
 - **email_password()** — sign-up, sign-in, password reset, email verification,
-  account management, refresh tokens, and session management.
+  username requirements and changes, account management, refresh tokens, and
+  session management.
 - **api_key()** — create/verify/list/update/delete API keys with optional
   refilling quotas and per-key rate limits.
 - **jwt()** — `/auth/token` to mint a JWT from a session, `/auth/jwks`
@@ -225,10 +226,10 @@ options = FastAuthOptions(
 auth = FastAuth(options, plugins=[email_password()])
 ```
 
-16 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
+17 sub-configs cover `app`, `session`, `cookie`, `password`, `email`,
 `email_verification`, `password_reset`, `email_change`, `delete_account`,
 `rate_limit`, `csrf`, `lockout`, `refresh_token`, `security_headers`,
-`advanced`, plus the top-level `database` backend. Plugins are behavior
+`production_safety`, `advanced`, plus the top-level `database` backend. Plugins are behavior
 objects passed to `FastAuth(..., plugins=[...])`.
 
 See [docs/concepts/config.md](docs/concepts/config.md) for the full reference.

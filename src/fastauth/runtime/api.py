@@ -33,7 +33,7 @@ from fastauth.api.commands import (
 )
 from fastauth.api.responses import AuthenticationResponse, UserView, user_view
 from fastauth.domain.models import User, WireModel
-from fastauth.domain.value_objects import UserMetadata, Username
+from fastauth.domain.value_objects import UserId, UserMetadata, Username
 from fastauth.exceptions import InvalidCredentialsError, InvalidRequestError
 from fastauth.flows.change_email import (
     ConfirmEmailChangeRequest,
@@ -82,6 +82,7 @@ from fastauth.flows.password_reset import (
 from fastauth.flows.refresh import RefreshTokenRequest
 from fastauth.flows.refresh import refresh_session as refresh_session_flow
 from fastauth.flows.server_users import create_user as create_user_flow
+from fastauth.flows.server_users import get_user as get_user_flow
 from fastauth.flows.sessions import (
     ListSessionsResponse,
     RevokeSessionsResponse,
@@ -509,6 +510,21 @@ class AuthApi:
             metadata=metadata,
         )
 
+    async def get_user(
+        self,
+        *,
+        by_id: UserId | str | None = None,
+        by_email: EmailStr | str | None = None,
+        by_username: Username | str | None = None,
+    ) -> UserView | None:
+        """Read one user by id, email, or username from trusted server code."""
+        return await get_user_flow(
+            self.context,
+            by_id=by_id,
+            by_email=by_email,
+            by_username=by_username,
+        )
+
     async def sign_out(self, command: SignOutCommand) -> EmptyResponse:
         token = command.token.get_secret_value() if command.token is not None else None
         return await sign_out_flow(self.context, token)
@@ -709,10 +725,12 @@ class UserApi:
         require_email_password(self._api.context)
         user = await resolve_command_user(self._api.context, command)
         payload = command.model_dump(
-            include={"name", "image", "metadata"},
+            include={"name", "image", "metadata", "username"},
             exclude_unset=True,
             exclude_none=True,
         )
+        if "username" in command.model_fields_set and command.username is None:
+            payload["username"] = None
         updated = await update_user_flow(
             self._api.context,
             user,

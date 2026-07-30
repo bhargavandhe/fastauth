@@ -93,7 +93,11 @@ class FastAuth:
         password_hasher = password_hasher or Argon2idHasher(config.password)
         token_service = token_service or TokenService()
         email_sender = email_sender or ConsoleEmailSender()
-        if config.deployment == "production" and isinstance(email_sender, ConsoleEmailSender):
+        if (
+            config.deployment == "production"
+            and config.production_safety.forbid_console_email_sender
+            and isinstance(email_sender, ConsoleEmailSender)
+        ):
             raise ConfigError(
                 message=(
                     "FastAuthOptions.deployment='production' requires an explicit "
@@ -196,7 +200,10 @@ class FastAuth:
             password_hasher=password_hasher,
             token_service=token_service,
             email_sender=email_sender,
-            template_renderer=TemplateRenderer(config.email.template_directory),
+            template_renderer=TemplateRenderer(
+                config.email.template_directory,
+                config.email.template_globals,
+            ),
             hooks=DatabaseHooks(),
             event_bus=event_bus,
             plugins=plugin_registry,

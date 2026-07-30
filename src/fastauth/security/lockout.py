@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 
+from fastauth.domain.models import RateLimit
 from fastauth.exceptions import AccountLockedError
 from fastauth.options import LockoutOptions
 from fastauth.security.rate_limit import RateLimitStorage
@@ -93,3 +94,35 @@ class AccountLockoutTracker:
         if not self.config.enabled:
             return
         await self.storage.delete(lockout_key(identifier))
+
+    async def rekey(self, old_identifier: str, new_identifier: str) -> None:
+        """Move lockout state while preserving the stricter active bucket."""
+        if not self.config.enabled or old_identifier == new_identifier:
+            return
+
+        old_key = lockout_key(old_identifier)
+        new_key = lockout_key(new_identifier)
+        source = await self.storage.get(old_key)
+        destination = await self.storage.get(new_key)
+        now = self.now_ms()
+        window_ms = self.config.window_seconds * 1000
+        active = [
+            bucket
+            for bucket in (source, destination)
+            if bucket is not None and bucket.last_request_ms + window_ms > now
+        ]
+        if active:
+            selected = max(
+                active,
+                key=lambda bucket: (bucket.count, bucket.last_request_ms),
+            )
+            await self.storage.upsert(
+                RateLimit(
+                    key=new_key,
+                    count=selected.count,
+                    last_request_ms=selected.last_request_ms,
+                )
+            )
+        else:
+            await self.storage.delete(new_key)
+        await self.storage.delete(old_key)

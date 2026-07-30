@@ -273,3 +273,8 @@ otp = helpers.get_otp("alice@example.com")
 `test_utils()` subscribes to `OtpGenerated` and stores plaintext OTPs
 in memory keyed by `identifier`. Only enable `capture_otp=True` in
 tests — production deployments should not capture plaintext codes.
+
+`EmailOtpOptions.expires_in` accepts `timedelta`, numeric seconds, or a compact
+duration string such as `"10m"`. Verification, password-reset, and email-change
+OTP messages use the corresponding subjects configured in `FastAuthOptions`;
+OTP sign-in keeps its dedicated `"Your sign-in code"` subject.

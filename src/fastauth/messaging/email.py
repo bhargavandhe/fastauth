@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Mapping
 from typing import Any, Protocol, runtime_checkable
 
 from jinja2 import (
@@ -40,7 +41,11 @@ class ConsoleEmailSender:
 class TemplateRenderer:
     """Renders email templates from a user-supplied directory or packaged defaults."""
 
-    def __init__(self, template_directory: str | None) -> None:
+    def __init__(
+        self,
+        template_directory: str | None,
+        template_globals: Mapping[str, Any] | None = None,
+    ) -> None:
         loaders: list[BaseLoader] = []
         if template_directory is not None and pathlib.Path(template_directory).is_dir():
             loaders.append(FileSystemLoader(template_directory))
@@ -50,11 +55,13 @@ class TemplateRenderer:
             autoescape=select_autoescape(["html"]),
             keep_trailing_newline=True,
         )
+        self.template_globals = dict(template_globals or {})
 
     def render(self, name: str, variables: dict[str, Any]) -> tuple[str, str]:
+        render_context = {**self.template_globals, **variables}
         try:
-            html = self.environment.get_template(f"{name}.html").render(**variables)
+            html = self.environment.get_template(f"{name}.html").render(**render_context)
         except TemplateNotFound:
             html = ""
-        text = self.environment.get_template(f"{name}.txt").render(**variables)
+        text = self.environment.get_template(f"{name}.txt").render(**render_context)
         return html, text

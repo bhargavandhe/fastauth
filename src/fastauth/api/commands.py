@@ -180,6 +180,7 @@ class UpdateUserCommand(CommandModel):
     name: str | None = None
     image: str | None = None
     metadata: UserMetadata | None = None
+    username: Username | None = None
     context: RequestContext = Field(default_factory=RequestContext)
 
 

@@ -7,8 +7,10 @@ from datetime import timedelta
 
 import pytest
 
+from fastauth.domain.models import RateLimit
 from fastauth.exceptions import RateLimitError
-from fastauth.options import AdvancedOptions, RateLimitOptions
+from fastauth.options import AdvancedOptions, LockoutOptions, RateLimitOptions
+from fastauth.security.lockout import AccountLockoutTracker, lockout_key
 from fastauth.security.rate_limit import (
     DatabaseRateLimitStorage,
     MemoryRateLimitStorage,
@@ -91,6 +93,45 @@ async def test_database_storage_resets_from_original_window_start() -> None:
     assert await storage.increment("k", window_ms=10_000, now_ms=0) == (1, 0)
     assert await storage.increment("k", window_ms=10_000, now_ms=5_000) == (2, 0)
     assert await storage.increment("k", window_ms=10_000, now_ms=11_000) == (1, 11_000)
+
+
+async def test_lockout_rekey_preserves_stricter_active_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = MemoryRateLimitStorage()
+    tracker = AccountLockoutTracker(
+        config=LockoutOptions(window=timedelta(seconds=60)),
+        storage=storage,
+    )
+    monkeypatch.setattr(tracker, "now_ms", lambda: 10_000)
+    await storage.upsert(RateLimit(key=lockout_key("old"), count=7, last_request_ms=1_000))
+    await storage.upsert(RateLimit(key=lockout_key("new"), count=4, last_request_ms=2_000))
+
+    await tracker.rekey("old", "new")
+
+    assert await storage.get(lockout_key("old")) is None
+    destination = await storage.get(lockout_key("new"))
+    assert destination is not None
+    assert destination.count == 7
+    assert destination.last_request_ms == 1_000
+
+
+async def test_lockout_rekey_clears_expired_buckets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = MemoryRateLimitStorage()
+    tracker = AccountLockoutTracker(
+        config=LockoutOptions(window=timedelta(seconds=1)),
+        storage=storage,
+    )
+    monkeypatch.setattr(tracker, "now_ms", lambda: 10_000)
+    await storage.upsert(RateLimit(key=lockout_key("old"), count=7, last_request_ms=1_000))
+    await storage.upsert(RateLimit(key=lockout_key("new"), count=8, last_request_ms=2_000))
+
+    await tracker.rekey("old", "new")
+
+    assert await storage.get(lockout_key("old")) is None
+    assert await storage.get(lockout_key("new")) is None
 
 
 async def test_limiter_blocks_after_threshold() -> None:

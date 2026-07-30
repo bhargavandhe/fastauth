@@ -73,7 +73,7 @@ configuration layer and pass the resulting strings into `FastAuthOptions`.
 | `session` | DB-backed vs JWT strategy, expiry, idle timeout. |
 | `cookie` | Cookie name, path, domain, `Secure`/`HttpOnly`/`SameSite` attributes. |
 | `password` | Argon2id memory/time/parallelism, minimum password length. |
-| `email` | From-address, subject lines, optional template directory. |
+| `email` | From-address, subject lines, optional template directory, and shared template globals. |
 | `email_verification` | Token TTL, callback path or override URL, whether sign-in requires a verified email. |
 | `password_reset` | Token TTL, callback path or override URL. |
 | `email_change` | Token TTL, callback path or override URL, email subject. |
@@ -83,6 +83,7 @@ configuration layer and pass the resulting strings into `FastAuthOptions`.
 | `lockout` | Account-lockout policy (`max_failures`, `window`). |
 | `database` | Database option object from `memory()`, `mongo(database=...)`, `postgres(url=...)`, or `custom(adapter=..., backend=...)`. |
 | `proxy` | Trusted reverse proxies and the forwarding header to honor for client IP resolution. |
+| `production_safety` | Independent HTTPS, cookie, database, email-sender, and migration policies used in production. |
 | `advanced` | IPv6 subnet bucket size and `__Secure-` cookie prefix flag. |
 
 Pass any subset of sections to override the defaults; omitted sections get
@@ -109,6 +110,14 @@ one stable camelCase shape. There is no runtime-selectable casing mode.
 
 Usernames are case-sensitive. For example, `Bhargav` and `bhargav` are distinct
 usernames and must be treated as separate values by adapters.
+
+First-party plugin duration options accept `timedelta`, numeric seconds, and
+compact strings such as `"10m"` and `"7d"`. `EmailPasswordOptions` also exposes
+`require_username` and `allow_username_change`; both default to `False`.
+
+Shared values for custom email templates belong in
+`EmailOptions.template_globals`. Per-message values such as OTPs and callback
+URLs take precedence over globals with the same key.
 
 ## Why no process config loader?
 

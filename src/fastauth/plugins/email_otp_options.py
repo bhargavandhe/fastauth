@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
+from fastauth.options import parse_duration
 from fastauth.plugins.base import PluginOptions
 
 __all__ = ["EmailChangeOtpOptions", "EmailOtpOptions"]
@@ -32,3 +33,8 @@ class EmailOtpOptions(PluginOptions):
     max_attempts: int = Field(default=3, ge=1, le=20)
     allow_sign_up: bool = True
     email_change: EmailChangeOtpOptions = Field(default_factory=EmailChangeOtpOptions)
+
+    @field_validator("expires_in", mode="before")
+    @classmethod
+    def normalize_duration_input(cls, value: object) -> object:
+        return parse_duration(value)

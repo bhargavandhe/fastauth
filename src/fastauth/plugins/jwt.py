@@ -18,11 +18,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from fastapi import Request, Response
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 
 from fastauth.domain.enums import JwtAlgorithm
 from fastauth.domain.models import User, WireModel
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
+from fastauth.options import parse_duration
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.jwt import JwksDocument, JwksRegistry, KmsSigner, LocalKmsSigner
@@ -53,6 +54,11 @@ class JwtOptions(PluginOptions):
     disable_private_key_encryption: bool = False
     jwks_path: str = Field(default="/jwks", pattern=r"^/")
     token_path: str = Field(default="/token", pattern=r"^/")
+
+    @field_validator("expires_in", "rotation_interval", "grace_period", mode="before")
+    @classmethod
+    def normalize_duration_input(cls, value: object) -> object:
+        return parse_duration(value)
 
     @property
     def expires_in_seconds(self) -> int:

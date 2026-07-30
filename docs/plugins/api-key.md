@@ -19,7 +19,8 @@ created.
 `ApiKeyOptions` exposes defaults applied when a create request omits the
 matching field: `default_prefix` (e.g. `"ak_"`), `default_remaining` (initial
 quota), `default_rate_limit_max`, `default_rate_limit_window`, and
-`default_expires_in`. Duration options are `datetime.timedelta` values.
+`default_expires_in`. Duration options accept `datetime.timedelta`, numeric
+seconds, or compact strings such as `"30s"` and `"7d"`.
 
 ## Example
 

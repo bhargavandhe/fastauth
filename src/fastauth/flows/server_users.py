@@ -3,18 +3,45 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import cast
 
-from pydantic import EmailStr, JsonValue, SecretStr
+from pydantic import EmailStr, JsonValue, SecretStr, TypeAdapter
 
 from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import HookPhase, ProviderId
 from fastauth.domain.events import UserCreated
 from fastauth.domain.models import Account, User
-from fastauth.domain.value_objects import UserMetadata, Username
+from fastauth.domain.value_objects import UserId, UserMetadata, Username, normalize_email
+from fastauth.exceptions import InvalidRequestError
 from fastauth.flows.credentials import validate_password_policy
 from fastauth.runtime.context import AuthContext
 
-__all__ = ["create_user"]
+__all__ = ["create_user", "get_user"]
+
+
+async def get_user(
+    context: AuthContext,
+    *,
+    by_id: UserId | str | None = None,
+    by_email: EmailStr | str | None = None,
+    by_username: Username | str | None = None,
+) -> UserView | None:
+    """Read one user by exactly one selector from trusted server code."""
+    selectors = (by_id, by_email, by_username)
+    if sum(value is not None for value in selectors) != 1:
+        raise InvalidRequestError(message="get_user requires exactly one selector")
+
+    if by_id is not None:
+        user_id = by_id if isinstance(by_id, UserId) else UserId.model_validate(by_id)
+        user = await context.adapter.get_user_by_id(user_id.root)
+    elif by_email is not None:
+        email = cast(str, TypeAdapter(EmailStr).validate_python(normalize_email(by_email)))
+        user = await context.adapter.get_user_by_email(email)
+    else:
+        assert by_username is not None
+        username = cast(str, TypeAdapter(Username).validate_python(by_username))
+        user = await context.adapter.get_user_by_username(username)
+    return user_view(user) if user is not None else None
 
 
 async def create_user(

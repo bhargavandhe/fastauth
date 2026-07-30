@@ -17,8 +17,10 @@ from fastauth.domain.events import (
     UserUpdated,
 )
 from fastauth.domain.models import Account, EmailMessage, User, Verification, WireModel
-from fastauth.domain.value_objects import UserMetadata
+from fastauth.domain.value_objects import UserMetadata, Username
 from fastauth.exceptions import (
+    DuplicateError,
+    FeatureNotEnabledError,
     InvalidCredentialsError,
     NotFoundError,
     PasswordAlreadySetError,
@@ -31,6 +33,7 @@ from fastauth.flows.credentials import (
     record_failure_and_maybe_emit,
     validate_password_policy,
 )
+from fastauth.plugins.email_password import require_email_password
 from fastauth.runtime.context import AuthContext
 
 __all__ = [
@@ -56,11 +59,14 @@ class UpdateUserRequest(WireModel):
     name: str | None = None
     image: str | None = None
     metadata: UserMetadata | None = None
+    username: Username | None = None
 
     @model_validator(mode="after")
-    def reject_metadata_null(self) -> UpdateUserRequest:
+    def reject_explicit_nulls(self) -> UpdateUserRequest:
         if "metadata" in self.model_fields_set and self.metadata is None:
             raise ValueError("metadata must be an object")
+        if "username" in self.model_fields_set and self.username is None:
+            raise ValueError("username must not be null")
         return self
 
 
@@ -98,6 +104,7 @@ async def update_user(
     user_agent: str | None,
 ) -> User:
     changed_fields: list[str] = []
+    old_username: str | None = None
     if "name" in request.model_fields_set:
         user.name = request.name
         changed_fields.append("name")
@@ -107,11 +114,25 @@ async def update_user(
     if "metadata" in request.model_fields_set:
         user.metadata = request.metadata.model_dump(mode="json") if request.metadata else {}
         changed_fields.append("metadata")
+    if "username" in request.model_fields_set:
+        plugin = require_email_password(context)
+        if not plugin.options.allow_username_change:
+            raise FeatureNotEnabledError(feature="username-change")
+        assert request.username is not None
+        if request.username != user.username:
+            existing = await context.adapter.get_user_by_username(request.username)
+            if existing is not None and existing.id != user.id:
+                raise DuplicateError(resource="user", field="username")
+            old_username = user.username
+            user.username = request.username
+            changed_fields.append("username")
 
     if not changed_fields:
         return user
 
     updated = await context.adapter.update_user(user)
+    if old_username is not None and updated.username is not None:
+        await context.lockout_tracker.rekey(old_username, updated.username)
     await context.event_bus.publish(
         UserUpdated(
             user_id=user.id,

@@ -54,8 +54,6 @@ def test_jwt_options_are_strict_frozen_and_duration_native() -> None:
     assert options.grace_period == timedelta(hours=1)
 
     with pytest.raises(ValidationError):
-        JwtOptions(expires_in=900)  # pyright: ignore[reportArgumentType]
-    with pytest.raises(ValidationError):
         JwtOptions(expires_in=timedelta(0))
     with pytest.raises(ValidationError):
         JwtOptions(jwks_path="jwks")
@@ -104,3 +102,38 @@ def test_provider_factories_accept_standardized_options() -> None:
     assert isinstance(api_key_plugin, ApiKeyPlugin)
     assert isinstance(email_otp_plugin, EmailOtpPlugin)
     assert isinstance(jwt_plugin, JwtPlugin)
+
+
+def test_first_party_plugin_options_coerce_duration_inputs() -> None:
+    email_otp_options = EmailOtpOptions.model_validate({"expires_in": "10m"})
+    jwt_options = JwtOptions.model_validate(
+        {
+            "expires_in": 900,
+            "rotation_interval": "7d",
+            "grace_period": "1h",
+        }
+    )
+    api_key_options = ApiKeyOptions.model_validate(
+        {
+            "default_rate_limit_max": 100,
+            "default_rate_limit_window": "30s",
+            "default_expires_in": 3600,
+        }
+    )
+
+    assert email_otp_options.expires_in == timedelta(minutes=10)
+    assert jwt_options.expires_in == timedelta(minutes=15)
+    assert jwt_options.rotation_interval == timedelta(days=7)
+    assert jwt_options.grace_period == timedelta(hours=1)
+    assert api_key_options.default_rate_limit_window == timedelta(seconds=30)
+    assert api_key_options.default_expires_in == timedelta(hours=1)
+
+
+@pytest.mark.parametrize("invalid", [True, "soon"])
+def test_first_party_plugin_options_reject_invalid_duration_inputs(invalid: object) -> None:
+    with pytest.raises(ValidationError):
+        EmailOtpOptions.model_validate({"expires_in": invalid})
+    with pytest.raises(ValidationError):
+        JwtOptions.model_validate({"expires_in": invalid})
+    with pytest.raises(ValidationError):
+        ApiKeyOptions.model_validate({"default_expires_in": invalid})

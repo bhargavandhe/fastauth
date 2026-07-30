@@ -33,3 +33,18 @@ def test_template_renderer_falls_back_to_packaged_when_directory_missing(
         {"verify_url": "http://x", "name": "X"},
     )
     assert "http://x" in html and "http://x" in text
+
+
+def test_template_renderer_merges_copied_globals_below_message_variables(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / "custom.html").write_text("{{ brand }}: {{ otp }}", encoding="utf-8")
+    (tmp_path / "custom.txt").write_text("{{ brand }}: {{ otp }}", encoding="utf-8")
+    configured = {"brand": "Acme", "otp": "global-value"}
+    renderer = TemplateRenderer(str(tmp_path), configured)
+
+    configured["brand"] = "Mutated"
+    html, text = renderer.render("custom", {"otp": "message-value"})
+
+    assert html == "Acme: message-value"
+    assert text == "Acme: message-value"

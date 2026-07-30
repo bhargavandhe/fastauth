@@ -30,6 +30,7 @@ from fastauth.options import (
     PasswordOptions,
     PasswordResetOptions,
     PostgresDatabaseOptions,
+    ProductionSafetyOptions,
     RateLimitOptions,
     RefreshTokenOptions,
     SecurityHeadersOptions,
@@ -52,6 +53,11 @@ def test_fastauth_options_accepts_explicit_secret_key() -> None:
     options = FastAuthOptions(secret_key=SecretStr("a" * 64))
     assert isinstance(options.secret_key, SecretStr)
     assert "a" * 64 not in repr(options)
+
+
+def test_email_options_accept_template_globals() -> None:
+    options = EmailOptions(template_globals={"brand": "Acme"})
+    assert options.template_globals == {"brand": "Acme"}
 
 
 def test_fastauth_builds_reusable_credential_service_from_global_password_options() -> None:
@@ -204,6 +210,40 @@ def test_production_options_reject_insecure_cookies() -> None:
                 backend=DatabaseBackendKind.POSTGRES,
             ),
             app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+            cookie=CookieOptions(secure=False),
+        )
+
+
+def test_production_transport_checks_can_be_relaxed_independently() -> None:
+    options = FastAuthOptions(
+        secret_key=SecretStr("a" * 64),
+        deployment="production",
+        production_safety=ProductionSafetyOptions(
+            require_https=False,
+            require_secure_cookies=False,
+        ),
+        database=CustomDatabaseOptions(
+            adapter=InMemoryAdapter(),
+            backend=DatabaseBackendKind.POSTGRES,
+        ),
+        app=AppOptions.model_validate({"base_url": "http://internal:8000"}),
+        cookie=CookieOptions(secure=False),
+    )
+
+    assert str(options.app.base_url).startswith("http://internal:8000")
+    assert options.cookie.secure is False
+
+
+def test_relaxed_transport_does_not_allow_memory_database() -> None:
+    with pytest.raises(ValidationError, match="memory database is not allowed in production"):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            production_safety=ProductionSafetyOptions(
+                require_https=False,
+                require_secure_cookies=False,
+            ),
+            app=AppOptions.model_validate({"base_url": "http://internal:8000"}),
             cookie=CookieOptions(secure=False),
         )
 

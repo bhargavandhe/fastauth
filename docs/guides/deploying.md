@@ -76,6 +76,29 @@ For local development and small deployments, keep the default
 starts. Production options reject automatic migrations; prefer the explicit
 CLI migration path where schema changes are part of the deploy pipeline.
 
+## TLS termination and production policies
+
+Production defaults independently require HTTPS URLs, secure cookies,
+persistent storage, a non-console email sender, and checked migrations. A
+deployment whose application-facing transport is intentionally HTTP can relax
+only those transport policies:
+
+```python
+from fastauth import ProductionSafetyOptions
+
+options = FastAuthOptions(
+    # ...
+    deployment="production",
+    production_safety=ProductionSafetyOptions(
+        require_https=False,
+        require_secure_cookies=False,
+    ),
+)
+```
+
+The memory-database, console-sender, and automatic-migration guards remain
+enabled. Secret strength and `SameSite=None` cookie safety are unconditional.
+
 ## Secrets
 
 - `secret_key` — used for cookie signing and as the KEK for the JWKS

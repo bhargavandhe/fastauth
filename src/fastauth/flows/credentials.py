@@ -181,6 +181,9 @@ async def sign_up_email(
     user_agent: str | None,
 ) -> tuple[SessionResponse, SessionContext]:
     validate_email_password_delivery(context, request.delivery)
+    plugin_options = email_password_options(context)
+    if plugin_options is not None and plugin_options.require_username and request.username is None:
+        raise InvalidRequestError(message="username is required")
     user = User(
         email=request.email,
         name=request.name,

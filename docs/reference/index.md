@@ -33,6 +33,13 @@ refresh token and does not send verification email. Code with access to
 `auth.api` is trusted application code; add your own authorization before
 calling it with request-derived input.
 
+`get_user()` reads a safe `UserView` by exactly one selector and returns `None`
+when no user matches:
+
+```python
+user = await auth.api.get_user(by_email="admin@app.com")
+```
+
 ### `auth.router`
 
 A standard, prefix-free FastAPI `APIRouter`. Include it explicitly when the

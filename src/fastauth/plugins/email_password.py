@@ -23,6 +23,8 @@ class EmailPasswordOptions(PluginOptions):
     """Static options for the email/password provider."""
 
     allow_username_sign_in: bool = True
+    require_username: bool = False
+    allow_username_change: bool = False
     allow_bearer_tokens: bool = True
 
 

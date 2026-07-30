@@ -18,6 +18,25 @@ Omitted fields are preserved. `name` and `image` can be set to `null` to
 clear them. `metadata` must be an object when present and replaces the stored
 metadata object; send `{}` to clear it.
 
+Username changes are disabled by default. Enable them on the email/password
+plugin and send a non-null `username`:
+
+```python
+from fastauth.plugins.email_password import EmailPasswordOptions
+
+plugin = email_password(
+    EmailPasswordOptions(allow_username_change=True),
+)
+```
+
+```json
+{"username": "alice-new"}
+```
+
+FastAuth validates uniqueness and moves username-keyed lockout state. Set
+`require_username=True` on the same options model to require usernames during
+interactive email sign-up; trusted `auth.api.create_user()` remains optional.
+
 ## Password Operations
 
 `POST /auth/set-password` adds a credential password to a user that does not

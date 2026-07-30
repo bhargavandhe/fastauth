@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, ClassVar, Self
 
 from fastapi import Query, Request
-from pydantic import ConfigDict, Field, SecretStr, model_validator
+from pydantic import ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from fastauth.api.responses import ApiKeyView, api_key_view
 from fastauth.domain.events import ApiKeyCreated, ApiKeyRevoked, ApiKeyVerifyFailed
@@ -22,6 +22,7 @@ from fastauth.domain.models import ApiKey, WireModel
 from fastauth.domain.value_objects import ApiKeyId, ApiKeyMetadata, PermissionSet, UserId
 from fastauth.exceptions import ConfigError, InvalidCredentialsError, NotFoundError
 from fastauth.flows.credentials import EmptyResponse
+from fastauth.options import parse_duration
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
 from fastauth.security.tokens import TokenService
@@ -57,6 +58,11 @@ class ApiKeyOptions(PluginOptions):
     default_rate_limit_max: int | None = Field(default=None, ge=1)
     default_rate_limit_window: timedelta | None = Field(default=None, gt=timedelta(0))
     default_expires_in: timedelta | None = Field(default=None, gt=timedelta(0))
+
+    @field_validator("default_rate_limit_window", "default_expires_in", mode="before")
+    @classmethod
+    def normalize_duration_input(cls, value: object) -> object:
+        return parse_duration(value)
 
     @model_validator(mode="after")
     def validate_rate_limit_pair(self) -> Self:

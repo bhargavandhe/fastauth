@@ -86,6 +86,10 @@ class RateLimitStorage(Protocol):
         """
         ...
 
+    async def upsert(self, rate_limit: RateLimit) -> RateLimit:
+        """Replace the complete state for one bucket."""
+        ...
+
     async def delete(self, key: str) -> None:
         """Remove the bucket for ``key``. Idempotent on absent keys."""
         ...
@@ -121,6 +125,11 @@ class MemoryRateLimitStorage:
     async def get(self, key: str) -> RateLimit | None:
         return self.state.get(key)
 
+    async def upsert(self, rate_limit: RateLimit) -> RateLimit:
+        async with self.lock:
+            self.state[rate_limit.key] = rate_limit
+        return rate_limit
+
     async def delete(self, key: str) -> None:
         async with self.lock:
             self.state.pop(key, None)
@@ -147,6 +156,9 @@ class DatabaseRateLimitStorage:
 
     async def get(self, key: str) -> RateLimit | None:
         return await self.adapter.get_rate_limit(key)
+
+    async def upsert(self, rate_limit: RateLimit) -> RateLimit:
+        return await self.adapter.upsert_rate_limit(rate_limit)
 
     async def delete(self, key: str) -> None:
         await self.adapter.delete_rate_limit(key)

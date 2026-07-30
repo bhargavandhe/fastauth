@@ -25,7 +25,8 @@ for JWTs that grant direct API access.
 `grace_period`, `disable_setting_jwt_header`,
 `disable_private_key_encryption`, `jwks_path`, and `token_path`. The plugin
 also accepts a custom `payload_builder` and a `signer_factory` for KMS-backed
-signing. Duration options are `datetime.timedelta` values — see the
+signing. Duration options accept `datetime.timedelta`, numeric seconds, or
+compact strings such as `"15m"` and `"30d"` — see the
 [KMS signing guide](../guides/kms-signing.md).
 
 ## Example

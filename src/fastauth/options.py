@@ -55,6 +55,7 @@ __all__ = [
     "PasswordResetOptions",
     "PostgresDatabaseOptions",
     "PostgresDatabaseRuntime",
+    "ProductionSafetyOptions",
     "ProxyOptions",
     "RateLimitOptions",
     "RefreshTokenOptions",
@@ -210,6 +211,7 @@ class EmailOptions(OptionsSection):
     verification_subject: str = Field(default="Verify your email", min_length=1, max_length=200)
     password_reset_subject: str = Field(default="Reset your password", min_length=1, max_length=200)
     template_directory: str | None = Field(default=None, min_length=1)
+    template_globals: dict[str, Any] = Field(default_factory=dict)
 
 
 class EmailVerificationOptions(OptionsSection):
@@ -342,6 +344,16 @@ class SecurityHeadersOptions(OptionsSection):
     referrer_policy: str | None = "strict-origin-when-cross-origin"
     permissions_policy: str | None = None
     content_security_policy: str | None = None
+
+
+class ProductionSafetyOptions(OptionsSection):
+    """Independently configurable safety policies for production deployments."""
+
+    require_https: bool = True
+    require_secure_cookies: bool = True
+    forbid_memory_database: bool = True
+    forbid_console_email_sender: bool = True
+    forbid_automatic_migrations: bool = True
 
 
 class AdvancedOptions(OptionsSection):
@@ -612,6 +624,9 @@ class FastAuthOptions(OptionsModel):
     security_headers: SecurityHeadersOptions = Field(
         default_factory=lambda: SecurityHeadersOptions(),
     )
+    production_safety: ProductionSafetyOptions = Field(
+        default_factory=lambda: ProductionSafetyOptions(),
+    )
     advanced: AdvancedOptions = Field(default_factory=lambda: AdvancedOptions())
     proxy: ProxyOptions = Field(default_factory=lambda: ProxyOptions())
 
@@ -646,21 +661,25 @@ class FastAuthOptions(OptionsModel):
         if self.deployment != "production":
             return self
 
-        if self.database.backend_kind() is DatabaseBackendKind.MEMORY:
+        if (
+            self.production_safety.forbid_memory_database
+            and self.database.backend_kind() is DatabaseBackendKind.MEMORY
+        ):
             raise ValueError("memory database is not allowed in production")
 
-        if isinstance(self.app.base_url, DynamicBaseUrlOptions):
-            if self.app.base_url.protocol != "https":
-                raise ValueError("production dynamic base_url must use HTTPS")
-            if (
-                self.app.base_url.fallback is not None
-                and self.app.base_url.fallback.scheme != "https"
-            ):
-                raise ValueError("production dynamic base_url fallback must use HTTPS")
-        elif self.app.base_url.scheme != "https":
-            raise ValueError("production base_url must use HTTPS")
+        if self.production_safety.require_https:
+            if isinstance(self.app.base_url, DynamicBaseUrlOptions):
+                if self.app.base_url.protocol != "https":
+                    raise ValueError("production dynamic base_url must use HTTPS")
+                if (
+                    self.app.base_url.fallback is not None
+                    and self.app.base_url.fallback.scheme != "https"
+                ):
+                    raise ValueError("production dynamic base_url fallback must use HTTPS")
+            elif self.app.base_url.scheme != "https":
+                raise ValueError("production base_url must use HTTPS")
 
-        if not self.cookie.secure:
+        if self.production_safety.require_secure_cookies and not self.cookie.secure:
             raise ValueError("production cookies must be secure")
 
         callback_overrides = (
@@ -669,13 +688,14 @@ class FastAuthOptions(OptionsModel):
             self.email_change.callback_url_override,
             self.delete_account.callback_url_override,
         )
-        if any(
+        if self.production_safety.require_https and any(
             override is not None and override.scheme != "https" for override in callback_overrides
         ):
             raise ValueError("production callback_url_override values must use HTTPS")
 
         if (
-            isinstance(self.database, PostgresDatabaseOptions)
+            self.production_safety.forbid_automatic_migrations
+            and isinstance(self.database, PostgresDatabaseOptions)
             and self.database.migration_mode == "apply"
         ):
             raise ValueError("production should use migration_mode='check'")

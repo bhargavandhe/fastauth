@@ -25,6 +25,17 @@ endpoint. Access to the initialized `FastAuth` instance is therefore the trust
 boundary; do not make it callable from untrusted request data without adding
 your own authorization policy.
 
+Trusted code can read the same safe DTO by exactly one selector:
+
+```python
+by_id = await auth.api.get_user(by_id=user_id)
+by_email = await auth.api.get_user(by_email="admin@app.com")
+by_username = await auth.api.get_user(by_username="admin")
+```
+
+Each call returns `UserView | None`. Passing zero or multiple selectors raises
+`InvalidRequestError`.
+
 ## Authentication actions
 
 The primary server-side API is method based and hangs directly off the
