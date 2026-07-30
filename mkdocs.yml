@@ -1,5 +1,6 @@
 site_name: fastauth
 site_description: A modular, Pydantic-native, async-only authentication library for FastAPI.
+site_url: https://bhargavandhe.github.io/fastauth/
 repo_url: https://github.com/bhargavandhe/fastauth
 strict: true
 
