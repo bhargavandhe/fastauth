@@ -754,91 +754,113 @@ class BeanieAdapter:
     ) -> None:
         threshold_ms = now_ms - window_ms
         collection = self.database[self.rate_limit_doc.Settings.name]
-        source = await collection.find_one({"key": old_key})
-        if source is not None and int(source["last_request_ms"]) + window_ms > now_ms:
-            source_count = int(source["count"])
-            source_start = int(source["last_request_ms"])
-        else:
-            source_count = 0
-            source_start = threshold_ms
-        destination = await collection.find_one_and_update(
-            {"key": new_key},
-            [
-                {
-                    "$set": {
+        for _ in range(8):
+            source = await collection.find_one({"key": old_key})
+            if source is not None and int(source["last_request_ms"]) + window_ms > now_ms:
+                source_count = int(source["count"])
+                source_start = int(source["last_request_ms"])
+            else:
+                source_count = 0
+                source_start = threshold_ms
+
+            destination_active = {
+                "$gt": [
+                    {
+                        "$add": [
+                            {"$ifNull": ["$last_request_ms", threshold_ms]},
+                            window_ms,
+                        ]
+                    },
+                    now_ms,
+                ]
+            }
+            source_is_stricter = {
+                "$or": [
+                    {"$gt": [source_count, "$_fastauth_destination_count"]},
+                    {
+                        "$and": [
+                            {"$eq": [source_count, "$_fastauth_destination_count"]},
+                            {"$gt": [source_start, "$_fastauth_destination_start"]},
+                        ]
+                    },
+                ]
+            }
+            destination = await collection.find_one_and_update(
+                {"key": new_key},
+                [
+                    {
+                        "$set": {
+                            "_fastauth_destination_count": {
+                                "$cond": [
+                                    destination_active,
+                                    {"$ifNull": ["$count", 0]},
+                                    0,
+                                ]
+                            },
+                            "_fastauth_destination_start": {
+                                "$cond": [
+                                    destination_active,
+                                    {"$ifNull": ["$last_request_ms", threshold_ms]},
+                                    threshold_ms,
+                                ]
+                            },
+                        }
+                    },
+                    {
+                        "$set": {
+                            "key": new_key,
+                            "count": {
+                                "$cond": [
+                                    source_is_stricter,
+                                    source_count,
+                                    "$_fastauth_destination_count",
+                                ]
+                            },
+                            "last_request_ms": {
+                                "$cond": [
+                                    source_is_stricter,
+                                    source_start,
+                                    "$_fastauth_destination_start",
+                                ]
+                            },
+                        }
+                    },
+                    {
+                        "$unset": [
+                            "_fastauth_destination_count",
+                            "_fastauth_destination_start",
+                        ]
+                    },
+                ],
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+            if destination is None:
+                raise RuntimeError("rate-limit rekey failed")
+            if int(destination["count"]) == 0:
+                # The predicate preserves a destination incremented concurrently.
+                await collection.delete_one(
+                    {
                         "key": new_key,
-                        "count": {
-                            "$max": [
-                                source_count,
-                                {
-                                    "$cond": [
-                                        {
-                                            "$gt": [
-                                                {
-                                                    "$add": [
-                                                        {
-                                                            "$ifNull": [
-                                                                "$last_request_ms",
-                                                                threshold_ms,
-                                                            ]
-                                                        },
-                                                        window_ms,
-                                                    ]
-                                                },
-                                                now_ms,
-                                            ]
-                                        },
-                                        {"$ifNull": ["$count", 0]},
-                                        0,
-                                    ]
-                                },
-                            ]
-                        },
-                        "last_request_ms": {
-                            "$max": [
-                                source_start,
-                                {
-                                    "$cond": [
-                                        {
-                                            "$gt": [
-                                                {
-                                                    "$add": [
-                                                        {
-                                                            "$ifNull": [
-                                                                "$last_request_ms",
-                                                                threshold_ms,
-                                                            ]
-                                                        },
-                                                        window_ms,
-                                                    ]
-                                                },
-                                                now_ms,
-                                            ]
-                                        },
-                                        {"$ifNull": ["$last_request_ms", threshold_ms]},
-                                        threshold_ms,
-                                    ]
-                                },
-                            ]
-                        },
+                        "count": 0,
+                        "last_request_ms": threshold_ms,
                     }
-                }
-            ],
-            upsert=True,
-            return_document=ReturnDocument.AFTER,
-        )
-        if destination is None:
-            raise RuntimeError("rate-limit rekey failed")
-        if int(destination["count"]) == 0:
-            # The predicate prevents deleting a bucket incremented concurrently.
-            await collection.delete_one(
+                )
+
+            if source is None:
+                return
+            deleted = await collection.delete_one(
                 {
-                    "key": new_key,
-                    "count": 0,
-                    "last_request_ms": threshold_ms,
+                    "_id": source["_id"],
+                    "key": old_key,
+                    "count": source["count"],
+                    "last_request_ms": source["last_request_ms"],
                 }
             )
-        await collection.delete_one({"key": old_key})
+            if deleted.deleted_count == 1:
+                return
+
+        raise RuntimeError("rate-limit rekey did not stabilize")
 
     async def delete_rate_limit(self, key: str) -> None:
         doc = await self.rate_limit_doc.find_one({"key": key})
