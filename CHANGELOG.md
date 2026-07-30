@@ -4,6 +4,30 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-07-30
+
+### Added
+
+- Added short duration strings such as `"10m"`, `"2h"`, and `"7d"` to the
+  email OTP, JWT, and API-key plugin option models.
+- Added purpose-aware Email OTP subjects for verification, password reset,
+  email change, and sign-in messages.
+- Added global Jinja email-template variables through
+  `EmailOptions.template_globals`, with per-message variables taking
+  precedence.
+- Added independently configurable production safety policies for HTTPS,
+  secure cookies, in-memory storage, console email delivery, and automatic
+  migrations.
+- Added trusted `auth.api.get_user(...)` lookup by exactly one user id, email,
+  or username selector.
+- Added `require_username` and `allow_username_change` controls to the
+  email/password plugin, including `auth.users.update(..., username=...)`.
+
+### Changed
+
+- Username changes now enforce adapter-level uniqueness and atomically move
+  active lockout state across the memory, Postgres, and Beanie backends.
+
 ## [0.12.1] — 2026-07-28
 
 ### Fixed
@@ -709,7 +733,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/bhargavandhe/fastauth/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/bhargavandhe/fastauth/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/bhargavandhe/fastauth/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/bhargavandhe/fastauth/compare/v0.10.2...v0.11.0
