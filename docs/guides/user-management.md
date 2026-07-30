@@ -36,6 +36,11 @@ plugin = email_password(
 FastAuth validates uniqueness and moves username-keyed lockout state. Set
 `require_username=True` on the same options model to require usernames during
 interactive email sign-up; trusted `auth.api.create_user()` remains optional.
+Trusted server code can use the same feature through the Pythonic manager:
+
+```python
+updated = await auth.users.update(user_id, username="alice-new")
+```
 
 ## Password Operations
 

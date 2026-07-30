@@ -358,7 +358,9 @@ async def test_session_api_accepts_immutable_principal() -> None:
 async def test_pythonic_managers_delegate_to_command_api() -> None:
     auth = FastAuth(
         FastAuthOptions(secret_key=SecretStr("k" * 64), database=memory()),
-        plugins=[email_password()],
+        plugins=[
+            email_password(EmailPasswordOptions(allow_username_change=True)),
+        ],
     )
     signed_up = await auth.sign_up.email(
         "manager@example.com",
@@ -367,10 +369,15 @@ async def test_pythonic_managers_delegate_to_command_api() -> None:
     )
 
     listed = await auth.sessions.list(signed_up.user.id)
-    updated = await auth.users.update(signed_up.user.id, name="Manager")
+    updated = await auth.users.update(
+        signed_up.user.id,
+        name="Manager",
+        username="renamed-manager",
+    )
 
     assert len(listed.sessions) == 1
     assert updated.name == "Manager"
+    assert updated.username == "renamed-manager"
 
 
 def test_principals_use_typed_id_wrappers() -> None:

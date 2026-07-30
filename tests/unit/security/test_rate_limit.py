@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import timedelta
 
@@ -77,6 +78,16 @@ async def test_database_storage_uses_adapter_atomic_increment() -> None:
         async def upsert_rate_limit(self, rate_limit):  # type: ignore[no-untyped-def]
             raise AssertionError("increment must not use read-before-write")
 
+        async def rekey_rate_limit(
+            self,
+            old_key: str,
+            new_key: str,
+            *,
+            window_ms: int,
+            now_ms: int,
+        ) -> None:
+            raise AssertionError("increment must not rekey")
+
         async def delete_rate_limit(self, key: str) -> None:
             return None
 
@@ -132,6 +143,28 @@ async def test_lockout_rekey_clears_expired_buckets(
 
     assert await storage.get(lockout_key("old")) is None
     assert await storage.get(lockout_key("new")) is None
+
+
+async def test_lockout_rekey_preserves_concurrent_destination_increment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = MemoryRateLimitStorage()
+    tracker = AccountLockoutTracker(
+        config=LockoutOptions(window=timedelta(seconds=60)),
+        storage=storage,
+    )
+    monkeypatch.setattr(tracker, "now_ms", lambda: 10_000)
+    await storage.upsert(RateLimit(key=lockout_key("old"), count=4, last_request_ms=1_000))
+    await storage.upsert(RateLimit(key=lockout_key("new"), count=4, last_request_ms=1_000))
+
+    await asyncio.gather(
+        tracker.rekey("old", "new"),
+        storage.increment(lockout_key("new"), window_ms=60_000, now_ms=10_000),
+    )
+
+    destination = await storage.get(lockout_key("new"))
+    assert destination is not None
+    assert destination.count == 5
 
 
 async def test_limiter_blocks_after_threshold() -> None:

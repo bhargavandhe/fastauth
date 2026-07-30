@@ -103,6 +103,7 @@ async def update_user(
     ip: str | None,
     user_agent: str | None,
 ) -> User:
+    user = user.model_copy(deep=True)
     changed_fields: list[str] = []
     old_username: str | None = None
     if "name" in request.model_fields_set:

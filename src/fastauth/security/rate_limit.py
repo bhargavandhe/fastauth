@@ -90,6 +90,17 @@ class RateLimitStorage(Protocol):
         """Replace the complete state for one bucket."""
         ...
 
+    async def rekey(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> None:
+        """Atomically merge active state into ``new_key`` and remove ``old_key``."""
+        ...
+
     async def delete(self, key: str) -> None:
         """Remove the bucket for ``key``. Idempotent on absent keys."""
         ...
@@ -130,6 +141,35 @@ class MemoryRateLimitStorage:
             self.state[rate_limit.key] = rate_limit
         return rate_limit
 
+    async def rekey(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> None:
+        async with self.lock:
+            active = [
+                bucket
+                for key in (old_key, new_key)
+                if (bucket := self.state.get(key)) is not None
+                and bucket.last_request_ms + window_ms > now_ms
+            ]
+            if active:
+                selected = max(
+                    active,
+                    key=lambda bucket: (bucket.count, bucket.last_request_ms),
+                )
+                self.state[new_key] = RateLimit(
+                    key=new_key,
+                    count=selected.count,
+                    last_request_ms=selected.last_request_ms,
+                )
+            else:
+                self.state.pop(new_key, None)
+            self.state.pop(old_key, None)
+
     async def delete(self, key: str) -> None:
         async with self.lock:
             self.state.pop(key, None)
@@ -159,6 +199,21 @@ class DatabaseRateLimitStorage:
 
     async def upsert(self, rate_limit: RateLimit) -> RateLimit:
         return await self.adapter.upsert_rate_limit(rate_limit)
+
+    async def rekey(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> None:
+        await self.adapter.rekey_rate_limit(
+            old_key,
+            new_key,
+            window_ms=window_ms,
+            now_ms=now_ms,
+        )
 
     async def delete(self, key: str) -> None:
         await self.adapter.delete_rate_limit(key)

@@ -73,6 +73,11 @@ class InMemoryAdapter:
         async with self.lock:
             if user.id not in self.users:
                 raise NotFoundError(resource="user")
+            if user.username is not None and any(
+                existing.id != user.id and existing.username == user.username
+                for existing in self.users.values()
+            ):
+                raise DuplicateError(resource="user", field="username")
             user.updated_at = datetime.now(UTC)
             self.users[user.id] = user
             return user
@@ -453,6 +458,35 @@ class InMemoryAdapter:
                 existing.last_request_ms = rate_limit.last_request_ms
                 self.rate_limits[rate_limit.key] = existing
             return self.rate_limits[rate_limit.key]
+
+    async def rekey_rate_limit(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> None:
+        async with self.lock:
+            active = [
+                bucket
+                for key in (old_key, new_key)
+                if (bucket := self.rate_limits.get(key)) is not None
+                and bucket.last_request_ms + window_ms > now_ms
+            ]
+            if active:
+                selected = max(
+                    active,
+                    key=lambda bucket: (bucket.count, bucket.last_request_ms),
+                )
+                self.rate_limits[new_key] = RateLimit(
+                    key=new_key,
+                    count=selected.count,
+                    last_request_ms=selected.last_request_ms,
+                )
+            else:
+                self.rate_limits.pop(new_key, None)
+            self.rate_limits.pop(old_key, None)
 
     async def delete_rate_limit(self, key: str) -> None:
         async with self.lock:

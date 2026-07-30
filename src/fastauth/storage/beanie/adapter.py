@@ -96,6 +96,11 @@ if TYPE_CHECKING:
     from fastauth.runtime.auth import FastAuth
 
 
+def duplicate_user_field(error: DuplicateKeyError) -> str:
+    """Identify the user uniqueness index reported by MongoDB."""
+    return "username" if "username" in str(error).lower() else "email"
+
+
 class BeanieAdapter:
     """DatabaseAdapter backed by MongoDB via Beanie ODM.
 
@@ -171,7 +176,7 @@ class BeanieAdapter:
         try:
             await doc.insert()
         except DuplicateKeyError as exc:
-            raise DuplicateError(resource="user", field="email") from exc
+            raise DuplicateError(resource="user", field=duplicate_user_field(exc)) from exc
         if doc.id is not None:
             user.id = str(doc.id)
         return user
@@ -205,7 +210,10 @@ class BeanieAdapter:
         user.updated_at = datetime.now(UTC)
         normalise_datetimes(user)
         apply_model_updates(doc, user)
-        await doc.replace()
+        try:
+            await doc.replace()
+        except DuplicateKeyError as exc:
+            raise DuplicateError(resource="user", field=duplicate_user_field(exc)) from exc
         return user
 
     async def delete_user(self, user_id: str) -> None:
@@ -735,6 +743,102 @@ class BeanieAdapter:
                 },
             )
         return rate_limit
+
+    async def rekey_rate_limit(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> None:
+        threshold_ms = now_ms - window_ms
+        collection = self.database[self.rate_limit_doc.Settings.name]
+        source = await collection.find_one({"key": old_key})
+        if source is not None and int(source["last_request_ms"]) + window_ms > now_ms:
+            source_count = int(source["count"])
+            source_start = int(source["last_request_ms"])
+        else:
+            source_count = 0
+            source_start = threshold_ms
+        destination = await collection.find_one_and_update(
+            {"key": new_key},
+            [
+                {
+                    "$set": {
+                        "key": new_key,
+                        "count": {
+                            "$max": [
+                                source_count,
+                                {
+                                    "$cond": [
+                                        {
+                                            "$gt": [
+                                                {
+                                                    "$add": [
+                                                        {
+                                                            "$ifNull": [
+                                                                "$last_request_ms",
+                                                                threshold_ms,
+                                                            ]
+                                                        },
+                                                        window_ms,
+                                                    ]
+                                                },
+                                                now_ms,
+                                            ]
+                                        },
+                                        {"$ifNull": ["$count", 0]},
+                                        0,
+                                    ]
+                                },
+                            ]
+                        },
+                        "last_request_ms": {
+                            "$max": [
+                                source_start,
+                                {
+                                    "$cond": [
+                                        {
+                                            "$gt": [
+                                                {
+                                                    "$add": [
+                                                        {
+                                                            "$ifNull": [
+                                                                "$last_request_ms",
+                                                                threshold_ms,
+                                                            ]
+                                                        },
+                                                        window_ms,
+                                                    ]
+                                                },
+                                                now_ms,
+                                            ]
+                                        },
+                                        {"$ifNull": ["$last_request_ms", threshold_ms]},
+                                        threshold_ms,
+                                    ]
+                                },
+                            ]
+                        },
+                    }
+                }
+            ],
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        if destination is None:
+            raise RuntimeError("rate-limit rekey failed")
+        if int(destination["count"]) == 0:
+            # The predicate prevents deleting a bucket incremented concurrently.
+            await collection.delete_one(
+                {
+                    "key": new_key,
+                    "count": 0,
+                    "last_request_ms": threshold_ms,
+                }
+            )
+        await collection.delete_one({"key": old_key})
 
     async def delete_rate_limit(self, key: str) -> None:
         doc = await self.rate_limit_doc.find_one({"key": key})

@@ -122,6 +122,11 @@ def row_to_rate_limit(row: RowMapping) -> RateLimit:
     return RateLimit.model_validate(row_data(row))
 
 
+def duplicate_user_field(error: IntegrityError) -> str:
+    """Identify the user uniqueness constraint reported by Postgres."""
+    return "username" if "username" in str(error).lower() else "email"
+
+
 class PostgresAdapter(
     BaseDatabaseAdapter,
     ApiKeyStore,
@@ -336,13 +341,19 @@ class PostgresAdapter(
 
     async def update_user(self, user: User) -> User:
         user.updated_at = current_utc_time()
-        return await self.update_row_by_id(
-            self.schema.users,
-            user.id,
-            model_data(user),
-            row_to_user,
-            resource="user",
-        )
+        try:
+            return await self.update_row_by_id(
+                self.schema.users,
+                user.id,
+                model_data(user),
+                row_to_user,
+                resource="user",
+            )
+        except IntegrityError as exc:
+            raise DuplicateError(
+                resource="user",
+                field=duplicate_user_field(exc),
+            ) from exc
 
     async def delete_user(self, user_id: str) -> None:
         async with self.engine.begin() as connection:
@@ -867,6 +878,56 @@ class PostgresAdapter(
             result = await connection.execute(statement)
             row = result.mappings().one()
         return row_to_rate_limit(row)
+
+    async def rekey_rate_limit(
+        self,
+        old_key: str,
+        new_key: str,
+        *,
+        window_ms: int,
+        now_ms: int,
+    ) -> None:
+        threshold_ms = now_ms - window_ms
+        async with self.engine.begin() as connection:
+            # Materialize the destination first. The unique-key conflict makes
+            # concurrent increments serialize with the row lock below.
+            await connection.execute(
+                postgres_insert(self.schema.rate_limits)
+                .values(
+                    id=new_id(),
+                    key=new_key,
+                    count=0,
+                    last_request_ms=threshold_ms,
+                )
+                .on_conflict_do_nothing(index_elements=[self.schema.rate_limits.c.key])
+            )
+            result = await connection.execute(
+                select(self.schema.rate_limits)
+                .where(self.schema.rate_limits.c.key.in_([old_key, new_key]))
+                .with_for_update()
+            )
+            buckets = [row_to_rate_limit(row) for row in result.mappings()]
+            active = [bucket for bucket in buckets if bucket.last_request_ms + window_ms > now_ms]
+            if active:
+                selected = max(
+                    active,
+                    key=lambda bucket: (bucket.count, bucket.last_request_ms),
+                )
+                await connection.execute(
+                    update(self.schema.rate_limits)
+                    .where(self.schema.rate_limits.c.key == new_key)
+                    .values(
+                        count=selected.count,
+                        last_request_ms=selected.last_request_ms,
+                    )
+                )
+            else:
+                await connection.execute(
+                    delete(self.schema.rate_limits).where(self.schema.rate_limits.c.key == new_key)
+                )
+            await connection.execute(
+                delete(self.schema.rate_limits).where(self.schema.rate_limits.c.key == old_key)
+            )
 
     async def delete_rate_limit(self, key: str) -> None:
         async with self.engine.begin() as connection:

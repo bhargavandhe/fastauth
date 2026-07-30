@@ -184,8 +184,10 @@ class UsersManager:
         name: str | None = None,
         image: str | None = None,
         metadata: UserMetadata | None = None,
+        username: Username | None = None,
         context: RequestContext | None = None,
     ) -> UserView:
+        optional_username = {"username": username} if username is not None else {}
         return await self._auth.api.user.update(
             UpdateUserCommand(
                 principal=UserPrincipal(user_id=to_user_id(uid)),
@@ -193,6 +195,7 @@ class UsersManager:
                 image=image,
                 metadata=metadata,
                 context=context or RequestContext(),
+                **optional_username,
             )
         )
 

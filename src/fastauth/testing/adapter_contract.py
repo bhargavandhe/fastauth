@@ -122,6 +122,20 @@ class CoreAdapterContract(AdapterContractBase):
             await adapter.create_user(User(email="alice@example.com", username="shared"))
         assert exc_info.value.message == "user with duplicate username"
 
+    async def test_user_username_remains_unique_on_update(
+        self,
+        adapter: CoreContractAdapter,
+    ) -> None:
+        from fastauth.exceptions import DuplicateError
+
+        first = await adapter.create_user(User(email="first@example.com", username="first"))
+        await adapter.create_user(User(email="second@example.com", username="second"))
+        first.username = "second"
+
+        with pytest.raises(DuplicateError) as exc_info:
+            await adapter.update_user(first)
+        assert exc_info.value.message == "user with duplicate username"
+
     async def test_find_user_by_pending_email_change(
         self,
         adapter: CoreContractAdapter,
@@ -324,6 +338,26 @@ class RateLimitAdapterContract(AdapterContractBase):
             1,
             11_000,
         )
+
+    async def test_rate_limit_rekey_merges_active_buckets(
+        self,
+        adapter: RateLimitStore,
+    ) -> None:
+        await adapter.upsert_rate_limit(RateLimit(key="old", count=4, last_request_ms=1_000))
+        await adapter.upsert_rate_limit(RateLimit(key="new", count=5, last_request_ms=2_000))
+
+        await adapter.rekey_rate_limit(
+            "old",
+            "new",
+            window_ms=60_000,
+            now_ms=10_000,
+        )
+
+        assert await adapter.get_rate_limit("old") is None
+        destination = await adapter.get_rate_limit("new")
+        assert destination is not None
+        assert destination.count == 5
+        assert destination.last_request_ms == 2_000
 
 
 class RefreshTokenAdapterContract(AdapterContractBase):

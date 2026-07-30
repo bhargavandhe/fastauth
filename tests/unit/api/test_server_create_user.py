@@ -249,6 +249,22 @@ async def test_user_update_can_change_username_and_rekey_lockout() -> None:
     assert destination.count == 3
 
 
+async def test_memory_adapter_update_enforces_username_uniqueness_atomically() -> None:
+    adapter = InMemoryAdapter()
+    first = User(email="first@app.com", username="first")
+    second = User(email="second@app.com", username="second")
+    await adapter.create_user(first)
+    await adapter.create_user(second)
+
+    candidate = first.model_copy(update={"username": "second"})
+    with pytest.raises(DuplicateError):
+        await adapter.update_user(candidate)
+
+    persisted = await adapter.get_user_by_id(first.id)
+    assert persisted is not None
+    assert persisted.username == "first"
+
+
 def test_user_update_rejects_explicit_null_username() -> None:
     with pytest.raises(ValidationError, match="username must not be null"):
         UpdateUserRequest.model_validate({"username": None})
