@@ -244,3 +244,10 @@ def test_publish_workflow_validates_version_and_attaches_exact_artifacts() -> No
     assert 'tag_version="${GITHUB_REF_NAME#v}"' in workflow
     assert "needs: [build, publish]" in workflow
     assert 'gh release create "$GITHUB_REF_NAME" dist/*' in workflow
+
+
+def test_security_workflow_audits_the_complete_uv_lock() -> None:
+    workflow = read_project_file(".github/workflows/security.yml")
+
+    assert "uv export --locked --all-extras --all-groups --no-emit-project" in workflow
+    assert "pip-audit --requirement /dev/stdin --no-deps --disable-pip" in workflow
