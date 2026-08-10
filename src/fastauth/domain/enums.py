@@ -10,6 +10,7 @@ __all__ = [
     "EmailMessageKind",
     "HookPhase",
     "JwtAlgorithm",
+    "PluginMigrationMode",
     "ProviderId",
     "RateLimitStorageKind",
     "SessionStrategyKind",
@@ -75,6 +76,12 @@ class DatabaseBackendKind(StrEnum):
     POSTGRES = "postgres"
 
 
+class PluginMigrationMode(StrEnum):
+    APPLY = "apply"
+    CHECK = "check"
+    DISABLED = "disabled"
+
+
 class TokenType(StrEnum):
     SESSION = "session"
     VERIFICATION = "verification"
@@ -102,7 +109,7 @@ class EmailMessageKind(StrEnum):
 
 
 class JwtAlgorithm(StrEnum):
-    EDDSA = "EdDSA"
+    ED25519 = "Ed25519"
     ES256 = "ES256"
     RS256 = "RS256"
     PS256 = "PS256"

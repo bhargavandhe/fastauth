@@ -14,7 +14,7 @@ async def build_registry(adapter: InMemoryAdapter | None = None) -> JwksRegistry
     registry = JwksRegistry(
         adapter,
         secret_key=SecretStr("k" * 64),
-        alg=JwtAlgorithm.EDDSA,
+        alg=JwtAlgorithm.ED25519,
         rotation_interval_seconds=None,
         grace_period_seconds=86400,
         encrypt_private_keys=True,
@@ -31,7 +31,7 @@ async def registry() -> JwksRegistry:
 async def test_local_signer_round_trip(registry: JwksRegistry) -> None:
     signer = LocalKmsSigner(registry)
     token = await signer.sign(
-        header={"alg": "EdDSA", "typ": "JWT"},
+        header={"alg": "Ed25519", "typ": "JWT"},
         payload={"sub": "user-1", "iss": "test", "aud": "test"},
     )
     assert token.count(".") == 2  # JWT structure
@@ -102,7 +102,7 @@ async def test_decrypt_succeeds_with_rotation_kek_when_primary_changes() -> None
     seed_registry = JwksRegistry(
         adapter,
         secret_key=old_secret,
-        alg=JwtAlgorithm.EDDSA,
+        alg=JwtAlgorithm.ED25519,
         rotation_interval_seconds=None,
         grace_period_seconds=86400,
         encrypt_private_keys=True,
@@ -115,7 +115,7 @@ async def test_decrypt_succeeds_with_rotation_kek_when_primary_changes() -> None
         adapter,
         secret_key=new_secret,
         secret_key_rotation=[old_secret],
-        alg=JwtAlgorithm.EDDSA,
+        alg=JwtAlgorithm.ED25519,
         rotation_interval_seconds=None,
         grace_period_seconds=86400,
         encrypt_private_keys=True,
@@ -140,7 +140,7 @@ async def test_ensure_key_recovers_when_secret_changes_with_no_rotation() -> Non
     seed_registry = JwksRegistry(
         adapter,
         secret_key=old_secret,
-        alg=JwtAlgorithm.EDDSA,
+        alg=JwtAlgorithm.ED25519,
         rotation_interval_seconds=None,
         grace_period_seconds=600,
         encrypt_private_keys=True,
@@ -152,7 +152,7 @@ async def test_ensure_key_recovers_when_secret_changes_with_no_rotation() -> Non
     fresh_registry = JwksRegistry(
         adapter,
         secret_key=new_secret,
-        alg=JwtAlgorithm.EDDSA,
+        alg=JwtAlgorithm.ED25519,
         rotation_interval_seconds=None,
         grace_period_seconds=600,
         encrypt_private_keys=True,

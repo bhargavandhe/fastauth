@@ -20,7 +20,7 @@ for JWTs that grant direct API access.
 
 ## Options
 
-`JwtOptions` covers algorithm choice (`alg`, default `EdDSA`),
+`JwtOptions` covers algorithm choice (`alg`, default `Ed25519`),
 `expires_in`, `issuer`, `audience`, `rotation_interval`,
 `grace_period`, `disable_setting_jwt_header`,
 `disable_private_key_encryption`, `jwks_path`, and `token_path`. The plugin

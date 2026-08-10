@@ -228,6 +228,17 @@ def test_readme_no_longer_calls_docs_under_construction() -> None:
 def test_ci_checks_supported_python_and_package_build() -> None:
     workflow = read_project_file(".github/workflows/ci.yml")
 
-    assert 'python-version: ["3.11", "3.12"]' in workflow
+    assert 'python-version: ["3.11", "3.12", "3.13", "3.14"]' in workflow
+    assert 'python-version: ["3.11", "3.14"]' in workflow
     assert "uv build" in workflow
     assert "twine check" in workflow
+
+
+def test_publish_workflow_validates_version_and_attaches_exact_artifacts() -> None:
+    workflow = read_project_file(".github/workflows/publish.yml")
+
+    assert 'package_version="$(uv version --short)"' in workflow
+    assert 'runtime_version="$(uv run python' in workflow
+    assert 'tag_version="${GITHUB_REF_NAME#v}"' in workflow
+    assert "needs: [build, publish]" in workflow
+    assert 'gh release create "$GITHUB_REF_NAME" dist/*' in workflow

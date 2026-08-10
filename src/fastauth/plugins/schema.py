@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Self
+from typing import Any, Literal, Self, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -11,11 +11,22 @@ __all__ = [
     "FieldSpec",
     "IndexSpec",
     "MigrationSpec",
+    "PluginFieldType",
     "PluginSchema",
     "TableSpec",
 ]
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+REFERENCE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")
+PluginFieldType: TypeAlias = Literal[
+    "bool",
+    "bytes",
+    "datetime",
+    "float",
+    "int",
+    "json",
+    "str",
+]
 
 
 def validate_identifier(value: str, *, label: str) -> str:
@@ -52,7 +63,7 @@ class FieldSpec(PluginSchemaModel):
     """A field contributed by a plugin-owned table or collection."""
 
     name: str
-    python_type: str
+    python_type: PluginFieldType
     nullable: bool = False
     unique: bool = False
     default: Any | None = None
@@ -67,11 +78,11 @@ class FieldSpec(PluginSchemaModel):
     def validate_name(cls, value: str) -> str:
         return validate_identifier(value, label="field name")
 
-    @field_validator("python_type")
+    @field_validator("references")
     @classmethod
-    def validate_python_type(cls, value: str) -> str:
-        if not value:
-            raise ValueError("python_type must not be empty")
+    def validate_references(cls, value: str | None) -> str | None:
+        if value is not None and REFERENCE_RE.fullmatch(value) is None:
+            raise ValueError("references must use the form table.field")
         return value
 
 

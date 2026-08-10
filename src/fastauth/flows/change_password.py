@@ -26,7 +26,7 @@ class ChangePasswordRequest(WireModel):
     """Request body for ``POST /auth/change-password``.
 
     ``current_password`` must verify against the user's credential-provider
-    account. ``new_password`` is bound by the same ``min_length=8`` rule as
+    account. ``new_password`` is bound by the configured password policy as
     sign-up. ``revoke_other_sessions`` defaults to ``True`` — the typical
     safe behaviour for password changes is to invalidate every other device
     the user is signed in from. The current session always stays alive (the

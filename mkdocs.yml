@@ -58,6 +58,7 @@ nav:
       - Server API: concepts/server-api.md
       - Hooks: concepts/hooks.md
       - Events: concepts/events.md
+      - Observability: concepts/observability.md
       - Plugins: concepts/plugins.md
       - CSRF: concepts/csrf.md
       - Rate limiting: concepts/rate-limit.md
@@ -69,6 +70,7 @@ nav:
       - OpenAPI / Scalar: plugins/openapi.md
       - Test utils: plugins/test-utils.md
   - Guides:
+      - Migrating to 0.14: migrating/0.14.md
       - Migrating to 0.12: migrating/0.12.md
       - Migrating to 0.11: migrating/0.11.md
       - Email verification: guides/email-verification.md
@@ -77,4 +79,6 @@ nav:
       - Bearer auth: guides/bearer-auth.md
       - KMS signing: guides/kms-signing.md
       - Deploying: guides/deploying.md
+      - Maintenance: guides/maintenance.md
+  - API stability: reference/api-stability.md
   - Reference: reference/index.md

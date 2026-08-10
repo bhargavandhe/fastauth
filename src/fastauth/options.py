@@ -23,6 +23,7 @@ from pydantic import (
 
 from fastauth.domain.enums import (
     DatabaseBackendKind,
+    PluginMigrationMode,
     RateLimitStorageKind,
     SessionStrategyKind,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "EmailVerificationOptions",
     "FastAuthOptions",
     "LockoutOptions",
+    "MaintenanceOptions",
     "MemoryDatabaseOptions",
     "MemoryDatabaseRuntime",
     "MongoDatabase",
@@ -192,7 +194,7 @@ class CookieOptions(OptionsSection):
 
 
 class PasswordOptions(OptionsSection):
-    min_length: int = Field(default=8, ge=8, le=1024)
+    min_length: int = Field(default=12, ge=12, le=1024)
     max_length: int = Field(default=128, ge=8, le=4096)
     argon2_time_cost: int = Field(default=3, ge=1, le=64)
     argon2_memory_cost_kib: int = Field(default=64 * 1024, ge=8 * 1024, le=2 * 1024 * 1024)
@@ -366,6 +368,20 @@ class ProxyOptions(OptionsSection):
     forwarded_header: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class MaintenanceOptions(OptionsSection):
+    """Bounds and retention policy for explicit maintenance runs."""
+
+    batch_size: int = Field(default=500, ge=1, le=10_000)
+    max_batches: int = Field(default=100, ge=1, le=10_000)
+    audit_log_retention: timedelta | None = Field(default=None, gt=timedelta(0))
+    continue_on_error: bool = False
+
+    @field_validator("audit_log_retention", mode="before")
+    @classmethod
+    def normalize_audit_log_retention(cls, value: object) -> object:
+        return parse_duration(value)
+
+
 DatabaseLifespanFactory = Callable[[object], Callable[[FastAPI], AbstractAsyncContextManager[None]]]
 
 
@@ -404,12 +420,16 @@ class MongoDatabaseRuntime:
         *,
         collection_prefix: str,
         collection_suffix: str,
+        plugin_migration_mode: Literal["apply", "check", "disabled"] | None,
     ) -> None:
         from fastauth.storage.beanie import BeanieAdapter
 
         self.database = database
         self.collection_prefix = collection_prefix
         self.collection_suffix = collection_suffix
+        self.plugin_migration_mode: Literal["apply", "check", "disabled"] | None = (
+            plugin_migration_mode
+        )
         self.adapter = BeanieAdapter(
             database,  # type: ignore[arg-type]
             collection_prefix=collection_prefix,
@@ -417,13 +437,41 @@ class MongoDatabaseRuntime:
         )
 
     async def startup(self, auth: object, app: FastAPI) -> None:
-        del auth, app
+        del app
+        from fastauth.plugins.migrations import build_schema_plan_from_registry
         from fastauth.storage.beanie.documents import init_beanie_documents
+        from fastauth.storage.beanie.plugin_migrations import (
+            execute_mongo_plugin_migrations,
+        )
 
-        await init_beanie_documents(
-            self.database,  # type: ignore[arg-type]
-            collection_prefix=self.collection_prefix,
-            collection_suffix=self.collection_suffix,
+        auth_runtime = cast(Any, auth)
+        mode = resolve_plugin_migration_mode(auth_runtime, self.plugin_migration_mode)
+        plan = build_schema_plan_from_registry(auth_runtime.context.plugins)
+        try:
+            await init_beanie_documents(
+                self.database,  # type: ignore[arg-type]
+                collection_prefix=self.collection_prefix,
+                collection_suffix=self.collection_suffix,
+            )
+            result = await execute_mongo_plugin_migrations(
+                self.database,
+                plan=plan,
+                mode=mode,
+                collection_prefix=self.collection_prefix,
+                collection_suffix=self.collection_suffix,
+            )
+        except Exception:
+            await auth_runtime.observability.emit(
+                "migration.completed",
+                outcome="failure",
+                component="mongodb",
+            )
+            raise
+        await auth_runtime.observability.emit(
+            "migration.completed",
+            outcome="success",
+            component="mongodb",
+            applied_count=len(result.applied),
         )
 
     async def shutdown(self) -> None:
@@ -444,16 +492,53 @@ class PostgresDatabaseRuntime:
         adapter: DatabaseAdapter,
         *,
         migration_mode: Literal["apply", "check", "disabled"],
+        plugin_migration_mode: Literal["apply", "check", "disabled"] | None,
     ) -> None:
         self.adapter = adapter
         self.migration_mode = migration_mode
+        self.plugin_migration_mode: Literal["apply", "check", "disabled"] | None = (
+            plugin_migration_mode
+        )
 
     async def startup(self, auth: object, app: FastAPI) -> None:
-        del auth, app
-        if self.migration_mode == "apply":
-            await self.adapter.apply_migrations()  # type: ignore[attr-defined]
-        elif self.migration_mode == "check":
-            await self.adapter.assert_schema_current()  # type: ignore[attr-defined]
+        del app
+        from fastauth.plugins.migrations import build_schema_plan_from_registry
+        from fastauth.storage.postgres.adapter import PostgresAdapter
+        from fastauth.storage.postgres.plugin_migrations import (
+            execute_postgres_plugin_migrations,
+        )
+
+        auth_runtime = cast(Any, auth)
+        mode = resolve_plugin_migration_mode(auth_runtime, self.plugin_migration_mode)
+        plan = build_schema_plan_from_registry(auth_runtime.context.plugins)
+        adapter = cast(PostgresAdapter, self.adapter)
+        try:
+            if self.migration_mode == "apply":
+                await adapter.apply_migrations()
+            elif self.migration_mode == "check":
+                await adapter.assert_schema_current()
+            async with adapter.engine.begin() as connection:
+                result = await execute_postgres_plugin_migrations(
+                    connection,
+                    metadata=adapter.schema.metadata,
+                    plan=plan,
+                    mode=mode,
+                    table_prefix=adapter.schema.table_prefix,
+                    table_suffix=adapter.schema.table_suffix,
+                )
+        except Exception:
+            await auth_runtime.observability.emit(
+                "migration.completed",
+                outcome="failure",
+                component="postgres",
+            )
+            raise
+        await auth_runtime.observability.emit(
+            "migration.completed",
+            outcome="success",
+            component="postgres",
+            applied_count=len(result.applied),
+        )
 
     async def shutdown(self) -> None:
         engine = getattr(self.adapter, "engine", None)
@@ -520,6 +605,7 @@ class MongoDatabaseOptions(OptionsSection):
     database: MongoDatabase
     collection_prefix: str = ""
     collection_suffix: str = ""
+    plugin_migration_mode: Literal["apply", "check", "disabled"] | None = None
 
     @field_validator("collection_prefix", "collection_suffix")
     @classmethod
@@ -536,6 +622,7 @@ class MongoDatabaseOptions(OptionsSection):
             self.database,
             collection_prefix=self.collection_prefix,
             collection_suffix=self.collection_suffix,
+            plugin_migration_mode=self.plugin_migration_mode,
         )
 
     def backend_kind(self) -> DatabaseBackendKind:
@@ -548,6 +635,7 @@ class PostgresDatabaseOptions(OptionsSection):
     table_prefix: str = "fastauth_"
     table_suffix: str = ""
     migration_mode: Literal["apply", "check", "disabled"] = "apply"
+    plugin_migration_mode: Literal["apply", "check", "disabled"] | None = None
 
     def build_adapter(self) -> DatabaseAdapter:
         return self.build_runtime().adapter
@@ -562,6 +650,7 @@ class PostgresDatabaseOptions(OptionsSection):
                 table_suffix=self.table_suffix,
             ),
             migration_mode=self.migration_mode,
+            plugin_migration_mode=self.plugin_migration_mode,
         )
 
     def backend_kind(self) -> DatabaseBackendKind:
@@ -629,6 +718,7 @@ class FastAuthOptions(OptionsModel):
     )
     advanced: AdvancedOptions = Field(default_factory=lambda: AdvancedOptions())
     proxy: ProxyOptions = Field(default_factory=lambda: ProxyOptions())
+    maintenance: MaintenanceOptions = Field(default_factory=lambda: MaintenanceOptions())
 
     @field_validator("secret_key", mode="before")
     @classmethod
@@ -700,4 +790,20 @@ class FastAuthOptions(OptionsModel):
         ):
             raise ValueError("production should use migration_mode='check'")
 
+        plugin_migration_mode = getattr(self.database, "plugin_migration_mode", None)
+        if self.production_safety.forbid_automatic_migrations and plugin_migration_mode == "apply":
+            raise ValueError("production should not use plugin_migration_mode='apply'")
+
         return self
+
+
+def resolve_plugin_migration_mode(
+    auth: object,
+    configured: Literal["apply", "check", "disabled"] | None,
+) -> PluginMigrationMode:
+    auth_runtime = cast(Any, auth)
+    if configured is not None:
+        return PluginMigrationMode(configured)
+    if auth_runtime.options.deployment == "production":
+        return PluginMigrationMode.CHECK
+    return PluginMigrationMode.APPLY

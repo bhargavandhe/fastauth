@@ -4,6 +4,43 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-08-10
+
+### Added
+
+- Added explicit `/health/live` and `/health/ready` operations plus
+  `auth.api.liveness()` and lifecycle-aware `auth.api.readiness()`.
+- Added privacy-bounded operational telemetry, `X-Request-ID` propagation,
+  async sinks, and decorator/imperative subscriptions through
+  `auth.observability`.
+- Added bounded retention cleanup through `auth.maintenance.run()` and the
+  `fastauth maintenance` command for memory, MongoDB, and Postgres.
+- Added executable additive plugin schemas for MongoDB and Postgres with
+  deterministic plans, migration ledgers, fingerprints, apply/check/disabled
+  modes, namespace affixes, and concurrency control.
+- Added `API_STABILITY.md`, `FastAuthDeprecationWarning`, governance templates,
+  Dependabot configuration, CodeQL, and dependency-audit automation.
+- Added Python 3.13 and 3.14 to the supported and tested Python matrix.
+
+### Changed
+
+- Changed the project classifier to beta and established 0.14 as the public
+  compatibility boundary.
+- Changed the default minimum password length from 8 to 12 characters.
+- Changed the JWT Ed25519 algorithm spelling to the RFC 9864 `Ed25519` name.
+- Changed production plugin schema startup to check for pending migrations;
+  development applies them by default.
+- Changed tag publishing to validate version agreement and create a GitHub
+  Release with the exact wheel and source distribution published to PyPI.
+- Changed maintenance and plugin-migration failures to use typed
+  `FastAuthError` subclasses with stable error codes.
+
+### Removed
+
+- Removed the ambiguous `/health` route.
+- Removed the deprecated `EdDSA` JWT algorithm spelling and the unused
+  release-please configuration.
+
 ## [0.13.0] — 2026-07-30
 
 ### Added
@@ -733,7 +770,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/bhargavandhe/fastauth/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/bhargavandhe/fastauth/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/bhargavandhe/fastauth/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/bhargavandhe/fastauth/compare/v0.11.0...v0.12.0

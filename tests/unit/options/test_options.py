@@ -79,6 +79,19 @@ def test_fastauth_builds_reusable_credential_service_from_global_password_option
         auth.context.credential_service.validate_password(SecretStr("short-password"))
 
 
+def test_default_password_policy_requires_twelve_characters() -> None:
+    from fastauth import FastAuth
+    from fastauth.exceptions import InvalidRequestError
+
+    auth = FastAuth(FastAuthOptions(secret_key=SecretStr("a" * 64)))
+
+    with pytest.raises(InvalidRequestError):
+        auth.context.credential_service.validate_password(SecretStr("eleven-char"))
+    assert auth.context.credential_service.validate_password(SecretStr("twelve-chars")) == (
+        "twelve-chars"
+    )
+
+
 def test_fastauth_options_rejects_short_secret_key() -> None:
     with pytest.raises(ValidationError, match="secret_key must contain at least 32 bytes"):
         FastAuthOptions(secret_key=SecretStr("short"))
@@ -277,6 +290,22 @@ def test_production_options_reject_automatic_postgres_migrations() -> None:
                     "url": "postgresql+asyncpg://user:pass@localhost:5432/app",
                     "migration_mode": "apply",
                 }
+            ),
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+        )
+
+
+def test_production_options_reject_automatic_plugin_migrations() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="production should not use plugin_migration_mode='apply'",
+    ):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=MongoDatabaseOptions(
+                database=cast(MongoDatabase, object()),
+                plugin_migration_mode="apply",
             ),
             app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
         )

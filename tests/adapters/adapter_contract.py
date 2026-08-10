@@ -10,6 +10,7 @@ from fastauth.testing.adapter_contract import (
     CoreAdapterContract,
     FullAdapterContract,
     JwksAdapterContract,
+    MaintenanceAdapterContract,
     RateLimitAdapterContract,
     RefreshTokenAdapterContract,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "CoreAdapterContract",
     "FullAdapterContract",
     "JwksAdapterContract",
+    "MaintenanceAdapterContract",
     "RateLimitAdapterContract",
     "RefreshTokenAdapterContract",
 ]

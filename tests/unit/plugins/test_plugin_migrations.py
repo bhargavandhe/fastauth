@@ -5,10 +5,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from fastauth.exceptions import FastAuthError
 from fastauth.plugins.migrations import (
     MigrationOperation,
     PlannedMigration,
     PlannedTable,
+    PluginMigrationFingerprintError,
+    PluginMigrationPendingError,
     PluginSchemaConflictError,
     PluginSchemaPlan,
     build_schema_plan,
@@ -106,6 +109,8 @@ def test_build_schema_plan_reports_duplicate_table_and_field_conflicts() -> None
         build_schema_plan((beta, alpha))
 
     conflicts = exc_info.value.conflicts
+    assert isinstance(exc_info.value, FastAuthError)
+    assert exc_info.value.code == "PLUGIN_SCHEMA_CONFLICT"
     assert [conflict.kind for conflict in conflicts] == ["duplicate_table", "field_conflict"]
     assert conflicts[0].plugin_ids == ("alpha", "beta")
     assert conflicts[1].field_name == "external_id"
@@ -238,3 +243,16 @@ def test_migration_operation_validates_payload_for_operation_kind() -> None:
             table_name="api_keys",
             migration=PlannedMigration(plugin_id="api_key", name="create_api_keys", version=1),
         )
+
+
+def test_plugin_migration_runtime_failures_have_stable_error_codes() -> None:
+    migration = PlannedMigration(plugin_id="api_key", name="create_api_keys", version=1)
+
+    pending = PluginMigrationPendingError((migration,))
+    fingerprint = PluginMigrationFingerprintError("api_key", 1)
+
+    assert isinstance(pending, FastAuthError)
+    assert pending.code == "PLUGIN_MIGRATIONS_PENDING"
+    assert pending.pending == (migration,)
+    assert isinstance(fingerprint, FastAuthError)
+    assert fingerprint.code == "PLUGIN_MIGRATION_FINGERPRINT_MISMATCH"

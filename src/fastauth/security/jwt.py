@@ -61,7 +61,7 @@ def decrypt_private_key(blob: bytes, kek: bytes) -> bytes:
 def algorithm_to_jwk_type(alg: JwtAlgorithm) -> str:
     """Map a ``JwtAlgorithm`` to its corresponding JWK ``kty`` value."""
     return {
-        JwtAlgorithm.EDDSA: "OKP",
+        JwtAlgorithm.ED25519: "OKP",
         JwtAlgorithm.ES256: "EC",
         JwtAlgorithm.ES512: "EC",
         JwtAlgorithm.RS256: "RSA",
@@ -141,7 +141,7 @@ class JwksRegistry:
         return await self.create_key()
 
     async def create_key(self) -> JwksKey:
-        if self.alg is JwtAlgorithm.EDDSA:
+        if self.alg is JwtAlgorithm.ED25519:
             key_obj = jwk.OKPKey.generate_key("Ed25519")
         elif self.alg in (JwtAlgorithm.ES256, JwtAlgorithm.ES512):
             curve = "P-256" if self.alg is JwtAlgorithm.ES256 else "P-521"

@@ -34,7 +34,11 @@ from fastauth.api.commands import (
 from fastauth.api.responses import AuthenticationResponse, UserView, user_view
 from fastauth.domain.models import User, WireModel
 from fastauth.domain.value_objects import UserId, UserMetadata, Username
-from fastauth.exceptions import InvalidCredentialsError, InvalidRequestError
+from fastauth.exceptions import (
+    InvalidCredentialsError,
+    InvalidRequestError,
+    ServiceUnavailableError,
+)
 from fastauth.flows.change_email import (
     ConfirmEmailChangeRequest,
     RequestEmailChangeRequest,
@@ -137,15 +141,48 @@ from fastauth.plugins.email_password import require_email_password, require_user
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 
-__all__ = ["AuthApi", "HealthResponse"]
+__all__ = ["AuthApi", "LivenessResponse", "ReadinessResponse"]
 
 
-class HealthResponse(WireModel):
-    """Response payload for ``GET /auth/health`` and ``AuthApi.health()``."""
+class LivenessResponse(WireModel):
+    """Response proving the process and FastAuth router are alive."""
 
     model_config = ConfigDict(extra="forbid")
     status: str
     name: str
+
+
+class ReadinessResponse(WireModel):
+    """Response proving FastAuth can reach its configured database."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: str
+    name: str
+
+
+async def check_readiness(context: AuthContext) -> ReadinessResponse:
+    if not context.readiness.started:
+        await context.observability.emit(
+            "readiness.checked",
+            outcome="not_ready",
+            component="runtime",
+        )
+        raise ServiceUnavailableError()
+    try:
+        await context.adapter.ping()
+    except Exception as exc:
+        await context.observability.emit(
+            "readiness.checked",
+            outcome="not_ready",
+            component="database",
+        )
+        raise ServiceUnavailableError() from exc
+    await context.observability.emit(
+        "readiness.checked",
+        outcome="ready",
+        component="database",
+    )
+    return ReadinessResponse(status="ready", name=context.config.app.name)
 
 
 PrincipalCommandInput = (
@@ -211,8 +248,11 @@ class RouterAuthApi:
     def __init__(self, context: AuthContext) -> None:
         self.context = context
 
-    async def health(self) -> HealthResponse:
-        return HealthResponse(status="ok", name=self.context.config.app.name)
+    async def liveness(self) -> LivenessResponse:
+        return LivenessResponse(status="alive", name=self.context.config.app.name)
+
+    async def readiness(self) -> ReadinessResponse:
+        return await check_readiness(self.context)
 
     async def internal_sign_in_username(
         self,
@@ -488,8 +528,11 @@ class AuthApi:
         self.password = PasswordApi(self)
         self.user = UserApi(self)
 
-    async def health(self) -> HealthResponse:
-        return HealthResponse(status="ok", name=self.context.config.app.name)
+    async def liveness(self) -> LivenessResponse:
+        return LivenessResponse(status="alive", name=self.context.config.app.name)
+
+    async def readiness(self) -> ReadinessResponse:
+        return await check_readiness(self.context)
 
     async def create_user(
         self,

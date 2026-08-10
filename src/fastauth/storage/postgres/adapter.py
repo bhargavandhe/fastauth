@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
 from fastapi import FastAPI
-from sqlalchemy import and_, case, delete, func, insert, select, update
+from sqlalchemy import Column, and_, case, delete, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
@@ -150,6 +150,10 @@ class PostgresAdapter(
         self.engine = engine
         self.schema = build_postgres_schema(table_prefix, table_suffix)
 
+    async def ping(self) -> None:
+        async with self.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+
     @classmethod
     def from_url(
         cls,
@@ -264,6 +268,23 @@ class PostgresAdapter(
             result = await connection.execute(statement)
             row = result.mappings().one_or_none()
         return converter(row) if row is not None else None
+
+    async def delete_bounded(
+        self,
+        table: Table,
+        *,
+        timestamp_column: Column[datetime],
+        cutoff: datetime,
+        limit: int,
+        inclusive: bool = True,
+    ) -> int:
+        predicate = timestamp_column <= cutoff if inclusive else timestamp_column < cutoff
+        row_ids = (
+            select(table.c.id).where(predicate).order_by(timestamp_column, table.c.id).limit(limit)
+        )
+        async with self.engine.begin() as connection:
+            result = await connection.execute(delete(table).where(table.c.id.in_(row_ids)))
+        return int(result.rowcount or 0)
 
     async def insert_row(
         self,
@@ -386,6 +407,14 @@ class PostgresAdapter(
             duplicate_field="token_hash",
         )
 
+    async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.schema.sessions,
+            timestamp_column=self.schema.sessions.c.expires_at,
+            cutoff=cutoff,
+            limit=limit,
+        )
+
     async def get_session_by_token_hash(self, token_hash: str) -> Session | None:
         return await self.fetch_one_or_none(
             select(self.schema.sessions).where(self.schema.sessions.c.token_hash == token_hash),
@@ -435,6 +464,14 @@ class PostgresAdapter(
             row_to_refresh_token,
             duplicate_resource="refresh_token",
             duplicate_field="token_hash",
+        )
+
+    async def delete_expired_refresh_tokens(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.schema.refresh_tokens,
+            timestamp_column=self.schema.refresh_tokens.c.expires_at,
+            cutoff=cutoff,
+            limit=limit,
         )
 
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
@@ -609,6 +646,14 @@ class PostgresAdapter(
             duplicate_field="value_hash",
         )
 
+    async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.schema.verifications,
+            timestamp_column=self.schema.verifications.c.expires_at,
+            cutoff=cutoff,
+            limit=limit,
+        )
+
     async def get_verification(
         self,
         identifier: str,
@@ -733,15 +778,13 @@ class PostgresAdapter(
                 delete(self.schema.api_keys).where(self.schema.api_keys.c.id == api_key_id),
             )
 
-    async def delete_expired_api_keys(self) -> int:
-        async with self.engine.begin() as connection:
-            result = await connection.execute(
-                delete(self.schema.api_keys).where(
-                    self.schema.api_keys.c.expires_at.is_not(None),
-                    self.schema.api_keys.c.expires_at < current_utc_time(),
-                ),
-            )
-        return int(result.rowcount or 0)
+    async def delete_expired_api_keys(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.schema.api_keys,
+            timestamp_column=self.schema.api_keys.c.expires_at,
+            cutoff=cutoff,
+            limit=limit,
+        )
 
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
         return await self.insert_row(
@@ -814,6 +857,15 @@ class PostgresAdapter(
             rows_result = await connection.execute(rows_statement)
             rows = [row_to_audit_log(row) for row in rows_result.mappings()]
         return rows, total
+
+    async def delete_audit_logs_before(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.schema.audit_logs,
+            timestamp_column=self.schema.audit_logs.c.created_at,
+            cutoff=cutoff,
+            limit=limit,
+            inclusive=False,
+        )
 
     async def get_rate_limit(self, key: str) -> RateLimit | None:
         return await self.fetch_one_or_none(

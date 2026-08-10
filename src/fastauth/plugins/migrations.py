@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from typing import Literal, Protocol, Self
 
 from pydantic import Field, field_validator, model_validator
 
+from fastauth.domain.enums import PluginMigrationMode
+from fastauth.exceptions import FastAuthError
 from fastauth.plugins.schema import (
     FieldSpec,
     IndexSpec,
@@ -20,6 +25,12 @@ __all__ = [
     "MigrationOperation",
     "PlannedMigration",
     "PlannedTable",
+    "PluginMigrationError",
+    "PluginMigrationFingerprintError",
+    "PluginMigrationMode",
+    "PluginMigrationPendingError",
+    "PluginMigrationRecord",
+    "PluginMigrationResult",
     "PluginSchemaConflictError",
     "PluginSchemaPlan",
     "SchemaConflict",
@@ -27,10 +38,53 @@ __all__ = [
     "build_schema_plan",
     "build_schema_plan_from_registry",
     "render_migration_operations",
+    "schema_fingerprint",
 ]
 
 ConflictKind = Literal["duplicate_table", "field_conflict"]
 OperationKind = Literal["create_table", "create_index", "record_migration"]
+
+
+class PluginMigrationError(FastAuthError):
+    """Base class for executable plugin schema migration failures."""
+
+    default_code = "PLUGIN_MIGRATION_FAILED"
+
+
+class PluginMigrationPendingError(PluginMigrationError):
+    """Raised in check mode when declared plugin migrations are not recorded."""
+
+    default_code = "PLUGIN_MIGRATIONS_PENDING"
+
+    def __init__(self, pending: Sequence[PlannedMigration]) -> None:
+        self.pending = tuple(pending)
+        labels = ", ".join(
+            f"{migration.plugin_id}:{migration.version}" for migration in self.pending
+        )
+        super().__init__(message=f"pending plugin migrations: {labels}")
+
+
+class PluginMigrationFingerprintError(PluginMigrationError):
+    """Raised when an already-recorded plugin migration changed in place."""
+
+    default_code = "PLUGIN_MIGRATION_FINGERPRINT_MISMATCH"
+
+    def __init__(self, plugin_id: str, version: int) -> None:
+        self.plugin_id = plugin_id
+        self.version = version
+        super().__init__(
+            message=f"plugin migration fingerprint mismatch: {plugin_id}:{version}",
+        )
+
+
+class PluginMigrationRecord(PluginSchemaModel):
+    """Backend-neutral row stored in each plugin migration ledger."""
+
+    plugin_id: str
+    migration_name: str
+    version: int = Field(ge=1)
+    schema_fingerprint: str = Field(min_length=64, max_length=64)
+    applied_at: datetime
 
 
 class SchemaProvider(Protocol):
@@ -73,13 +127,15 @@ class SchemaConflict(PluginSchemaModel):
         return value
 
 
-class PluginSchemaConflictError(ValueError):
+class PluginSchemaConflictError(PluginMigrationError):
     """Raised when multiple plugin schema declarations cannot be aggregated."""
+
+    default_code = "PLUGIN_SCHEMA_CONFLICT"
 
     def __init__(self, conflicts: Sequence[SchemaConflict]) -> None:
         self.conflicts = tuple(conflicts)
         messages = "; ".join(conflict.message for conflict in self.conflicts)
-        super().__init__(messages or "plugin schema declarations conflict")
+        super().__init__(message=messages or "plugin schema declarations conflict")
 
 
 class PlannedTable(PluginSchemaModel):
@@ -136,6 +192,14 @@ class PlannedMigration(PluginSchemaModel):
     @classmethod
     def validate_name(cls, value: str) -> str:
         return validate_identifier(value, label="migration name")
+
+
+class PluginMigrationResult(PluginSchemaModel):
+    """Result returned by backend plugin migration executors."""
+
+    mode: PluginMigrationMode
+    applied: tuple[PlannedMigration, ...] = ()
+    pending: tuple[PlannedMigration, ...] = ()
 
 
 class MigrationOperation(PluginSchemaModel):
@@ -219,6 +283,21 @@ class PluginSchemaPlan(PluginSchemaModel):
     def to_operations(self) -> tuple[MigrationOperation, ...]:
         """Render this plan as adapter-neutral migration operations."""
         return render_migration_operations(self)
+
+
+def schema_fingerprint(plan: PluginSchemaPlan, migration: PlannedMigration) -> str:
+    """Hash the deterministic schema state declared for one plugin version."""
+    payload = {
+        "plugin_id": migration.plugin_id,
+        "migration": migration.model_dump(mode="json"),
+        "tables": [
+            table.model_dump(mode="json")
+            for table in plan.tables
+            if table.plugin_id == migration.plugin_id
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def build_schema_plan_from_registry(registry: SchemaProvider) -> PluginSchemaPlan:

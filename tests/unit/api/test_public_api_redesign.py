@@ -223,10 +223,10 @@ def test_auth_inspector_reports_plugin_route_sources_explicitly() -> None:
     )
 
     routes = auth.inspect().routes
-    health_route = next(route for route in routes if route.name == "fastauth_health")
+    liveness_route = next(route for route in routes if route.name == "fastauth_liveness")
     plugin_route = next(route for route in routes if route.name == "inspect_plugin_ping")
 
-    assert health_route.source == "core"
+    assert liveness_route.source == "core"
     assert plugin_route.path == "/inspect-plugin/ping"
     assert plugin_route.source == "plugin"
 

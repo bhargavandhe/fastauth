@@ -27,11 +27,13 @@ def mongo(
     database: MongoDatabase,
     collection_prefix: str = "",
     collection_suffix: str = "",
+    plugin_migration_mode: Literal["apply", "check", "disabled"] | None = None,
 ) -> MongoDatabaseOptions:
     return MongoDatabaseOptions(
         database=database,
         collection_prefix=collection_prefix,
         collection_suffix=collection_suffix,
+        plugin_migration_mode=plugin_migration_mode,
     )
 
 
@@ -41,6 +43,7 @@ def postgres(
     table_prefix: str = "fastauth_",
     table_suffix: str = "",
     migration_mode: Literal["apply", "check", "disabled"] = "apply",
+    plugin_migration_mode: Literal["apply", "check", "disabled"] | None = None,
 ) -> PostgresDatabaseOptions:
     return PostgresDatabaseOptions.model_validate(
         {
@@ -49,6 +52,7 @@ def postgres(
             "table_prefix": table_prefix,
             "table_suffix": table_suffix,
             "migration_mode": migration_mode,
+            "plugin_migration_mode": plugin_migration_mode,
         },
     )
 

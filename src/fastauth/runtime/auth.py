@@ -18,9 +18,10 @@ from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import Plugin, PluginInfo, PluginRegistry
 from fastauth.runtime.api import AuthApi
 from fastauth.runtime.capabilities import Capability, CapabilityRegistry
-from fastauth.runtime.context import AuthContext
+from fastauth.runtime.context import AuthContext, RuntimeReadiness
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks, HookHandler
+from fastauth.runtime.maintenance import MaintenanceManager
 from fastauth.runtime.managers import (
     AuthInspector,
     AuthRoutes,
@@ -32,6 +33,11 @@ from fastauth.runtime.managers import (
     SignInManager,
     SignUpManager,
     UsersManager,
+)
+from fastauth.runtime.observability import (
+    ObservabilityManager,
+    ObservabilityMiddleware,
+    ObservabilitySink,
 )
 from fastauth.security.lockout import AccountLockoutTracker
 from fastauth.security.passwords import Argon2idHasher, CredentialService, PasswordHasher
@@ -82,6 +88,7 @@ class FastAuth:
         password_hasher: PasswordHasher | None = None,
         session_strategy: SessionStrategy | None = None,
         token_service: TokenService | None = None,
+        observability_sink: ObservabilitySink | None = None,
     ) -> None:
         self.options = options
         self.installed_plugins = tuple(plugins)
@@ -191,6 +198,7 @@ class FastAuth:
             token_service=token_service,
         )
         event_bus = EventBus()
+        observability = ObservabilityManager(observability_sink)
 
         self.context = AuthContext(
             config=config,
@@ -211,6 +219,8 @@ class FastAuth:
             rate_limiter=rate_limiter,
             lockout_tracker=lockout_tracker,
             refresh_token_service=refresh_token_service,
+            observability=observability,
+            readiness=RuntimeReadiness(),
         )
 
         # Late-bind the context into every plugin before building server API
@@ -257,6 +267,12 @@ class FastAuth:
         ]
         self.routes = AuthRoutes.relative()
         self.inspect = AuthInspector(self)
+        self.observability = observability
+        self.maintenance = MaintenanceManager(
+            adapter,
+            config.maintenance,
+            observability=observability,
+        )
 
     def on(
         self,
@@ -309,6 +325,7 @@ class FastAuth:
             app.add_exception_handler(FastAuthError, fastauth_error_handler)
         install_csrf(app, self.context)
         install_security_headers(app, self.context)
+        app.add_middleware(ObservabilityMiddleware, manager=self.observability)
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI | None = None) -> AsyncGenerator[None, None]:
@@ -319,7 +336,11 @@ class FastAuth:
         body_error: BaseException | None = None
         try:
             async with self.plugin_lifespan():
-                yield
+                self.context.readiness.started = True
+                try:
+                    yield
+                finally:
+                    self.context.readiness.started = False
         except BaseException as exc:
             body_error = exc
             suppressed = False

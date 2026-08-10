@@ -36,7 +36,8 @@ That's it. You now have `/auth/sign-up/email`, `/auth/sign-in/email`,
 `/auth/delete-account`, `/auth/delete-account/request`,
 `/auth/delete-account/confirm`,
 `/auth/change-email/{request,confirm}`, `/auth/sessions` (list / revoke /
-revoke-others), `/auth/refresh`, and `/auth/health` wired into your FastAPI
+revoke-others), `/auth/refresh`, `/auth/health/live`, and `/auth/health/ready`
+wired into your FastAPI
 application. Rate-limiting, account-lockout, and refresh tokens are part of
 the router.
 
@@ -267,7 +268,7 @@ fastauth/
 
 ## Status
 
-**v0.13.0** — current release. Coverage spans unit tests, adapter-contract
+**v0.14.0** — current beta release. Coverage spans unit tests, adapter-contract
 tests, integration flows, CLI behavior, and the quickstart example.
 `pyright --strict` is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed
 feature list.

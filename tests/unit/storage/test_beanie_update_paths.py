@@ -239,7 +239,7 @@ from fastauth.storage.beanie.documents import (
             lambda: JwksKeyDoc.model_construct(
                 id=ObjectId(),
                 kid="signing-key",
-                alg=JwtAlgorithm.EDDSA,
+                alg=JwtAlgorithm.ED25519,
                 public_key="{}",
                 private_key_encrypted=b"\x00",
                 created_at=datetime.now(UTC) - timedelta(days=1),

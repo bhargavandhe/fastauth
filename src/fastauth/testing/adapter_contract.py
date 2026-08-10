@@ -41,6 +41,7 @@ __all__ = [
     "CoreAdapterContract",
     "FullAdapterContract",
     "JwksAdapterContract",
+    "MaintenanceAdapterContract",
     "RateLimitAdapterContract",
     "RefreshTokenAdapterContract",
 ]
@@ -276,7 +277,7 @@ class JwksAdapterContract(AdapterContractBase):
     """Contract tests for ``JwksKeyStore`` implementations."""
 
     async def test_jwks_key_round_trip(self, adapter: JwksKeyStore) -> None:
-        key = JwksKey(kid="k1", alg="EdDSA", public_key="{}", private_key_encrypted=b"\x00")
+        key = JwksKey(kid="k1", alg="Ed25519", public_key="{}", private_key_encrypted=b"\x00")
         await adapter.create_jwks_key(key)
         keys = await adapter.list_jwks_keys()
         assert key in keys
@@ -313,6 +314,153 @@ class AuditLogAdapterContract(AdapterContractBase):
         )
         assert total == 1
         assert rows[0].event_type is AuditEventType.USER_SIGNED_IN
+
+
+class MaintenanceAdapterContract(AdapterContractBase):
+    """Contract tests for bounded retention operations."""
+
+    async def test_ping(self, adapter: ContractAdapter) -> None:
+        await adapter.ping()
+
+    async def test_cleanup_operations_are_bounded_and_idempotent(
+        self,
+        adapter: ContractAdapter,
+    ) -> None:
+        now = datetime.now(UTC)
+        cutoff = now + timedelta(days=10)
+        user = await adapter.create_user(User(email="maintenance-contract@example.com"))
+        expired_sessions: list[Session] = []
+        for index in range(2):
+            expired_sessions.append(
+                await adapter.create_session(
+                    Session(
+                        user_id=user.id,
+                        token_hash=f"maintenance-expired-session-{index}",
+                        expires_at=now + timedelta(days=1),
+                    )
+                )
+            )
+        live_session = await adapter.create_session(
+            Session(
+                user_id=user.id,
+                token_hash="maintenance-live-session",
+                expires_at=now + timedelta(days=20),
+            )
+        )
+
+        assert await adapter.delete_expired_sessions(cutoff=cutoff, limit=1) == 1
+        assert await adapter.delete_expired_sessions(cutoff=cutoff, limit=1) == 1
+        assert await adapter.delete_expired_sessions(cutoff=cutoff, limit=1) == 0
+        assert await adapter.get_session_by_token_hash(live_session.token_hash) is not None
+        for row in expired_sessions:
+            assert await adapter.get_session_by_token_hash(row.token_hash) is None
+
+        expired_refresh_id = new_id()
+        expired_refresh = await adapter.create_refresh_token(
+            RefreshToken(
+                id=expired_refresh_id,
+                user_id=user.id,
+                session_id=live_session.id,
+                token_hash="maintenance-expired-refresh",
+                family_id=expired_refresh_id,
+                family_created_at=now,
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        live_refresh_id = new_id()
+        live_refresh = await adapter.create_refresh_token(
+            RefreshToken(
+                id=live_refresh_id,
+                user_id=user.id,
+                session_id=live_session.id,
+                token_hash="maintenance-live-refresh",
+                family_id=live_refresh_id,
+                family_created_at=now,
+                expires_at=now + timedelta(days=20),
+            )
+        )
+        assert await adapter.delete_expired_refresh_tokens(cutoff=cutoff, limit=1) == 1
+        assert await adapter.get_refresh_token_by_hash(expired_refresh.token_hash) is None
+        assert await adapter.get_refresh_token_by_hash(live_refresh.token_hash) is not None
+
+        expired_verification = await adapter.create_verification(
+            Verification(
+                identifier=user.email,
+                value_hash="maintenance-expired-verification",
+                purpose=VerificationPurpose.EMAIL_VERIFICATION,
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        live_verification = await adapter.create_verification(
+            Verification(
+                identifier=user.email,
+                value_hash="maintenance-live-verification",
+                purpose=VerificationPurpose.PASSWORD_RESET,
+                expires_at=now + timedelta(days=20),
+            )
+        )
+        assert await adapter.delete_expired_verifications(cutoff=cutoff, limit=1) == 1
+        assert (
+            await adapter.get_verification(
+                expired_verification.identifier,
+                expired_verification.purpose,
+                expired_verification.value_hash,
+            )
+            is None
+        )
+        assert (
+            await adapter.get_verification(
+                live_verification.identifier,
+                live_verification.purpose,
+                live_verification.value_hash,
+            )
+            is not None
+        )
+
+        expired_api_key = await adapter.create_api_key(
+            ApiKey(
+                user_id=user.id,
+                name="maintenance-expired",
+                key_hash="maintenance-expired-key",
+                key_prefix="ak_expired",
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        live_api_key = await adapter.create_api_key(
+            ApiKey(
+                user_id=user.id,
+                name="maintenance-live",
+                key_hash="maintenance-live-key",
+                key_prefix="ak_live",
+                expires_at=now + timedelta(days=20),
+            )
+        )
+        assert await adapter.delete_expired_api_keys(cutoff=cutoff, limit=1) == 1
+        assert await adapter.get_api_key_by_id(expired_api_key.id) is None
+        assert await adapter.get_api_key_by_id(live_api_key.id) is not None
+
+        old_log = await adapter.create_audit_log(
+            AuditLog(event_type=AuditEventType.USER_CREATED, created_at=now - timedelta(days=20))
+        )
+        new_log = await adapter.create_audit_log(
+            AuditLog(event_type=AuditEventType.USER_CREATED, created_at=now)
+        )
+        assert (
+            await adapter.delete_audit_logs_before(
+                cutoff=now - timedelta(days=10),
+                limit=1,
+            )
+            == 1
+        )
+        rows, _ = await adapter.list_audit_logs(
+            user_id=None,
+            event_type=AuditEventType.USER_CREATED,
+            identifier=None,
+            limit=100,
+            offset=0,
+        )
+        assert old_log.id not in {row.id for row in rows}
+        assert new_log.id in {row.id for row in rows}
 
 
 class RateLimitAdapterContract(AdapterContractBase):
@@ -437,6 +585,7 @@ class FullAdapterContract(
     ApiKeyAdapterContract,
     JwksAdapterContract,
     AuditLogAdapterContract,
+    MaintenanceAdapterContract,
     RateLimitAdapterContract,
 ):
     """Full first-party adapter contract covering core and optional stores."""

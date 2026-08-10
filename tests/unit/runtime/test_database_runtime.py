@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -9,8 +10,22 @@ from pydantic import SecretStr
 from pytest import MonkeyPatch
 
 from fastauth import FastAuth, FastAuthOptions
-from fastauth.options import CustomDatabaseOptions, MemoryDatabaseOptions
+from fastauth.domain.enums import PluginMigrationMode
+from fastauth.options import (
+    CustomDatabaseOptions,
+    MemoryDatabaseOptions,
+    resolve_plugin_migration_mode,
+)
 from fastauth.storage.memory import InMemoryAdapter
+
+
+def test_plugin_migration_mode_defaults_follow_deployment() -> None:
+    development = SimpleNamespace(options=SimpleNamespace(deployment="development"))
+    production = SimpleNamespace(options=SimpleNamespace(deployment="production"))
+
+    assert resolve_plugin_migration_mode(development, None) is PluginMigrationMode.APPLY
+    assert resolve_plugin_migration_mode(production, None) is PluginMigrationMode.CHECK
+    assert resolve_plugin_migration_mode(production, "disabled") is PluginMigrationMode.DISABLED
 
 
 class FakeDatabaseRuntime:

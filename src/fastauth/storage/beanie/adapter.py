@@ -31,7 +31,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from beanie import PydanticObjectId
+from beanie import Document, PydanticObjectId
 from fastapi import FastAPI
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
@@ -139,6 +139,31 @@ class BeanieAdapter:
         self.audit_log_doc: Any = self.documents.audit_log
         self.rate_limit_doc: Any = self.documents.rate_limit
 
+    async def ping(self) -> None:
+        await self.database.command("ping")
+
+    async def delete_bounded(
+        self,
+        document: type[Document],
+        *,
+        field: str,
+        cutoff: datetime,
+        limit: int,
+        inclusive: bool = True,
+    ) -> int:
+        operator = "$lte" if inclusive else "$lt"
+        docs = (
+            await document.find({field: {operator: truncate_to_millis(cutoff)}})
+            .sort(f"+{field}", "+_id")
+            .limit(limit)
+            .to_list()
+        )
+        ids = [doc.id for doc in docs if doc.id is not None]
+        if not ids:
+            return 0
+        result = await document.find({"_id": {"$in": ids}}).delete()
+        return int(result.deleted_count) if result and result.deleted_count else 0
+
     def lifespan(self, auth: FastAuth) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
         """Return a FastAPI lifespan that initialises Beanie, then fastauth.
 
@@ -235,6 +260,14 @@ class BeanieAdapter:
         await doc.delete()
 
     # ----- Session -----
+    async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.session_doc,
+            field="expires_at",
+            cutoff=cutoff,
+            limit=limit,
+        )
+
     async def create_session(self, session: Session) -> Session:
         normalise_datetimes(session)
         # ``user_id`` must be a valid ObjectId hex (set from a prior ``create_user``
@@ -295,6 +328,14 @@ class BeanieAdapter:
         return int(result.deleted_count) if result and result.deleted_count else 0
 
     # ----- RefreshToken -----
+    async def delete_expired_refresh_tokens(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.refresh_token_doc,
+            field="expires_at",
+            cutoff=cutoff,
+            limit=limit,
+        )
+
     async def create_refresh_token(self, token: RefreshToken) -> RefreshToken:
         normalise_datetimes(token)
         data = token.model_dump(exclude={"id"})
@@ -481,6 +522,14 @@ class BeanieAdapter:
             await doc.delete()
 
     # ----- Verification -----
+    async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.verification_doc,
+            field="expires_at",
+            cutoff=cutoff,
+            limit=limit,
+        )
+
     async def create_verification(self, verification: Verification) -> Verification:
         normalise_datetimes(verification)
         doc = from_verification(verification, include_id=False)
@@ -604,9 +653,13 @@ class BeanieAdapter:
         if doc:
             await doc.delete()
 
-    async def delete_expired_api_keys(self) -> int:
-        result = await self.api_key_doc.find({"expires_at": {"$lt": datetime.now(UTC)}}).delete()
-        return int(result.deleted_count) if result and result.deleted_count else 0
+    async def delete_expired_api_keys(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.api_key_doc,
+            field="expires_at",
+            cutoff=cutoff,
+            limit=limit,
+        )
 
     # ----- JwksKey -----
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
@@ -673,6 +726,15 @@ class BeanieAdapter:
         total = await cursor.count()
         docs = await cursor.sort("-created_at").skip(offset).limit(limit).to_list()
         return [to_audit_log(doc) for doc in docs], total
+
+    async def delete_audit_logs_before(self, *, cutoff: datetime, limit: int) -> int:
+        return await self.delete_bounded(
+            self.audit_log_doc,
+            field="created_at",
+            cutoff=cutoff,
+            limit=limit,
+            inclusive=False,
+        )
 
     # ----- RateLimit -----
     async def get_rate_limit(self, key: str) -> RateLimit | None:

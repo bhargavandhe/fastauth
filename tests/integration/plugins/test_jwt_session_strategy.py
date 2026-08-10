@@ -118,7 +118,7 @@ async def test_token_is_verifiable_against_jwks(
     jwks = (await client.get("/auth/jwks")).json()
     assert len(jwks["keys"]) >= 1
     key_set = jwk.KeySet([jwk.import_key(item) for item in jwks["keys"]])
-    decoded = jwt.decode(token, key_set, algorithms=["EdDSA"])
+    decoded = jwt.decode(token, key_set, algorithms=["Ed25519"])
     assert decoded.claims["iss"] == "http://t"
     assert decoded.claims["aud"] == "http://t"
     assert decoded.claims["email"] == "carol@example.com"

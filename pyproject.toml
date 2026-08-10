@@ -1,6 +1,6 @@
 [project]
 name = "fastauth-py"
-version = "0.13.0"
+version = "0.14.0"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -19,11 +19,13 @@ keywords = [
   "sqlalchemy",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Framework :: FastAPI",
   "Framework :: Pydantic :: 2",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
 dependencies = [
@@ -38,9 +40,11 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/bhargavandhe/fastauth"
-Documentation = "https://github.com/bhargavandhe/fastauth#readme"
+Documentation = "https://bhargavandhe.github.io/fastauth/"
 Repository = "https://github.com/bhargavandhe/fastauth"
 Issues = "https://github.com/bhargavandhe/fastauth/issues"
+Changelog = "https://github.com/bhargavandhe/fastauth/blob/main/CHANGELOG.md"
+Security = "https://github.com/bhargavandhe/fastauth/security/policy"
 
 [project.optional-dependencies]
 beanie = ["beanie>=2,<3"]
@@ -72,7 +76,14 @@ build-backend = "hatchling.build"
 packages = ["src/fastauth"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/fastauth", "/README.md", "/LICENSE"]
+include = [
+  "/src/fastauth",
+  "/README.md",
+  "/LICENSE",
+  "/CHANGELOG.md",
+  "/API_STABILITY.md",
+  "/SECURITY.md",
+]
 
 [tool.ruff]
 line-length = 100

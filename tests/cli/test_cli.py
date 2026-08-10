@@ -28,6 +28,27 @@ def test_info_prints_versions_and_optional_dependency_status() -> None:
     assert "sqlalchemy:" in result.stdout
 
 
+def test_maintenance_runs_bounded_cleanup_and_prints_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["maintenance", "--backend", "memory", "--batch-size", "25", "--max-batches", "2"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "deletedApiKeys": 0,
+        "deletedAuditLogs": 0,
+        "deletedRefreshTokens": 0,
+        "deletedSessions": 0,
+        "deletedVerifications": 0,
+        "failures": [],
+        "ok": True,
+    }
+
+
 def test_inspect_prints_default_options_summary() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["inspect"])
@@ -198,6 +219,71 @@ def test_migrate_dry_run_prints_mongo_plan() -> None:
     assert "Backend: mongo" in result.stdout
     assert "Tracked migrations: none" in result.stdout
     assert "users" in result.stdout
+
+
+def test_migrate_dry_run_prints_executable_plugin_plan(
+    tmp_path: pathlib.Path,
+    monkeypatch: Any,
+) -> None:
+    module = tmp_path / "plugin_auth.py"
+    module.write_text(
+        """
+from pydantic import SecretStr
+from fastauth import FastAuth, FastAuthOptions
+from fastauth.plugins import FieldSpec, MigrationSpec, Plugin, PluginSchema, TableSpec
+
+class RecordsPlugin(Plugin):
+    id = "records"
+    def schemas(self):
+        return [PluginSchema(
+            plugin_id=self.id,
+            tables=(TableSpec(
+                name="records",
+                fields=(FieldSpec(name="id", python_type="str"),),
+            ),),
+            migrations=(MigrationSpec(name="create_records", version=1),),
+        )]
+
+auth = FastAuth(
+    FastAuthOptions(secret_key=SecretStr("x" * 64)),
+    plugins=[RecordsPlugin()],
+)
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "migrate-dry-run",
+            "--backend",
+            "postgres",
+            "--auth",
+            "plugin_auth:auth",
+            "--plugin-migrations",
+            "check",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Plugin migrations: check" in result.stdout
+    assert "create_table: records records" in result.stdout
+    assert "record_migration: records create_records" in result.stdout
+
+
+def test_migrate_rejects_unknown_plugin_migration_mode() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "migrate-dry-run",
+            "--plugin-migrations",
+            "sometimes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must be apply, check, or disabled" in result.stderr
 
 
 def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:

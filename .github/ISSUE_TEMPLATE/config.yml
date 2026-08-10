@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage questions and discussions
+    url: https://github.com/bhargavandhe/fastauth/discussions
+    about: Ask for integration help or discuss a design.
+  - name: Security vulnerability
+    url: https://github.com/bhargavandhe/fastauth/security/policy
+    about: Follow the private reporting instructions in SECURITY.md.

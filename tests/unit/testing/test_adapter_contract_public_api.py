@@ -53,6 +53,7 @@ def test_adapter_contract_module_exports_split_contracts() -> None:
         "CoreAdapterContract",
         "FullAdapterContract",
         "JwksAdapterContract",
+        "MaintenanceAdapterContract",
         "RateLimitAdapterContract",
         "RefreshTokenAdapterContract",
     }

@@ -79,6 +79,8 @@ A production plugin should declare every surface it contributes:
 - `rate_limit_rules()` for route-specific limits.
 - `trusted_origins()` for callback origins that should pass CSRF origin checks.
 - `lifespan_startup()` / `lifespan_shutdown()` for managed external resources.
+- `schemas()` for additive MongoDB/Postgres collections, tables, fields, and
+  indexes owned by the plugin.
 
 Applications can inspect installed capabilities through `auth.capabilities`.
 Prefer typed constants for first-party features:
@@ -100,6 +102,66 @@ model names. It does not expose live handler callables.
 Plugin surfaces are snapshotted when `FastAuth` builds its `PluginRegistry`.
 Do not make `endpoints()`, `capabilities()`, or related declaration hooks
 depend on mutable runtime state after construction.
+
+## Executable schemas
+
+Plugin schemas are deterministic, additive declarations. Each plugin-owned
+table or collection must have at least one migration marker before it can be
+executed. Fastauth supports field types `str`, `int`, `float`, `bool`,
+`datetime`, `bytes`, and `json`; arbitrary SQL, MongoDB commands, destructive
+alterations, renames, and data migrations are intentionally excluded.
+
+```python
+from fastauth.plugins import FieldSpec, IndexSpec, MigrationSpec, PluginSchema, TableSpec
+
+def schemas(self):
+    return [
+        PluginSchema(
+            plugin_id=self.id,
+            tables=(
+                TableSpec(
+                    name="webhook_deliveries",
+                    fields=(
+                        FieldSpec(name="id", python_type="str", unique=True),
+                        FieldSpec(name="created_at", python_type="datetime", indexed=True),
+                    ),
+                    indexes=(
+                        IndexSpec(
+                            name="webhook_deliveries_created_at_idx",
+                            fields=("created_at",),
+                        ),
+                    ),
+                ),
+            ),
+            migrations=(
+                MigrationSpec(name="create_webhook_deliveries", version=1),
+            ),
+        )
+    ]
+```
+
+MongoDB and Postgres store a ledger with plugin id, migration name, version,
+schema fingerprint, and application time. Replaying a plan is idempotent;
+changing the latest recorded version in place is an error. Postgres applies
+DDL and ledger records transactionally under an advisory lock. MongoDB DDL is
+not transactionally equivalent, so its executor is retry-safe and converges
+after partial work.
+
+Use `plugin_migration_mode="apply"`, `"check"`, or `"disabled"` on MongoDB or
+Postgres database options. The default is `apply` in development and `check`
+in production. For deploy jobs, load the application's plugin registry:
+
+```bash
+fastauth migrate \
+  --postgres-url postgresql+asyncpg://... \
+  --auth myapp.auth:auth \
+  --plugin-migrations apply
+
+fastauth migrate-dry-run \
+  --backend postgres \
+  --auth myapp.auth:auth \
+  --plugin-migrations check
+```
 
 Plugin server APIs are exposed under `auth.api.plugins` by name and by plugin
 id:
