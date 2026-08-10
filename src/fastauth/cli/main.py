@@ -11,6 +11,7 @@ import sys
 import tomllib
 from collections.abc import Mapping
 from copy import deepcopy
+from datetime import timedelta
 from typing import Any, cast
 
 import pydantic
@@ -634,6 +635,131 @@ def migrate_command(
             await adapter.engine.dispose()
 
     asyncio.run(run())
+
+
+@app.command("maintenance")
+def maintenance_command(
+    backend: str = typer.Option(
+        "memory", "--backend", "-b", help="Backend: memory, mongo, or postgres"
+    ),
+    mongo_url: str | None = typer.Option(None, "--mongo-url", help="MongoDB connection URL"),
+    postgres_url: str | None = typer.Option(
+        None,
+        "--postgres-url",
+        help="Postgres connection URL, for example postgresql+asyncpg://...",
+    ),
+    database: str = typer.Option("fastauth", "--database", "-d", help="MongoDB database name"),
+    mongo_collection_prefix: str = typer.Option(
+        "",
+        "--mongo-collection-prefix",
+        help="Prefix for MongoDB collection names",
+    ),
+    mongo_collection_suffix: str = typer.Option(
+        "",
+        "--mongo-collection-suffix",
+        help="Suffix for MongoDB collection names",
+    ),
+    postgres_table_prefix: str = typer.Option(
+        POSTGRES_DEFAULT_PREFIX,
+        "--postgres-table-prefix",
+        help="Prefix for Postgres table names",
+    ),
+    postgres_table_suffix: str = typer.Option(
+        "",
+        "--postgres-table-suffix",
+        help="Suffix for Postgres table names",
+    ),
+    batch_size: int = typer.Option(500, "--batch-size", min=1, max=10_000),
+    max_batches: int = typer.Option(100, "--max-batches", min=1, max=10_000),
+    audit_log_retention_days: int | None = typer.Option(
+        None,
+        "--audit-log-retention-days",
+        min=1,
+        help="Delete audit logs older than this many days",
+    ),
+    continue_on_error: bool = typer.Option(False, "--continue-on-error"),
+) -> None:
+    """Delete expired authentication data in bounded, idempotent batches."""
+    from fastauth.options import MaintenanceOptions
+    from fastauth.runtime.maintenance import MaintenanceManager, MaintenanceResult
+
+    backend_key = backend.lower()
+    if backend_key not in {"memory", "mongo", "postgres"}:
+        rich_print("[red]--backend must be memory, mongo, or postgres[/red]")
+        raise typer.Exit(code=1)
+    if backend_key == "mongo" and mongo_url is None:
+        rich_print("[red]--mongo-url is required for the mongo backend[/red]")
+        raise typer.Exit(code=1)
+    if backend_key == "postgres" and postgres_url is None:
+        rich_print("[red]--postgres-url is required for the postgres backend[/red]")
+        raise typer.Exit(code=1)
+
+    options = MaintenanceOptions(
+        batch_size=batch_size,
+        max_batches=max_batches,
+        audit_log_retention=(
+            timedelta(days=audit_log_retention_days)
+            if audit_log_retention_days is not None
+            else None
+        ),
+        continue_on_error=continue_on_error,
+    )
+
+    async def run() -> MaintenanceResult:
+        if backend_key == "memory":
+            from fastauth.storage.memory import InMemoryAdapter
+
+            return await MaintenanceManager(InMemoryAdapter(), options).run()
+
+        if backend_key == "mongo":
+            from pymongo import AsyncMongoClient
+
+            from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
+
+            assert mongo_url is not None
+            client: AsyncMongoClient[Any] = AsyncMongoClient(
+                mongo_url,
+                uuidRepresentation="standard",
+            )
+            try:
+                mongo_database = client[database]
+                await init_beanie_documents(
+                    mongo_database,
+                    collection_prefix=mongo_collection_prefix,
+                    collection_suffix=mongo_collection_suffix,
+                )
+                adapter = BeanieAdapter(
+                    mongo_database,
+                    collection_prefix=mongo_collection_prefix,
+                    collection_suffix=mongo_collection_suffix,
+                )
+                return await MaintenanceManager(adapter, options).run()
+            finally:
+                await client.close()
+
+        from fastauth.storage.postgres import PostgresAdapter
+
+        assert postgres_url is not None
+        adapter = PostgresAdapter.from_url(
+            postgres_url,
+            table_prefix=postgres_table_prefix,
+            table_suffix=postgres_table_suffix,
+        )
+        try:
+            await adapter.assert_schema_current()
+            return await MaintenanceManager(adapter, options).run()
+        finally:
+            await adapter.engine.dispose()
+
+    try:
+        result = asyncio.run(run())
+    except Exception as exc:
+        rich_print("[red]maintenance failed; check server logs[/red]")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(result.model_dump_json(by_alias=True))
+    if not result.ok:
+        raise typer.Exit(code=1)
 
 
 @app.command("generate-secret")

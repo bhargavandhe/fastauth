@@ -28,6 +28,27 @@ def test_info_prints_versions_and_optional_dependency_status() -> None:
     assert "sqlalchemy:" in result.stdout
 
 
+def test_maintenance_runs_bounded_cleanup_and_prints_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["maintenance", "--backend", "memory", "--batch-size", "25", "--max-batches", "2"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "deletedApiKeys": 0,
+        "deletedAuditLogs": 0,
+        "deletedRefreshTokens": 0,
+        "deletedSessions": 0,
+        "deletedVerifications": 0,
+        "failures": [],
+        "ok": True,
+    }
+
+
 def test_inspect_prints_default_options_summary() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["inspect"])

@@ -46,6 +46,7 @@ __all__ = [
     "EmailVerificationOptions",
     "FastAuthOptions",
     "LockoutOptions",
+    "MaintenanceOptions",
     "MemoryDatabaseOptions",
     "MemoryDatabaseRuntime",
     "MongoDatabase",
@@ -366,6 +367,20 @@ class ProxyOptions(OptionsSection):
     forwarded_header: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class MaintenanceOptions(OptionsSection):
+    """Bounds and retention policy for explicit maintenance runs."""
+
+    batch_size: int = Field(default=500, ge=1, le=10_000)
+    max_batches: int = Field(default=100, ge=1, le=10_000)
+    audit_log_retention: timedelta | None = Field(default=None, gt=timedelta(0))
+    continue_on_error: bool = False
+
+    @field_validator("audit_log_retention", mode="before")
+    @classmethod
+    def normalize_audit_log_retention(cls, value: object) -> object:
+        return parse_duration(value)
+
+
 DatabaseLifespanFactory = Callable[[object], Callable[[FastAPI], AbstractAsyncContextManager[None]]]
 
 
@@ -629,6 +644,7 @@ class FastAuthOptions(OptionsModel):
     )
     advanced: AdvancedOptions = Field(default_factory=lambda: AdvancedOptions())
     proxy: ProxyOptions = Field(default_factory=lambda: ProxyOptions())
+    maintenance: MaintenanceOptions = Field(default_factory=lambda: MaintenanceOptions())
 
     @field_validator("secret_key", mode="before")
     @classmethod

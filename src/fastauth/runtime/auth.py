@@ -21,6 +21,7 @@ from fastauth.runtime.capabilities import Capability, CapabilityRegistry
 from fastauth.runtime.context import AuthContext
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.hooks import DatabaseHooks, HookHandler
+from fastauth.runtime.maintenance import MaintenanceManager
 from fastauth.runtime.managers import (
     AuthInspector,
     AuthRoutes,
@@ -257,6 +258,7 @@ class FastAuth:
         ]
         self.routes = AuthRoutes.relative()
         self.inspect = AuthInspector(self)
+        self.maintenance = MaintenanceManager(adapter, config.maintenance)
 
     def on(
         self,

@@ -29,6 +29,7 @@ __all__ = [
     "CoreAuthAdapter",
     "DatabaseAdapter",
     "JwksKeyStore",
+    "MaintenanceStore",
     "RateLimitStore",
     "RefreshTokenStore",
     "RevokedRefreshFamily",
@@ -145,6 +146,13 @@ class CoreAuthAdapter(
 
 
 @runtime_checkable
+class MaintenanceStore(Protocol):
+    async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int: ...
+    async def delete_expired_refresh_tokens(self, *, cutoff: datetime, limit: int) -> int: ...
+    async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int: ...
+
+
+@runtime_checkable
 class ApiKeyStore(Protocol):
     async def create_api_key(self, api_key: ApiKey) -> ApiKey: ...
     async def get_api_key_by_hash(self, key_hash: str) -> ApiKey | None: ...
@@ -157,7 +165,7 @@ class ApiKeyStore(Protocol):
     ) -> tuple[list[ApiKey], int]: ...
     async def update_api_key(self, api_key: ApiKey) -> ApiKey: ...
     async def delete_api_key(self, api_key_id: str) -> None: ...
-    async def delete_expired_api_keys(self) -> int: ...
+    async def delete_expired_api_keys(self, *, cutoff: datetime, limit: int) -> int: ...
 
 
 @runtime_checkable
@@ -180,6 +188,7 @@ class AuditLogStore(Protocol):
         limit: int,
         offset: int,
     ) -> tuple[list[AuditLog], int]: ...
+    async def delete_audit_logs_before(self, *, cutoff: datetime, limit: int) -> int: ...
 
 
 @runtime_checkable
@@ -207,6 +216,7 @@ class RateLimitStore(Protocol):
 @runtime_checkable
 class DatabaseAdapter(
     CoreAuthAdapter,
+    MaintenanceStore,
     Protocol,
 ):
     """Core storage adapter required by fastauth's built-in auth flows.
@@ -228,6 +238,18 @@ class BaseDatabaseAdapter:
 
     def unsupported(self, feature: str) -> AdapterFeatureUnsupportedError:
         return AdapterFeatureUnsupportedError(feature=feature)
+
+    async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int:
+        del cutoff, limit
+        raise self.unsupported("maintenance")
+
+    async def delete_expired_refresh_tokens(self, *, cutoff: datetime, limit: int) -> int:
+        del cutoff, limit
+        raise self.unsupported("maintenance")
+
+    async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int:
+        del cutoff, limit
+        raise self.unsupported("maintenance")
 
     async def create_user(self, user: User) -> User:
         raise self.unsupported("users")

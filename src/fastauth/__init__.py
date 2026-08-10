@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastauth.api.responses import AuthenticationResponse, SessionView, UserView
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.value_objects import ApiKeyId, RefreshTokenId, SessionId, UserId
-from fastauth.options import FastAuthOptions, ProductionSafetyOptions
+from fastauth.options import FastAuthOptions, MaintenanceOptions, ProductionSafetyOptions
 from fastauth.providers import (
     api_key,
     audit_logs,
@@ -33,6 +33,7 @@ from fastauth.runtime.capabilities import (
     CapabilityRegistry,
 )
 from fastauth.runtime.event_bus import EventBus
+from fastauth.runtime.maintenance import MaintenanceFailure, MaintenanceResult
 
 __all__ = [
     "API_KEYS",
@@ -55,6 +56,9 @@ __all__ = [
     "EventBus",
     "FastAuth",
     "FastAuthOptions",
+    "MaintenanceFailure",
+    "MaintenanceOptions",
+    "MaintenanceResult",
     "ProductionSafetyOptions",
     "RefreshTokenId",
     "SessionId",

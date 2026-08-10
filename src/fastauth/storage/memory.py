@@ -36,6 +36,36 @@ class InMemoryAdapter:
         self.refresh_tokens: dict[str, RefreshToken] = {}
         self.lock = asyncio.Lock()
 
+    async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int:
+        async with self.lock:
+            doomed = sorted(
+                (row for row in self.sessions.values() if row.expires_at <= cutoff),
+                key=lambda row: (row.expires_at, row.id),
+            )[:limit]
+            for row in doomed:
+                del self.sessions[row.id]
+            return len(doomed)
+
+    async def delete_expired_refresh_tokens(self, *, cutoff: datetime, limit: int) -> int:
+        async with self.lock:
+            doomed = sorted(
+                (row for row in self.refresh_tokens.values() if row.expires_at <= cutoff),
+                key=lambda row: (row.expires_at, row.id),
+            )[:limit]
+            for row in doomed:
+                del self.refresh_tokens[row.id]
+            return len(doomed)
+
+    async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int:
+        async with self.lock:
+            doomed = sorted(
+                (row for row in self.verifications.values() if row.expires_at <= cutoff),
+                key=lambda row: (row.expires_at, row.id),
+            )[:limit]
+            for row in doomed:
+                del self.verifications[row.id]
+            return len(doomed)
+
     # ----- User -----
     async def create_user(self, user: User) -> User:
         async with self.lock:
@@ -368,16 +398,18 @@ class InMemoryAdapter:
         async with self.lock:
             self.api_keys.pop(api_key_id, None)
 
-    async def delete_expired_api_keys(self) -> int:
+    async def delete_expired_api_keys(self, *, cutoff: datetime, limit: int) -> int:
         async with self.lock:
-            now = datetime.now(UTC)
-            doomed = [
-                kid
-                for kid, key in self.api_keys.items()
-                if key.expires_at is not None and key.expires_at < now
-            ]
-            for kid in doomed:
-                del self.api_keys[kid]
+            doomed = sorted(
+                (
+                    row
+                    for row in self.api_keys.values()
+                    if row.expires_at is not None and row.expires_at <= cutoff
+                ),
+                key=lambda row: (row.expires_at or cutoff, row.id),
+            )[:limit]
+            for row in doomed:
+                del self.api_keys[row.id]
             return len(doomed)
 
     # ----- JwksKey -----
@@ -423,6 +455,16 @@ class InMemoryAdapter:
             and (identifier is None or row.identifier == identifier)
         ]
         return filtered[offset : offset + limit], len(filtered)
+
+    async def delete_audit_logs_before(self, *, cutoff: datetime, limit: int) -> int:
+        async with self.lock:
+            doomed = sorted(
+                (row for row in self.audit_logs if row.created_at < cutoff),
+                key=lambda row: (row.created_at, row.id),
+            )[:limit]
+            doomed_ids = {row.id for row in doomed}
+            self.audit_logs = [row for row in self.audit_logs if row.id not in doomed_ids]
+            return len(doomed)
 
     # ----- RateLimit -----
     async def increment_rate_limit(

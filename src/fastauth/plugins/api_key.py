@@ -546,8 +546,11 @@ class ApiKeyPlugin(Plugin):
         return EmptyResponse(success=True)
 
     async def delete_expired_handler(self) -> DeleteExpiredApiKeysResponse:
-        self.assert_bound()
-        count = await self.assert_store().delete_expired_api_keys()
+        context = self.assert_bound()
+        count = await self.assert_store().delete_expired_api_keys(
+            cutoff=datetime.now(UTC),
+            limit=context.config.maintenance.batch_size,
+        )
         return DeleteExpiredApiKeysResponse(deleted=count)
 
 
@@ -598,6 +601,10 @@ class ApiKeysApi:
     ) -> EmptyResponse:
         return await self.plugin.delete_for_user(user_id, request)
 
-    async def delete_expired(self) -> DeleteExpiredApiKeysResponse:
-        count = await self.plugin.assert_store().delete_expired_api_keys()
+    async def delete_expired(self, *, limit: int | None = None) -> DeleteExpiredApiKeysResponse:
+        context = self.plugin.assert_bound()
+        count = await self.plugin.assert_store().delete_expired_api_keys(
+            cutoff=datetime.now(UTC),
+            limit=limit or context.config.maintenance.batch_size,
+        )
         return DeleteExpiredApiKeysResponse(deleted=count)
