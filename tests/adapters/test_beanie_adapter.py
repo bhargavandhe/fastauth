@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -8,7 +9,13 @@ from bson import ObjectId
 from pymongo.asynchronous.database import AsyncDatabase
 from pytest import MonkeyPatch
 
-from fastauth.domain.enums import AuditEventType, JwtAlgorithm, ProviderId, VerificationPurpose
+from fastauth.domain.enums import (
+    AuditEventType,
+    JwtAlgorithm,
+    PluginMigrationMode,
+    ProviderId,
+    VerificationPurpose,
+)
 from fastauth.domain.models import (
     Account,
     ApiKey,
@@ -20,8 +27,56 @@ from fastauth.domain.models import (
     Verification,
     new_id,
 )
+from fastauth.plugins.migrations import (
+    PluginMigrationFingerprintError,
+    PluginMigrationPendingError,
+    PluginSchemaPlan,
+    build_schema_plan,
+)
+from fastauth.plugins.schema import (
+    FieldSpec,
+    IndexSpec,
+    MigrationSpec,
+    PluginFieldType,
+    PluginSchema,
+    TableSpec,
+)
 from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
+from fastauth.storage.beanie.plugin_migrations import execute_mongo_plugin_migrations
 from tests.adapters.adapter_contract import FullAdapterContract
+
+
+def plugin_plan(
+    *,
+    versions: tuple[int, ...] = (1,),
+    field_type: PluginFieldType = "str",
+) -> PluginSchemaPlan:
+    return build_schema_plan(
+        (
+            PluginSchema(
+                plugin_id="adapter-contract",
+                tables=(
+                    TableSpec(
+                        name="plugin_records",
+                        fields=(
+                            FieldSpec(name="id", python_type=field_type),
+                            FieldSpec(name="label", python_type="str"),
+                        ),
+                        indexes=(
+                            IndexSpec(
+                                name="plugin_records_label_idx",
+                                fields=("label",),
+                            ),
+                        ),
+                    ),
+                ),
+                migrations=tuple(
+                    MigrationSpec(name=f"plugin_records_v{version}", version=version)
+                    for version in versions
+                ),
+            ),
+        ),
+    )
 
 
 @pytest.mark.usefixtures("beanie_database")
@@ -325,3 +380,66 @@ class TestBeanieAdapter(FullAdapterContract):
         jwks_doc = await beanie_database["jwks_keys"].find_one({"_id": ObjectId(jwks_key.id)})
         assert jwks_doc is not None
         assert jwks_doc["kid"] == "updated-signing-key"
+
+    async def test_plugin_migrations_apply_replay_check_and_fingerprint(
+        self,
+        beanie_database: AsyncDatabase[Any],
+    ) -> None:
+        prefix = f"tenant_{new_id()[:8]}_"
+        first = await execute_mongo_plugin_migrations(
+            beanie_database,
+            plan=plugin_plan(),
+            mode=PluginMigrationMode.APPLY,
+            collection_prefix=prefix,
+            collection_suffix="_auth",
+        )
+        assert len(first.applied) == 1
+
+        replay = await execute_mongo_plugin_migrations(
+            beanie_database,
+            plan=plugin_plan(),
+            mode=PluginMigrationMode.APPLY,
+            collection_prefix=prefix,
+            collection_suffix="_auth",
+        )
+        assert replay.applied == ()
+
+        with pytest.raises(PluginMigrationPendingError):
+            await execute_mongo_plugin_migrations(
+                beanie_database,
+                plan=plugin_plan(versions=(1, 2)),
+                mode=PluginMigrationMode.CHECK,
+                collection_prefix=prefix,
+                collection_suffix="_auth",
+            )
+
+        with pytest.raises(PluginMigrationFingerprintError):
+            await execute_mongo_plugin_migrations(
+                beanie_database,
+                plan=plugin_plan(field_type="int"),
+                mode=PluginMigrationMode.CHECK,
+                collection_prefix=prefix,
+                collection_suffix="_auth",
+            )
+
+        names = await beanie_database.list_collection_names()
+        assert f"{prefix}plugin_records_auth" in names
+        assert f"{prefix}plugin_migrations_auth" in names
+
+    async def test_plugin_migrations_converge_under_concurrent_application(
+        self,
+        beanie_database: AsyncDatabase[Any],
+    ) -> None:
+        prefix = f"concurrent_{new_id()[:8]}_"
+
+        async def apply_once() -> int:
+            result = await execute_mongo_plugin_migrations(
+                beanie_database,
+                plan=plugin_plan(),
+                mode=PluginMigrationMode.APPLY,
+                collection_prefix=prefix,
+                collection_suffix="",
+            )
+            return len(result.applied)
+
+        assert sorted(await asyncio.gather(apply_once(), apply_once())) == [0, 1]

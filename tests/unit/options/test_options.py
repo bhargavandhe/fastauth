@@ -295,6 +295,22 @@ def test_production_options_reject_automatic_postgres_migrations() -> None:
         )
 
 
+def test_production_options_reject_automatic_plugin_migrations() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="production should not use plugin_migration_mode='apply'",
+    ):
+        FastAuthOptions(
+            secret_key=SecretStr("a" * 64),
+            deployment="production",
+            database=MongoDatabaseOptions(
+                database=cast(MongoDatabase, object()),
+                plugin_migration_mode="apply",
+            ),
+            app=AppOptions.model_validate({"base_url": "https://api.example.com"}),
+        )
+
+
 def test_standard_options_do_not_allow_arbitrary_runtime_objects() -> None:
     assert AppOptions.model_config.get("arbitrary_types_allowed") is not True
     assert SessionOptions.model_config.get("arbitrary_types_allowed") is not True

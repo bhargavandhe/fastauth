@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import importlib.util
 import json
 import pathlib
@@ -19,7 +20,10 @@ import typer
 from pydantic import SecretStr, ValidationError
 from rich import print as rich_print
 
+from fastauth.domain.enums import PluginMigrationMode
 from fastauth.options import FastAuthOptions
+from fastauth.plugins.migrations import PluginSchemaPlan
+from fastauth.runtime.auth import FastAuth
 
 __all__ = ["AUTH_SCAFFOLD", "AUTH_SCAFFOLDS", "app", "cli"]
 
@@ -233,6 +237,59 @@ def load_options(path: pathlib.Path) -> FastAuthOptions:
     return FastAuthOptions.model_validate(load_options_payload(path))
 
 
+def load_auth_reference(reference: str) -> FastAuth:
+    """Load a FastAuth instance or zero-argument factory from module:attribute."""
+    if ":" not in reference:
+        raise typer.BadParameter("--auth must use module:attribute syntax")
+    module_name, attribute_name = reference.split(":", 1)
+    try:
+        candidate = getattr(importlib.import_module(module_name), attribute_name)
+        value = (
+            candidate()
+            if callable(candidate) and not isinstance(candidate, FastAuth)
+            else candidate
+        )
+    except Exception as exc:
+        raise typer.BadParameter("could not load --auth reference") from exc
+    if not isinstance(value, FastAuth):
+        raise typer.BadParameter("--auth must resolve to FastAuth or a zero-argument factory")
+    return value
+
+
+def plugin_schema_plan(auth_reference: str | None) -> PluginSchemaPlan:
+    from fastauth.plugins.migrations import build_schema_plan_from_registry
+
+    if auth_reference is None:
+        return PluginSchemaPlan()
+    auth = load_auth_reference(auth_reference)
+    return build_schema_plan_from_registry(auth.context.plugins)
+
+
+def parse_plugin_migration_mode(value: str) -> PluginMigrationMode:
+    try:
+        return PluginMigrationMode(value)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            "--plugin-migrations must be apply, check, or disabled",
+        ) from exc
+
+
+def print_plugin_schema_plan(
+    plan: PluginSchemaPlan,
+    mode: PluginMigrationMode,
+) -> None:
+    rich_print(f"Plugin migrations: {mode.value}")
+    if not plan.tables and not plan.migrations:
+        rich_print("No plugin schema declarations")
+        return
+    rich_print("Plugin migration operations:")
+    for operation in plan.to_operations():
+        target = operation.table_name or (
+            operation.migration.name if operation.migration is not None else ""
+        )
+        rich_print(f"  - {operation.op}: {operation.plugin_id} {target}")
+
+
 def default_options() -> FastAuthOptions:
     return FastAuthOptions(secret_key=SecretStr("x" * 64))
 
@@ -272,6 +329,7 @@ def options_summary(options: FastAuthOptions) -> dict[str, Any]:
                 "table_prefix": database.table_prefix,
                 "table_suffix": database.table_suffix,
                 "migration_mode": database.migration_mode,
+                "plugin_migration_mode": database.plugin_migration_mode,
             }
         )
     elif database.kind == "mongo":
@@ -279,6 +337,7 @@ def options_summary(options: FastAuthOptions) -> dict[str, Any]:
             {
                 "collection_prefix": database.collection_prefix,
                 "collection_suffix": database.collection_suffix,
+                "plugin_migration_mode": database.plugin_migration_mode,
             }
         )
     return summary
@@ -289,7 +348,12 @@ def print_options_summary(summary: Mapping[str, Any]) -> None:
     rich_print(f"deployment: {summary['deployment']}")
     database = summary["database"]
     rich_print(f"database: {database['kind']}")
-    for key in ("table_prefix", "table_suffix", "migration_mode"):
+    for key in (
+        "table_prefix",
+        "table_suffix",
+        "migration_mode",
+        "plugin_migration_mode",
+    ):
         if key in database:
             rich_print(f"database.{key}: {database[key]}")
     for key in ("collection_prefix", "collection_suffix"):
@@ -492,8 +556,20 @@ def migrate_dry_run_command(
         "--mongo-collection-suffix",
         help="Suffix for MongoDB collection names",
     ),
+    auth_reference: str | None = typer.Option(
+        None,
+        "--auth",
+        help="FastAuth instance or factory as module:attribute",
+    ),
+    plugin_migrations: str = typer.Option(
+        "apply",
+        "--plugin-migrations",
+        help="Plugin migrations: apply, check, or disabled",
+    ),
 ) -> None:
     """Show migration work that would run, without opening a database connection."""
+    mode = parse_plugin_migration_mode(plugin_migrations)
+    plugin_plan = plugin_schema_plan(auth_reference)
     backend_key = backend.lower()
     if backend_key == "postgres":
         from fastauth.storage.postgres.migrations import pending_postgres_migrations
@@ -515,6 +591,7 @@ def migrate_dry_run_command(
         rich_print("Tables that migrations target:")
         for table_name, _, _ in postgres_table_plan(table_prefix, table_suffix):
             rich_print(f"  - {table_name}")
+        print_plugin_schema_plan(plugin_plan, mode)
         return
 
     if backend_key == "mongo":
@@ -524,6 +601,7 @@ def migrate_dry_run_command(
         for base_name in MONGO_COLLECTION_NAMES:
             collection_name = mongo_collection_name(base_name, collection_prefix, collection_suffix)
             rich_print(f"  - {collection_name}")
+        print_plugin_schema_plan(plugin_plan, mode)
         return
 
     rich_print("[red]--backend must be postgres or mongo[/red]")
@@ -584,6 +662,16 @@ def migrate_command(
         "--postgres-table-suffix",
         help="Table suffix for Postgres schema creation",
     ),
+    auth_reference: str | None = typer.Option(
+        None,
+        "--auth",
+        help="FastAuth instance or factory as module:attribute",
+    ),
+    plugin_migrations: str = typer.Option(
+        "apply",
+        "--plugin-migrations",
+        help="Plugin migrations: apply, check, or disabled",
+    ),
 ) -> None:
     """Initialise database schema/indexes for fastauth storage adapters.
 
@@ -594,12 +682,17 @@ def migrate_command(
     if sum(selected_backends) != 1:
         rich_print("[red]Pass exactly one of --mongo-url or --postgres-url[/red]")
         raise typer.Exit(code=1)
+    mode = parse_plugin_migration_mode(plugin_migrations)
+    plugin_plan = plugin_schema_plan(auth_reference)
 
     async def run() -> None:
         if mongo_url is not None:
             from pymongo import AsyncMongoClient
 
             from fastauth.storage.beanie import init_beanie_documents
+            from fastauth.storage.beanie.plugin_migrations import (
+                execute_mongo_plugin_migrations,
+            )
 
             client: AsyncMongoClient[Any] = AsyncMongoClient(
                 mongo_url, uuidRepresentation="standard"
@@ -610,12 +703,26 @@ def migrate_command(
                     collection_prefix=mongo_collection_prefix,
                     collection_suffix=mongo_collection_suffix,
                 )
+                applied_plugins = 0
+                if plugin_plan.tables or plugin_plan.migrations:
+                    result = await execute_mongo_plugin_migrations(
+                        client[database],
+                        plan=plugin_plan,
+                        mode=mode,
+                        collection_prefix=mongo_collection_prefix,
+                        collection_suffix=mongo_collection_suffix,
+                    )
+                    applied_plugins = len(result.applied)
                 rich_print("[green]indexes ensured on every fastauth collection[/green]")
+                rich_print(f"[green]Plugin migrations applied: {applied_plugins}[/green]")
             finally:
                 await client.close()
             return
 
         from fastauth.storage.postgres import PostgresAdapter
+        from fastauth.storage.postgres.plugin_migrations import (
+            execute_postgres_plugin_migrations,
+        )
 
         assert postgres_url is not None
         adapter = PostgresAdapter.from_url(
@@ -631,6 +738,19 @@ def migrate_command(
             else:
                 rich_print("[green]Postgres schema already current[/green]")
             rich_print(f"[green]Postgres fastauth schema version: {version}[/green]")
+            applied_plugins = 0
+            if plugin_plan.tables or plugin_plan.migrations:
+                async with adapter.engine.begin() as connection:
+                    result = await execute_postgres_plugin_migrations(
+                        connection,
+                        metadata=adapter.schema.metadata,
+                        plan=plugin_plan,
+                        mode=mode,
+                        table_prefix=adapter.schema.table_prefix,
+                        table_suffix=adapter.schema.table_suffix,
+                    )
+                applied_plugins = len(result.applied)
+            rich_print(f"[green]Plugin migrations applied: {applied_plugins}[/green]")
         finally:
             await adapter.engine.dispose()
 

@@ -221,6 +221,71 @@ def test_migrate_dry_run_prints_mongo_plan() -> None:
     assert "users" in result.stdout
 
 
+def test_migrate_dry_run_prints_executable_plugin_plan(
+    tmp_path: pathlib.Path,
+    monkeypatch: Any,
+) -> None:
+    module = tmp_path / "plugin_auth.py"
+    module.write_text(
+        """
+from pydantic import SecretStr
+from fastauth import FastAuth, FastAuthOptions
+from fastauth.plugins import FieldSpec, MigrationSpec, Plugin, PluginSchema, TableSpec
+
+class RecordsPlugin(Plugin):
+    id = "records"
+    def schemas(self):
+        return [PluginSchema(
+            plugin_id=self.id,
+            tables=(TableSpec(
+                name="records",
+                fields=(FieldSpec(name="id", python_type="str"),),
+            ),),
+            migrations=(MigrationSpec(name="create_records", version=1),),
+        )]
+
+auth = FastAuth(
+    FastAuthOptions(secret_key=SecretStr("x" * 64)),
+    plugins=[RecordsPlugin()],
+)
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "migrate-dry-run",
+            "--backend",
+            "postgres",
+            "--auth",
+            "plugin_auth:auth",
+            "--plugin-migrations",
+            "check",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Plugin migrations: check" in result.stdout
+    assert "create_table: records records" in result.stdout
+    assert "record_migration: records create_records" in result.stdout
+
+
+def test_migrate_rejects_unknown_plugin_migration_mode() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "migrate-dry-run",
+            "--plugin-migrations",
+            "sometimes",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must be apply, check, or disabled" in result.stderr
+
+
 def test_init_writes_auth_scaffold(tmp_path: pathlib.Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["init", "--path", str(tmp_path)])

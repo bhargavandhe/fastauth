@@ -10,6 +10,7 @@ __all__ = [
     "EmailMessageKind",
     "HookPhase",
     "JwtAlgorithm",
+    "PluginMigrationMode",
     "ProviderId",
     "RateLimitStorageKind",
     "SessionStrategyKind",
@@ -73,6 +74,12 @@ class DatabaseBackendKind(StrEnum):
     MEMORY = "memory"
     MONGO = "mongo"
     POSTGRES = "postgres"
+
+
+class PluginMigrationMode(StrEnum):
+    APPLY = "apply"
+    CHECK = "check"
+    DISABLED = "disabled"
 
 
 class TokenType(StrEnum):

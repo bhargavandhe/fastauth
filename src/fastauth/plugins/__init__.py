@@ -23,6 +23,11 @@ from fastauth.plugins.migrations import (
     MigrationOperation,
     PlannedMigration,
     PlannedTable,
+    PluginMigrationFingerprintError,
+    PluginMigrationMode,
+    PluginMigrationPendingError,
+    PluginMigrationRecord,
+    PluginMigrationResult,
     PluginSchemaConflictError,
     PluginSchemaPlan,
     SchemaConflict,
@@ -30,7 +35,14 @@ from fastauth.plugins.migrations import (
     build_schema_plan_from_registry,
     render_migration_operations,
 )
-from fastauth.plugins.schema import FieldSpec, IndexSpec, MigrationSpec, PluginSchema, TableSpec
+from fastauth.plugins.schema import (
+    FieldSpec,
+    IndexSpec,
+    MigrationSpec,
+    PluginFieldType,
+    PluginSchema,
+    TableSpec,
+)
 
 __all__ = [
     "Capability",
@@ -47,8 +59,14 @@ __all__ = [
     "PluginApiNamespace",
     "PluginApiRegistry",
     "PluginErrorCode",
+    "PluginFieldType",
     "PluginInfo",
     "PluginMiddlewareSpec",
+    "PluginMigrationFingerprintError",
+    "PluginMigrationMode",
+    "PluginMigrationPendingError",
+    "PluginMigrationRecord",
+    "PluginMigrationResult",
     "PluginOptions",
     "PluginRegistry",
     "PluginSchema",

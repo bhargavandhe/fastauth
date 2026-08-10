@@ -13,8 +13,24 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer  # pyright: ignore[reportMissingTypeStubs]
 
+from fastauth.domain.enums import PluginMigrationMode
 from fastauth.domain.models import RefreshToken, Session, User, new_id
+from fastauth.plugins.migrations import (
+    PluginMigrationFingerprintError,
+    PluginMigrationPendingError,
+    PluginSchemaPlan,
+    build_schema_plan,
+)
+from fastauth.plugins.schema import (
+    FieldSpec,
+    IndexSpec,
+    MigrationSpec,
+    PluginFieldType,
+    PluginSchema,
+    TableSpec,
+)
 from fastauth.storage.postgres import PostgresAdapter
+from fastauth.storage.postgres.plugin_migrations import execute_postgres_plugin_migrations
 from tests.adapters.adapter_contract import FullAdapterContract
 
 
@@ -84,6 +100,39 @@ async def create_refresh_family(
         )
     )
     return session, token
+
+
+def plugin_plan(
+    *,
+    versions: tuple[int, ...] = (1,),
+    field_type: PluginFieldType = "str",
+) -> PluginSchemaPlan:
+    return build_schema_plan(
+        (
+            PluginSchema(
+                plugin_id="adapter-contract",
+                tables=(
+                    TableSpec(
+                        name="plugin_records",
+                        fields=(
+                            FieldSpec(name="id", python_type=field_type),
+                            FieldSpec(name="label", python_type="str"),
+                        ),
+                        indexes=(
+                            IndexSpec(
+                                name="plugin_records_label_idx",
+                                fields=("label",),
+                            ),
+                        ),
+                    ),
+                ),
+                migrations=tuple(
+                    MigrationSpec(name=f"plugin_records_v{version}", version=version)
+                    for version in versions
+                ),
+            ),
+        ),
+    )
 
 
 @pytest.fixture
@@ -214,3 +263,77 @@ class TestPostgresAdapter(FullAdapterContract):
 
         assert rotated is not None
         assert rotated.family_id == second.family_id
+
+    async def test_plugin_migrations_apply_replay_check_and_fingerprint(
+        self,
+        adapter: PostgresAdapter,
+    ) -> None:
+        async with adapter.engine.begin() as connection:
+            first = await execute_postgres_plugin_migrations(
+                connection,
+                metadata=adapter.schema.metadata,
+                plan=plugin_plan(),
+                mode=PluginMigrationMode.APPLY,
+                table_prefix=adapter.schema.table_prefix,
+                table_suffix=adapter.schema.table_suffix,
+            )
+        assert len(first.applied) == 1
+
+        async with adapter.engine.begin() as connection:
+            replay = await execute_postgres_plugin_migrations(
+                connection,
+                metadata=adapter.schema.metadata,
+                plan=plugin_plan(),
+                mode=PluginMigrationMode.APPLY,
+                table_prefix=adapter.schema.table_prefix,
+                table_suffix=adapter.schema.table_suffix,
+            )
+        assert replay.applied == ()
+
+        async with adapter.engine.begin() as connection:
+            with pytest.raises(PluginMigrationPendingError):
+                await execute_postgres_plugin_migrations(
+                    connection,
+                    metadata=adapter.schema.metadata,
+                    plan=plugin_plan(versions=(1, 2)),
+                    mode=PluginMigrationMode.CHECK,
+                    table_prefix=adapter.schema.table_prefix,
+                    table_suffix=adapter.schema.table_suffix,
+                )
+
+        async with adapter.engine.begin() as connection:
+            with pytest.raises(PluginMigrationFingerprintError):
+                await execute_postgres_plugin_migrations(
+                    connection,
+                    metadata=adapter.schema.metadata,
+                    plan=plugin_plan(field_type="int"),
+                    mode=PluginMigrationMode.CHECK,
+                    table_prefix=adapter.schema.table_prefix,
+                    table_suffix=adapter.schema.table_suffix,
+                )
+
+        physical_table = f"{adapter.schema.table_prefix}plugin_records"
+        async with adapter.engine.connect() as connection:
+            result = await connection.execute(
+                text("SELECT to_regclass(:table_name)"),
+                {"table_name": physical_table},
+            )
+        assert result.scalar_one() == physical_table
+
+    async def test_plugin_migrations_serialize_concurrent_application(
+        self,
+        adapter: PostgresAdapter,
+    ) -> None:
+        async def apply_once() -> int:
+            async with adapter.engine.begin() as connection:
+                result = await execute_postgres_plugin_migrations(
+                    connection,
+                    metadata=adapter.schema.metadata,
+                    plan=plugin_plan(),
+                    mode=PluginMigrationMode.APPLY,
+                    table_prefix=adapter.schema.table_prefix,
+                    table_suffix=adapter.schema.table_suffix,
+                )
+            return len(result.applied)
+
+        assert sorted(await asyncio.gather(apply_once(), apply_once())) == [0, 1]

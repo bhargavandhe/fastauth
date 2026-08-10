@@ -6,6 +6,7 @@ from fastauth.api.responses import AuthenticationResponse, SessionView, UserView
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.value_objects import ApiKeyId, RefreshTokenId, SessionId, UserId
 from fastauth.options import FastAuthOptions, MaintenanceOptions, ProductionSafetyOptions
+from fastauth.plugins.migrations import PluginMigrationMode
 from fastauth.providers import (
     api_key,
     audit_logs,
@@ -73,6 +74,7 @@ __all__ = [
     "OperationalEvent",
     "OperationalEventHandler",
     "OperationalOutcome",
+    "PluginMigrationMode",
     "ProductionSafetyOptions",
     "RefreshTokenId",
     "SessionId",

@@ -27,6 +27,8 @@ __all__ = ["PostgresSchema", "build_postgres_schema"]
 @dataclass(frozen=True)
 class PostgresSchema:
     metadata: MetaData
+    table_prefix: str
+    table_suffix: str
     schema_migrations: Table
     users: Table
     sessions: Table
@@ -255,6 +257,8 @@ def build_postgres_schema(
 
     return PostgresSchema(
         metadata=metadata,
+        table_prefix=table_prefix,
+        table_suffix=table_suffix,
         schema_migrations=schema_migrations,
         users=users,
         sessions=sessions,
