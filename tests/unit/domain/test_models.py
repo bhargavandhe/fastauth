@@ -83,7 +83,7 @@ def test_jwks_key_minimum_fields() -> None:
     key = JwksKey(
         public_key='{"kty":"OKP"}',
         private_key_encrypted=b"\x00",
-        alg="EdDSA",
+        alg="Ed25519",
         kid="k1",
     )
     assert key.id

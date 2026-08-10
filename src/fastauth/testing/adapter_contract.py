@@ -276,7 +276,7 @@ class JwksAdapterContract(AdapterContractBase):
     """Contract tests for ``JwksKeyStore`` implementations."""
 
     async def test_jwks_key_round_trip(self, adapter: JwksKeyStore) -> None:
-        key = JwksKey(kid="k1", alg="EdDSA", public_key="{}", private_key_encrypted=b"\x00")
+        key = JwksKey(kid="k1", alg="Ed25519", public_key="{}", private_key_encrypted=b"\x00")
         await adapter.create_jwks_key(key)
         keys = await adapter.list_jwks_keys()
         assert key in keys

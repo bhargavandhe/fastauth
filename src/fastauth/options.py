@@ -192,7 +192,7 @@ class CookieOptions(OptionsSection):
 
 
 class PasswordOptions(OptionsSection):
-    min_length: int = Field(default=8, ge=8, le=1024)
+    min_length: int = Field(default=12, ge=12, le=1024)
     max_length: int = Field(default=128, ge=8, le=4096)
     argon2_time_cost: int = Field(default=3, ge=1, le=64)
     argon2_memory_cost_kib: int = Field(default=64 * 1024, ge=8 * 1024, le=2 * 1024 * 1024)

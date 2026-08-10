@@ -102,7 +102,7 @@ class EmailMessageKind(StrEnum):
 
 
 class JwtAlgorithm(StrEnum):
-    EDDSA = "EdDSA"
+    ED25519 = "Ed25519"
     ES256 = "ES256"
     RS256 = "RS256"
     PS256 = "PS256"

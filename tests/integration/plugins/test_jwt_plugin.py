@@ -25,6 +25,10 @@ from fastauth.runtime.auth import FastAuth
 from fastauth.storage.memory import InMemoryAdapter
 
 
+def test_jwt_default_uses_rfc_9864_ed25519_identifier() -> None:
+    assert JwtOptions().alg.value == "Ed25519"
+
+
 @pytest.fixture
 async def jwt_client() -> AsyncIterator[httpx.AsyncClient]:
     adapter = InMemoryAdapter()
@@ -85,7 +89,7 @@ async def test_token_can_be_verified_against_jwks(jwt_client: httpx.AsyncClient)
     token = response.json()["token"]
     jwks = (await jwt_client.get("/auth/jwks")).json()
     key_set = jwk.KeySet([jwk.import_key(item) for item in jwks["keys"]])
-    decoded = jwt.decode(token, key_set, algorithms=["EdDSA"])
+    decoded = jwt.decode(token, key_set, algorithms=["Ed25519"])
     assert decoded.claims["iss"] == "http://testserver"
     assert decoded.claims["aud"] == "http://testserver"
 
@@ -173,6 +177,6 @@ async def test_jwt_defaults_use_dynamic_base_url_fallback() -> None:
 
     token = response.json()["token"]
     key_set = jwk.KeySet([jwk.import_key(item) for item in jwks["keys"]])
-    decoded = jwt.decode(token, key_set, algorithms=["EdDSA"])
+    decoded = jwt.decode(token, key_set, algorithms=["Ed25519"])
     assert decoded.claims["iss"] == "https://fallback.example.com"
     assert decoded.claims["aud"] == "https://fallback.example.com"

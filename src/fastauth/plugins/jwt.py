@@ -44,7 +44,7 @@ SignerFactory = Callable[[JwksRegistry], KmsSigner]
 class JwtOptions(PluginOptions):
     """Static configuration for ``JwtPlugin``."""
 
-    alg: JwtAlgorithm = JwtAlgorithm.EDDSA
+    alg: JwtAlgorithm = JwtAlgorithm.ED25519
     expires_in: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
     issuer: str | None = None
     audience: str | None = None

@@ -91,7 +91,7 @@ def test_beanie_document_mappers_preserve_objectid_and_bytes_boundaries() -> Non
     jwks_key = JwksKey(
         id=jwks_id,
         kid="mapping-key",
-        alg=JwtAlgorithm.EDDSA,
+        alg=JwtAlgorithm.ED25519,
         public_key="{}",
         private_key_encrypted=b"\x00\xff",
     )

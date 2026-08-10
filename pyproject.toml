@@ -19,11 +19,13 @@ keywords = [
   "sqlalchemy",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Framework :: FastAPI",
   "Framework :: Pydantic :: 2",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
 dependencies = [
@@ -38,9 +40,11 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/bhargavandhe/fastauth"
-Documentation = "https://github.com/bhargavandhe/fastauth#readme"
+Documentation = "https://bhargavandhe.github.io/fastauth/"
 Repository = "https://github.com/bhargavandhe/fastauth"
 Issues = "https://github.com/bhargavandhe/fastauth/issues"
+Changelog = "https://github.com/bhargavandhe/fastauth/blob/main/CHANGELOG.md"
+Security = "https://github.com/bhargavandhe/fastauth/security/policy"
 
 [project.optional-dependencies]
 beanie = ["beanie>=2,<3"]

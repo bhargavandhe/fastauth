@@ -115,7 +115,7 @@ class TestBeanieAdapter(FullAdapterContract):
         )
         key = JwksKey(
             kid="signing-key",
-            alg=JwtAlgorithm.EDDSA,
+            alg=JwtAlgorithm.ED25519,
             public_key="{}",
             private_key_encrypted=b"\x00",
         )
@@ -315,7 +315,7 @@ class TestBeanieAdapter(FullAdapterContract):
 
         jwks_key = JwksKey(
             kid="updated-signing-key",
-            alg=JwtAlgorithm.EDDSA,
+            alg=JwtAlgorithm.ED25519,
             public_key="{}",
             private_key_encrypted=b"\x00",
         )
