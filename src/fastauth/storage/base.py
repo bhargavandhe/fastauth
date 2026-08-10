@@ -147,6 +147,7 @@ class CoreAuthAdapter(
 
 @runtime_checkable
 class MaintenanceStore(Protocol):
+    async def ping(self) -> None: ...
     async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int: ...
     async def delete_expired_refresh_tokens(self, *, cutoff: datetime, limit: int) -> int: ...
     async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int: ...
@@ -238,6 +239,9 @@ class BaseDatabaseAdapter:
 
     def unsupported(self, feature: str) -> AdapterFeatureUnsupportedError:
         return AdapterFeatureUnsupportedError(feature=feature)
+
+    async def ping(self) -> None:
+        raise self.unsupported("database ping")
 
     async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int:
         del cutoff, limit

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from pydantic import ConfigDict
 
 from fastauth.domain.models import WireModel
 from fastauth.options import MaintenanceOptions
 from fastauth.storage.base import ApiKeyStore, AuditLogStore, DatabaseAdapter
+
+if TYPE_CHECKING:
+    from fastauth.runtime.observability import ObservabilityManager
 
 __all__ = [
     "MaintenanceFailure",
@@ -44,9 +47,16 @@ class MaintenanceResult(WireModel):
 class MaintenanceManager:
     """Run adapter cleanup operations in bounded, idempotent batches."""
 
-    def __init__(self, adapter: DatabaseAdapter, options: MaintenanceOptions) -> None:
+    def __init__(
+        self,
+        adapter: DatabaseAdapter,
+        options: MaintenanceOptions,
+        *,
+        observability: ObservabilityManager | None = None,
+    ) -> None:
         self.adapter = adapter
         self.options = options
+        self.observability = observability
 
     async def drain(
         self,
@@ -69,6 +79,12 @@ class MaintenanceManager:
         if cutoff.tzinfo is None or cutoff.utcoffset() is None:
             raise ValueError("maintenance cutoff must be timezone-aware")
         cutoff = cutoff.astimezone(UTC)
+        if self.observability is not None:
+            await self.observability.emit(
+                "maintenance.started",
+                outcome="started",
+                component="maintenance",
+            )
 
         operations: list[tuple[str, CleanupOperation, datetime]] = [
             (
@@ -127,11 +143,18 @@ class MaintenanceManager:
             try:
                 deleted[resource] = await self.drain(operation, cutoff=resource_cutoff)
             except Exception:
+                if self.observability is not None:
+                    await self.observability.emit(
+                        "maintenance.resource.failed",
+                        outcome="failure",
+                        component="maintenance",
+                        resource=resource,
+                    )
                 if not self.options.continue_on_error:
                     raise
                 failures.append(MaintenanceFailure(resource=resource))
 
-        return MaintenanceResult(
+        result = MaintenanceResult(
             ok=not failures,
             deleted_sessions=deleted.get("sessions", 0),
             deleted_refresh_tokens=deleted.get("refresh_tokens", 0),
@@ -140,3 +163,15 @@ class MaintenanceManager:
             deleted_audit_logs=deleted.get("audit_logs", 0),
             failures=tuple(failures),
         )
+        if self.observability is not None:
+            await self.observability.emit(
+                "maintenance.completed",
+                outcome="success" if result.ok else "partial",
+                component="maintenance",
+                deleted_sessions=result.deleted_sessions,
+                deleted_refresh_tokens=result.deleted_refresh_tokens,
+                deleted_verifications=result.deleted_verifications,
+                deleted_api_keys=result.deleted_api_keys,
+                deleted_audit_logs=result.deleted_audit_logs,
+            )
+        return result

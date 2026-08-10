@@ -319,6 +319,9 @@ class AuditLogAdapterContract(AdapterContractBase):
 class MaintenanceAdapterContract(AdapterContractBase):
     """Contract tests for bounded retention operations."""
 
+    async def test_ping(self, adapter: ContractAdapter) -> None:
+        await adapter.ping()
+
     async def test_cleanup_operations_are_bounded_and_idempotent(
         self,
         adapter: ContractAdapter,

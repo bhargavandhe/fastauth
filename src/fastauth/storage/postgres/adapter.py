@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast
 
 from fastapi import FastAPI
-from sqlalchemy import Column, and_, case, delete, func, insert, select, update
+from sqlalchemy import Column, and_, case, delete, func, insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
@@ -149,6 +149,10 @@ class PostgresAdapter(
     ) -> None:
         self.engine = engine
         self.schema = build_postgres_schema(table_prefix, table_suffix)
+
+    async def ping(self) -> None:
+        async with self.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
 
     @classmethod
     def from_url(

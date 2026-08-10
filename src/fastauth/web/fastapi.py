@@ -31,7 +31,12 @@ from fastauth.flows.sessions import (
     RevokeSessionsResponse,
 )
 from fastauth.plugins.base import EndpointHookSpec, EndpointSpec, PluginMiddlewareSpec
-from fastauth.runtime.api import AuthApi, HealthResponse, RouterAuthApi
+from fastauth.runtime.api import (
+    AuthApi,
+    LivenessResponse,
+    ReadinessResponse,
+    RouterAuthApi,
+)
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
 from fastauth.web.csrf import CsrfMiddleware
@@ -302,8 +307,8 @@ class FastAuthRoute(APIRoute):
         original = super().get_route_handler()
 
         async def custom_route_handler(request: Request) -> Response:
+            context = self.fastauth_context
             try:
-                context = self.fastauth_context
                 if context is None:
                     return await original(request)
                 return await self.handle_with_plugin_contract(request, original, context)
@@ -311,8 +316,24 @@ class FastAuthRoute(APIRoute):
                 headers: dict[str, str] = {}
                 if isinstance(exc, RateLimitError):
                     headers["X-Retry-After"] = str(exc.retry_after_seconds)
+                    if context is not None:
+                        await context.observability.emit(
+                            "rate_limit.rejected",
+                            outcome="rejected",
+                            component="rate_limit",
+                            route=relative_route_path(self, request.method),
+                            retry_after_seconds=exc.retry_after_seconds,
+                        )
                 if isinstance(exc, AccountLockedError):
                     headers["Retry-After"] = str(exc.retry_after_seconds)
+                    if context is not None:
+                        await context.observability.emit(
+                            "lockout.rejected",
+                            outcome="rejected",
+                            component="lockout",
+                            route=relative_route_path(self, request.method),
+                            retry_after_seconds=exc.retry_after_seconds,
+                        )
                 return JSONResponse(
                     status_code=http_status_for(exc),
                     content={"code": exc.code, "message": exc.message},
@@ -451,6 +472,12 @@ def rate_limit_dependency(
     """Return an async FastAPI dependency that enforces the rate limit."""
 
     async def dependency(request: Request) -> None:
+        if request.scope.get("route") is not None and getattr(
+            request.scope["route"],
+            "name",
+            None,
+        ) in {"fastauth_liveness", "fastauth_readiness"}:
+            return
         path = matched_route_path(request)
         await context.rate_limiter.check(path, client_ip(request, context))
 
@@ -619,7 +646,7 @@ def register_session_routes(router: APIRouter, context: AuthContext) -> None:
 
 
 def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
-    """Build the fastauth ``APIRouter`` with health + credentials flow endpoints."""
+    """Build the FastAuth router with operational and authentication endpoints."""
     route_class = fastauth_route_class(context)
     router = APIRouter(
         tags=["fastauth"],
@@ -629,12 +656,20 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     )
 
     @router.get(
-        "/health",
-        name="fastauth_health",
-        response_model=HealthResponse,
+        "/health/live",
+        name="fastauth_liveness",
+        response_model=LivenessResponse,
     )
-    async def health_handler() -> HealthResponse:  # pyright: ignore[reportUnusedFunction]
-        return await api.health()
+    async def liveness_handler() -> LivenessResponse:  # pyright: ignore[reportUnusedFunction]
+        return await api.liveness()
+
+    @router.get(
+        "/health/ready",
+        name="fastauth_readiness",
+        response_model=ReadinessResponse,
+    )
+    async def readiness_handler() -> ReadinessResponse:  # pyright: ignore[reportUnusedFunction]
+        return await api.readiness()
 
     register_session_routes(router, context)
 

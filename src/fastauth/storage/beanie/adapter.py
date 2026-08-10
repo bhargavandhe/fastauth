@@ -139,6 +139,9 @@ class BeanieAdapter:
         self.audit_log_doc: Any = self.documents.audit_log
         self.rate_limit_doc: Any = self.documents.rate_limit
 
+    async def ping(self) -> None:
+        await self.database.command("ping")
+
     async def delete_bounded(
         self,
         document: type[Document],

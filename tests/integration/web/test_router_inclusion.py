@@ -23,13 +23,13 @@ def make_auth(*, base_path: str = "/auth") -> FastAuth:
     )
 
 
-class HealthRateLimitPlugin(Plugin):
-    id = "health-rate-limit"
+class SessionRateLimitPlugin(Plugin):
+    id = "session-rate-limit"
 
     def rate_limit_rules(self) -> list[RateLimitRule]:
         return [
             RateLimitRule(
-                path="/health",
+                path="/get-session",
                 window=timedelta(minutes=1),
                 max_requests=1,
             )
@@ -49,7 +49,7 @@ class HealthMiddlewarePlugin(Plugin):
 
         return [
             PluginMiddlewareSpec(
-                path="/health",
+                path="/health/live",
                 handler=add_header,
             )
         ]
@@ -64,10 +64,10 @@ async def test_router_can_be_included_at_consumer_selected_prefix() -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        response = await client.get("/api/auth/health")
+        response = await client.get("/api/auth/health/live")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "name": "fastauth"}
+    assert response.json() == {"status": "alive", "name": "fastauth"}
     assert auth.router.prefix == ""
 
 
@@ -81,8 +81,8 @@ async def test_explicit_integration_uses_consumer_selected_prefix() -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        mounted = await client.get("/configured/auth/health")
-        unprefixed = await client.get("/health")
+        mounted = await client.get("/configured/auth/health/live")
+        unprefixed = await client.get("/health/live")
 
     assert mounted.status_code == 200
     assert unprefixed.status_code == 404
@@ -97,7 +97,7 @@ async def test_add_middleware_does_not_include_routes() -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        response = await client.get("/health")
+        response = await client.get("/health/live")
 
     assert response.status_code == 404
 
@@ -108,7 +108,7 @@ async def test_rate_limit_rules_use_relative_path_under_custom_prefix() -> None:
             secret_key=SecretStr("l" * 64),
             database=memory(),
         ),
-        plugins=[HealthRateLimitPlugin()],
+        plugins=[SessionRateLimitPlugin()],
     )
     app = FastAPI()
     app.include_router(auth.router, prefix="/api/auth")
@@ -117,10 +117,10 @@ async def test_rate_limit_rules_use_relative_path_under_custom_prefix() -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        first = await client.get("/api/auth/health")
-        second = await client.get("/api/auth/health")
+        first = await client.get("/api/auth/get-session")
+        second = await client.get("/api/auth/get-session")
 
-    assert first.status_code == 200
+    assert first.status_code == 204
     assert second.status_code == 429
 
 
@@ -139,7 +139,7 @@ async def test_plugin_middleware_matches_relative_path_under_custom_prefix() -> 
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        response = await client.get("/api/auth/health")
+        response = await client.get("/api/auth/health/live")
 
     assert response.status_code == 200
     assert response.headers["X-Health-Middleware"] == "applied"

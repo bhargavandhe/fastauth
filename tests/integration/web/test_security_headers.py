@@ -54,7 +54,7 @@ async def secure_client() -> AsyncIterator[httpx.AsyncClient]:
 async def test_default_security_headers_are_present(
     secure_client: httpx.AsyncClient,
 ) -> None:
-    response = await secure_client.get("/auth/health")
+    response = await secure_client.get("/auth/health/live")
     assert response.status_code == 200
     assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
     assert response.headers["x-frame-options"] == "DENY"
@@ -77,7 +77,7 @@ async def test_disabled_middleware_emits_no_headers() -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
-        response = await http.get("/auth/health")
+        response = await http.get("/auth/health/live")
         assert "strict-transport-security" not in response.headers
         assert "x-frame-options" not in response.headers
 
@@ -98,7 +98,7 @@ async def test_csp_and_permissions_policy_can_be_configured() -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
-        response = await http.get("/auth/health")
+        response = await http.get("/auth/health/live")
         assert (
             response.headers["content-security-policy"]
             == "default-src 'self'; frame-ancestors 'none'"
@@ -119,7 +119,7 @@ async def test_individual_headers_can_be_disabled() -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
-        response = await http.get("/auth/health")
+        response = await http.get("/auth/health/live")
         assert "strict-transport-security" not in response.headers
         assert "x-frame-options" not in response.headers
         # Other defaults are still applied.
@@ -135,9 +135,9 @@ async def test_app_set_header_is_not_overwritten(
     """
     # Set a per-route X-Frame-Options to SAMEORIGIN. The middleware default
     # is DENY; the app's value must win.
-    response = await secure_client.get("/auth/health")
+    response = await secure_client.get("/auth/health/live")
     # The default DENY is what we get here (the auth router didn't set
-    # X-Frame-Options on /health), so this confirms the wire-through path.
+    # X-Frame-Options on /health/live), so this confirms the wire-through path.
     # To test override, we'd need a custom route — covered by unit testing of
     # the middleware itself, see tests/unit/test_security_headers.py.
     assert response.headers["x-frame-options"] == "DENY"

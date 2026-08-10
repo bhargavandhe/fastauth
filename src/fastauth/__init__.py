@@ -34,6 +34,14 @@ from fastauth.runtime.capabilities import (
 )
 from fastauth.runtime.event_bus import EventBus
 from fastauth.runtime.maintenance import MaintenanceFailure, MaintenanceResult
+from fastauth.runtime.observability import (
+    LoggingObservabilitySink,
+    ObservabilityManager,
+    ObservabilitySink,
+    OperationalEvent,
+    OperationalEventHandler,
+    OperationalOutcome,
+)
 
 __all__ = [
     "API_KEYS",
@@ -56,9 +64,15 @@ __all__ = [
     "EventBus",
     "FastAuth",
     "FastAuthOptions",
+    "LoggingObservabilitySink",
     "MaintenanceFailure",
     "MaintenanceOptions",
     "MaintenanceResult",
+    "ObservabilityManager",
+    "ObservabilitySink",
+    "OperationalEvent",
+    "OperationalEventHandler",
+    "OperationalOutcome",
     "ProductionSafetyOptions",
     "RefreshTokenId",
     "SessionId",

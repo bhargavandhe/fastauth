@@ -36,6 +36,9 @@ class InMemoryAdapter:
         self.refresh_tokens: dict[str, RefreshToken] = {}
         self.lock = asyncio.Lock()
 
+    async def ping(self) -> None:
+        return None
+
     async def delete_expired_sessions(self, *, cutoff: datetime, limit: int) -> int:
         async with self.lock:
             doomed = sorted(

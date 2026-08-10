@@ -16,11 +16,19 @@ from fastauth.security.tokens import SignedCookieValue, TokenService
 from fastauth.storage.base import DatabaseAdapter
 
 if TYPE_CHECKING:
+    from fastauth.runtime.observability import ObservabilityManager
     from fastauth.security.lockout import AccountLockoutTracker
     from fastauth.security.rate_limit import RateLimiter
     from fastauth.security.refresh_tokens import RefreshTokenService
 
-__all__ = ["AuthContext"]
+__all__ = ["AuthContext", "RuntimeReadiness"]
+
+
+@dataclass(slots=True)
+class RuntimeReadiness:
+    """Mutable lifecycle state held by the otherwise frozen auth context."""
+
+    started: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,3 +50,5 @@ class AuthContext:
     rate_limiter: RateLimiter
     lockout_tracker: AccountLockoutTracker
     refresh_token_service: RefreshTokenService
+    observability: ObservabilityManager
+    readiness: RuntimeReadiness
