@@ -230,6 +230,8 @@ def test_ci_checks_supported_python_and_package_build() -> None:
 
     assert 'python-version: ["3.11", "3.12", "3.13", "3.14"]' in workflow
     assert 'python-version: ["3.11", "3.14"]' in workflow
+    assert "astral-sh/setup-uv@v9.0.0" in workflow
+    assert "astral-sh/setup-uv@v9\n" not in workflow
     assert "uv build" in workflow
     assert "twine check" in workflow
 
