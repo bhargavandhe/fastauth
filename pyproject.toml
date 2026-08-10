@@ -1,6 +1,6 @@
 [project]
 name = "fastauth-py"
-version = "0.13.0"
+version = "0.14.0"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
@@ -76,7 +76,14 @@ build-backend = "hatchling.build"
 packages = ["src/fastauth"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/fastauth", "/README.md", "/LICENSE"]
+include = [
+  "/src/fastauth",
+  "/README.md",
+  "/LICENSE",
+  "/CHANGELOG.md",
+  "/API_STABILITY.md",
+  "/SECURITY.md",
+]
 
 [tool.ruff]
 line-length = 100

@@ -33,6 +33,7 @@ from fastauth.domain.enums import PluginMigrationMode
 from fastauth.plugins.migrations import (
     PlannedMigration,
     PlannedTable,
+    PluginMigrationError,
     PluginMigrationFingerprintError,
     PluginMigrationPendingError,
     PluginMigrationResult,
@@ -64,7 +65,10 @@ def sqlalchemy_type(python_type: str, max_length: int | None) -> TypeEngine[Any]
         return LargeBinary()
     if python_type == "json":
         return JSON()
-    raise ValueError(f"unsupported plugin field type: {python_type}")
+    raise PluginMigrationError(
+        code="PLUGIN_MIGRATION_UNSUPPORTED_FIELD_TYPE",
+        message=f"unsupported plugin field type: {python_type}",
+    )
 
 
 def plugin_ledger(metadata: MetaData, prefix: str, suffix: str) -> Table:
@@ -137,8 +141,9 @@ def pending_migrations(
     unknown = sorted(set(records).difference(declared))
     if unknown:
         plugin_id, version = unknown[0]
-        raise RuntimeError(
-            f"database contains unknown plugin migration: {plugin_id}:{version}",
+        raise PluginMigrationError(
+            code="PLUGIN_MIGRATION_LEDGER_DIVERGED",
+            message=f"database contains unknown plugin migration: {plugin_id}:{version}",
         )
 
     by_plugin: dict[str, list[PlannedMigration]] = defaultdict(list)
@@ -195,7 +200,10 @@ async def execute_postgres_plugin_migrations(
     if mode is PluginMigrationMode.DISABLED:
         return PluginMigrationResult(mode=mode)
     if plan.tables and not plan.migrations:
-        raise RuntimeError("plugin tables require at least one migration marker")
+        raise PluginMigrationError(
+            code="PLUGIN_MIGRATION_INVALID_PLAN",
+            message="plugin tables require at least one migration marker",
+        )
 
     await connection.execute(
         select(func.pg_advisory_xact_lock(PLUGIN_MIGRATION_ADVISORY_LOCK_ID)),

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import ConfigDict
 
 from fastauth.domain.models import WireModel
+from fastauth.exceptions import MaintenanceError
 from fastauth.options import MaintenanceOptions
 from fastauth.storage.base import ApiKeyStore, AuditLogStore, DatabaseAdapter
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from fastauth.runtime.observability import ObservabilityManager
 
 __all__ = [
+    "MaintenanceError",
     "MaintenanceFailure",
     "MaintenanceManager",
     "MaintenanceResult",
@@ -68,7 +70,10 @@ class MaintenanceManager:
         for _ in range(self.options.max_batches):
             deleted = await cleanup(cutoff, self.options.batch_size)
             if deleted < 0 or deleted > self.options.batch_size:
-                raise RuntimeError("adapter returned an invalid maintenance deletion count")
+                raise MaintenanceError(
+                    code="MAINTENANCE_INVALID_DELETE_COUNT",
+                    message="adapter returned an invalid maintenance deletion count",
+                )
             total += deleted
             if deleted < self.options.batch_size:
                 break
@@ -77,7 +82,10 @@ class MaintenanceManager:
     async def run(self, *, now: datetime | None = None) -> MaintenanceResult:
         cutoff = now or datetime.now(UTC)
         if cutoff.tzinfo is None or cutoff.utcoffset() is None:
-            raise ValueError("maintenance cutoff must be timezone-aware")
+            raise MaintenanceError(
+                code="MAINTENANCE_INVALID_CUTOFF",
+                message="maintenance cutoff must be timezone-aware",
+            )
         cutoff = cutoff.astimezone(UTC)
         if self.observability is not None:
             await self.observability.emit(
@@ -142,7 +150,7 @@ class MaintenanceManager:
         for resource, operation, resource_cutoff in operations:
             try:
                 deleted[resource] = await self.drain(operation, cutoff=resource_cutoff)
-            except Exception:
+            except Exception as exc:
                 if self.observability is not None:
                     await self.observability.emit(
                         "maintenance.resource.failed",
@@ -151,7 +159,12 @@ class MaintenanceManager:
                         resource=resource,
                     )
                 if not self.options.continue_on_error:
-                    raise
+                    if isinstance(exc, MaintenanceError):
+                        raise
+                    raise MaintenanceError(
+                        resource=resource,
+                        code="MAINTENANCE_CLEANUP_FAILED",
+                    ) from exc
                 failures.append(MaintenanceFailure(resource=resource))
 
         result = MaintenanceResult(

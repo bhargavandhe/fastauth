@@ -108,7 +108,8 @@ globally race-free.
 
 Adapters are async-only and operate on the Pydantic domain models directly —
 there is no separate ORM layer. To plug in a new backend, implement
-`DatabaseAdapter` first. Then add the optional store protocols for the plugins
+`DatabaseAdapter` first, including `ping()` and the bounded maintenance deletion
+methods. Then add the optional store protocols for the plugins
 or configuration you support. Adapter authors should install
 `fastauth-py[testing]` and run the packaged pytest contracts from
 `fastauth.testing.adapter_contract`. The contracts are split by capability so

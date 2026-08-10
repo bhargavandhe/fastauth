@@ -37,3 +37,7 @@ Events are observational side effects. They should be used for audit logs,
 notifications, metrics, and abuse detection, not as the only authority for
 mutating auth state. FastAuth flows update storage first, then publish events
 for consumers that need to react.
+
+Operational telemetry is deliberately separate from these domain events. Use
+`auth.observability` for request, readiness, maintenance, migration, rate-limit,
+and lockout signals; see [Observability](observability.md).

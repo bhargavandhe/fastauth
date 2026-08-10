@@ -12,6 +12,7 @@ from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailur
 from fastauth.domain.enums import PluginMigrationMode
 from fastauth.plugins.migrations import (
     PlannedMigration,
+    PluginMigrationError,
     PluginMigrationFingerprintError,
     PluginMigrationPendingError,
     PluginMigrationResult,
@@ -65,8 +66,9 @@ def pending_migrations(
     unknown = sorted(set(records).difference(declared))
     if unknown:
         plugin_id, version = unknown[0]
-        raise RuntimeError(
-            f"database contains unknown plugin migration: {plugin_id}:{version}",
+        raise PluginMigrationError(
+            code="PLUGIN_MIGRATION_LEDGER_DIVERGED",
+            message=f"database contains unknown plugin migration: {plugin_id}:{version}",
         )
 
     by_plugin: dict[str, list[PlannedMigration]] = defaultdict(list)
@@ -102,7 +104,10 @@ async def execute_mongo_plugin_migrations(
     if mode is PluginMigrationMode.DISABLED:
         return PluginMigrationResult(mode=mode)
     if plan.tables and not plan.migrations:
-        raise RuntimeError("plugin collections require at least one migration marker")
+        raise PluginMigrationError(
+            code="PLUGIN_MIGRATION_INVALID_PLAN",
+            message="plugin collections require at least one migration marker",
+        )
 
     ledger_name = physical_name("plugin_migrations", collection_prefix, collection_suffix)
     collection_names = set(await mongo_database.list_collection_names())

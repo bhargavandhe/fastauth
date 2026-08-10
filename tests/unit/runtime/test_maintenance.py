@@ -15,7 +15,7 @@ from fastauth.domain.models import (
     Verification,
 )
 from fastauth.options import FastAuthOptions, MaintenanceOptions
-from fastauth.runtime.maintenance import MaintenanceManager
+from fastauth.runtime.maintenance import MaintenanceError, MaintenanceManager
 from fastauth.storage.memory import InMemoryAdapter
 
 NOW = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
@@ -163,8 +163,26 @@ async def test_maintenance_continue_mode_returns_sanitized_partial_failures() ->
 async def test_maintenance_is_fail_fast_by_default() -> None:
     manager = MaintenanceManager(FailingSessionCleanupAdapter(), MaintenanceOptions())
 
-    with pytest.raises(RuntimeError, match="database DSN"):
+    with pytest.raises(MaintenanceError) as exc_info:
         await manager.run(now=NOW)
+
+    assert exc_info.value.code == "MAINTENANCE_CLEANUP_FAILED"
+    assert exc_info.value.resource == "sessions"
+    assert "database DSN" not in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+async def test_maintenance_rejects_invalid_adapter_counts_with_typed_error() -> None:
+    manager = MaintenanceManager(InMemoryAdapter(), MaintenanceOptions(batch_size=10))
+
+    async def invalid_count(cutoff: datetime, limit: int) -> int:
+        del cutoff, limit
+        return 11
+
+    with pytest.raises(MaintenanceError) as exc_info:
+        await manager.drain(invalid_count, cutoff=NOW)
+
+    assert exc_info.value.code == "MAINTENANCE_INVALID_DELETE_COUNT"
 
 
 async def test_fastauth_exposes_bound_maintenance_manager() -> None:

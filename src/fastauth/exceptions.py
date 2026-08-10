@@ -21,6 +21,7 @@ __all__ = [
     "InvalidCredentialsError",
     "InvalidRequestError",
     "JwksDecryptionError",
+    "MaintenanceError",
     "NotFoundError",
     "PasswordAlreadySetError",
     "RateLimitError",
@@ -132,6 +133,22 @@ class ServiceUnavailableError(FastAuthError):
         super().__init__(message="authentication service is not ready")
 
 
+class MaintenanceError(FastAuthError):
+    """Sanitized failure raised by bounded maintenance operations."""
+
+    default_code = "MAINTENANCE_FAILED"
+
+    def __init__(
+        self,
+        *,
+        resource: str | None = None,
+        code: str | None = None,
+        message: str = "maintenance operation failed",
+    ) -> None:
+        self.resource = resource
+        super().__init__(code=code, message=message)
+
+
 class RateLimitError(FastAuthError):
     default_code = "RATE_LIMITED"
 
@@ -227,6 +244,7 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     EmailNotVerifiedError: HTTPStatus.FORBIDDEN,
     SessionExpiredError: HTTPStatus.UNAUTHORIZED,
     ServiceUnavailableError: HTTPStatus.SERVICE_UNAVAILABLE,
+    MaintenanceError: HTTPStatus.INTERNAL_SERVER_ERROR,
     RateLimitError: HTTPStatus.TOO_MANY_REQUESTS,
     TokenInvalidError: HTTPStatus.BAD_REQUEST,
     TokenExpiredError: HTTPStatus.BAD_REQUEST,

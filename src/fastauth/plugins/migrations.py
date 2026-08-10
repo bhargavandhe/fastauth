@@ -11,6 +11,7 @@ from typing import Literal, Protocol, Self
 from pydantic import Field, field_validator, model_validator
 
 from fastauth.domain.enums import PluginMigrationMode
+from fastauth.exceptions import FastAuthError
 from fastauth.plugins.schema import (
     FieldSpec,
     IndexSpec,
@@ -24,6 +25,7 @@ __all__ = [
     "MigrationOperation",
     "PlannedMigration",
     "PlannedTable",
+    "PluginMigrationError",
     "PluginMigrationFingerprintError",
     "PluginMigrationMode",
     "PluginMigrationPendingError",
@@ -43,25 +45,35 @@ ConflictKind = Literal["duplicate_table", "field_conflict"]
 OperationKind = Literal["create_table", "create_index", "record_migration"]
 
 
-class PluginMigrationPendingError(RuntimeError):
+class PluginMigrationError(FastAuthError):
+    """Base class for executable plugin schema migration failures."""
+
+    default_code = "PLUGIN_MIGRATION_FAILED"
+
+
+class PluginMigrationPendingError(PluginMigrationError):
     """Raised in check mode when declared plugin migrations are not recorded."""
+
+    default_code = "PLUGIN_MIGRATIONS_PENDING"
 
     def __init__(self, pending: Sequence[PlannedMigration]) -> None:
         self.pending = tuple(pending)
         labels = ", ".join(
             f"{migration.plugin_id}:{migration.version}" for migration in self.pending
         )
-        super().__init__(f"pending plugin migrations: {labels}")
+        super().__init__(message=f"pending plugin migrations: {labels}")
 
 
-class PluginMigrationFingerprintError(RuntimeError):
+class PluginMigrationFingerprintError(PluginMigrationError):
     """Raised when an already-recorded plugin migration changed in place."""
+
+    default_code = "PLUGIN_MIGRATION_FINGERPRINT_MISMATCH"
 
     def __init__(self, plugin_id: str, version: int) -> None:
         self.plugin_id = plugin_id
         self.version = version
         super().__init__(
-            f"plugin migration fingerprint mismatch: {plugin_id}:{version}",
+            message=f"plugin migration fingerprint mismatch: {plugin_id}:{version}",
         )
 
 
@@ -115,13 +127,15 @@ class SchemaConflict(PluginSchemaModel):
         return value
 
 
-class PluginSchemaConflictError(ValueError):
+class PluginSchemaConflictError(PluginMigrationError):
     """Raised when multiple plugin schema declarations cannot be aggregated."""
+
+    default_code = "PLUGIN_SCHEMA_CONFLICT"
 
     def __init__(self, conflicts: Sequence[SchemaConflict]) -> None:
         self.conflicts = tuple(conflicts)
         messages = "; ".join(conflict.message for conflict in self.conflicts)
-        super().__init__(messages or "plugin schema declarations conflict")
+        super().__init__(message=messages or "plugin schema declarations conflict")
 
 
 class PlannedTable(PluginSchemaModel):

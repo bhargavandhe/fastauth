@@ -62,6 +62,7 @@ options = FastAuthOptions(
         table_prefix="fastauth_",
         table_suffix="",
         migration_mode="check",
+        plugin_migration_mode="check",
     ),
 )
 auth = FastAuth(
@@ -72,9 +73,11 @@ auth = FastAuth(
 ```
 
 For local development and small deployments, keep the default
-`migration_mode="apply"` to apply pending Postgres migrations before fastauth
-starts. Production options reject automatic migrations; prefer the explicit
-CLI migration path where schema changes are part of the deploy pipeline.
+`migration_mode="apply"` and the development-default plugin migration mode
+apply pending migrations before fastauth starts. Production defaults plugin
+migrations to `check` and rejects an explicit automatic `apply`; prefer the
+explicit CLI migration path where schema changes are part of the deploy
+pipeline.
 
 ## TLS termination and production policies
 
@@ -135,6 +138,10 @@ csrf = CsrfOptions(
 
 ## Health checks
 
-`GET /auth/health` returns `{"status": "ok"}` without touching the database;
-use it for liveness probes. For readiness, additionally probe the OpenAPI
-schema endpoint.
+`GET /auth/health/live` proves the process and router are responsive without
+touching storage. `GET /auth/health/ready` returns 200 only after database and
+plugin startup completed and the database answers a ping; otherwise it returns
+a sanitized 503. Use them as liveness and readiness probes respectively.
+
+Fastauth accepts or creates a bounded `X-Request-ID` and returns it on every
+response when `auth.add_middleware(app)` is installed.

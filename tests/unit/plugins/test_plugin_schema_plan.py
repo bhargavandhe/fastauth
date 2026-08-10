@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from fastauth.plugins.migrations import build_schema_plan, render_migration_operations
+from fastauth.plugins.migrations import (
+    PluginSchemaConflictError,
+    build_schema_plan,
+    render_migration_operations,
+)
 from fastauth.plugins.schema import FieldSpec, IndexSpec, MigrationSpec, PluginSchema, TableSpec
 
 
@@ -40,7 +44,7 @@ def test_schema_plan_rejects_duplicate_tables_across_plugins() -> None:
     first = PluginSchema(plugin_id="first", tables=(TableSpec(name="shared"),))
     second = PluginSchema(plugin_id="second", tables=(TableSpec(name="shared"),))
 
-    with pytest.raises(ValueError, match="duplicate plugin table 'shared'"):
+    with pytest.raises(PluginSchemaConflictError, match="duplicate plugin table 'shared'"):
         build_schema_plan((first, second))
 
 

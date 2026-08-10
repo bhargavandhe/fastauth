@@ -23,8 +23,19 @@ jobs:
 
       - uses: astral-sh/setup-uv@v9
 
+      - name: Verify tag and package versions agree
+        run: |
+          package_version="$(uv version --short)"
+          runtime_version="$(uv run python -c 'import fastauth; print(fastauth.__version__)')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          test "$tag_version" = "$package_version"
+          test "$tag_version" = "$runtime_version"
+
       - name: Build
         run: uv build
+
+      - name: Verify distributions
+        run: uvx twine check dist/*
 
       - name: Store distributions
         uses: actions/upload-artifact@v4
@@ -50,3 +61,25 @@ jobs:
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  release:
+    name: Create GitHub Release
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download exact published distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create release and attach distributions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --verify-tag
+          --generate-notes
+          --title "$GITHUB_REF_NAME"

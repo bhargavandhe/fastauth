@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v9
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v9
@@ -52,14 +52,17 @@ jobs:
           --cov-fail-under=80
 
   docker-tests:
-    name: Docker-backed adapter tests
+    name: Docker-backed adapter tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v9
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - run: uv sync --extra dev --extra jwt --extra cli --extra beanie --extra postgres
       - run: >
           uv run --extra dev --extra jwt --extra cli --extra beanie --extra postgres pytest

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastauth.api.responses import AuthenticationResponse, SessionView, UserView
+from fastauth.deprecations import FastAuthDeprecationWarning
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.value_objects import ApiKeyId, RefreshTokenId, SessionId, UserId
 from fastauth.options import FastAuthOptions, MaintenanceOptions, ProductionSafetyOptions
@@ -34,7 +35,7 @@ from fastauth.runtime.capabilities import (
     CapabilityRegistry,
 )
 from fastauth.runtime.event_bus import EventBus
-from fastauth.runtime.maintenance import MaintenanceFailure, MaintenanceResult
+from fastauth.runtime.maintenance import MaintenanceError, MaintenanceFailure, MaintenanceResult
 from fastauth.runtime.observability import (
     LoggingObservabilitySink,
     ObservabilityManager,
@@ -64,8 +65,10 @@ __all__ = [
     "CapabilityRegistry",
     "EventBus",
     "FastAuth",
+    "FastAuthDeprecationWarning",
     "FastAuthOptions",
     "LoggingObservabilitySink",
+    "MaintenanceError",
     "MaintenanceFailure",
     "MaintenanceOptions",
     "MaintenanceResult",
@@ -90,4 +93,4 @@ __all__ = [
     "openapi",
     "test_utils",
 ]
-__version__ = "0.13.0"
+__version__ = "0.14.0"
