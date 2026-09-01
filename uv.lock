@@ -572,7 +572,7 @@ wheels = [
 
 [[package]]
 name = "fastauth-py"
-version = "0.14.0"
+version = "0.14.1"
 source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },

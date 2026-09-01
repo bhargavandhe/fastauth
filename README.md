@@ -268,7 +268,7 @@ fastauth/
 
 ## Status
 
-**v0.14.0** — current beta release. Coverage spans unit tests, adapter-contract
+**v0.14.1** — current beta release. Coverage spans unit tests, adapter-contract
 tests, integration flows, CLI behavior, and the quickstart example.
 `pyright --strict` is clean. See [CHANGELOG.md](CHANGELOG.md) for the detailed
 feature list.

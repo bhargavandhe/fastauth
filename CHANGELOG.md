@@ -4,6 +4,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-09-01
+
+### Changed
+
+- Changed the default minimum password length from 12 back to 8 characters.
+  Applications can configure a higher minimum with `PasswordOptions.min_length`.
+
 ## [0.14.0] — 2026-08-10
 
 ### Added
@@ -770,7 +777,8 @@ test utilities, and a CLI.
 - `fastauth print-config` removed (read your config however you like —
   the framework no longer prescribes a source).
 
-[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/bhargavandhe/fastauth/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/bhargavandhe/fastauth/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/bhargavandhe/fastauth/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/bhargavandhe/fastauth/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/bhargavandhe/fastauth/compare/v0.12.0...v0.12.1

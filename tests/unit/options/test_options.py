@@ -79,17 +79,18 @@ def test_fastauth_builds_reusable_credential_service_from_global_password_option
         auth.context.credential_service.validate_password(SecretStr("short-password"))
 
 
-def test_default_password_policy_requires_twelve_characters() -> None:
+def test_default_password_policy_requires_eight_characters() -> None:
     from fastauth import FastAuth
     from fastauth.exceptions import InvalidRequestError
 
+    password_options = PasswordOptions()
     auth = FastAuth(FastAuthOptions(secret_key=SecretStr("a" * 64)))
 
+    assert password_options.min_length == 8
+    assert PasswordOptions(min_length=8).min_length == 8
     with pytest.raises(InvalidRequestError):
-        auth.context.credential_service.validate_password(SecretStr("eleven-char"))
-    assert auth.context.credential_service.validate_password(SecretStr("twelve-chars")) == (
-        "twelve-chars"
-    )
+        auth.context.credential_service.validate_password(SecretStr("shortpw"))
+    assert auth.context.credential_service.validate_password(SecretStr("password")) == "password"
 
 
 def test_fastauth_options_rejects_short_secret_key() -> None:
