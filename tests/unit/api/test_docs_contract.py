@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
+
+import pytest
 
 from tests.support.paths import PROJECT_ROOT
 
@@ -230,10 +233,17 @@ def test_ci_checks_supported_python_and_package_build() -> None:
 
     assert 'python-version: ["3.11", "3.12", "3.13", "3.14"]' in workflow
     assert 'python-version: ["3.11", "3.14"]' in workflow
-    assert "astral-sh/setup-uv@v9.0.0" in workflow
-    assert "astral-sh/setup-uv@v9\n" not in workflow
     assert "uv build" in workflow
     assert "twine check" in workflow
+
+
+@pytest.mark.parametrize("filename", ["ci.yml", "docs-pages.yml", "publish.yml", "security.yml"])
+def test_workflows_pin_setup_uv_to_a_full_release_tag(filename: str) -> None:
+    workflow = read_project_file(f".github/workflows/{filename}")
+    refs = re.findall(r"uses:\s+astral-sh/setup-uv@(\S+)", workflow)
+
+    assert refs, f"{filename} must install uv"
+    assert all(re.fullmatch(r"v\d+\.\d+\.\d+", ref) for ref in refs), refs
 
 
 def test_publish_workflow_validates_version_and_attaches_exact_artifacts() -> None:

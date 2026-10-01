@@ -47,10 +47,12 @@ async def create_user(
     metadata: UserMetadata | Mapping[str, JsonValue] | None = None,
 ) -> UserView: ...
 
+
 class UserCreated(AuthEvent):
     audit_event_type: AuditEventType = AuditEventType.USER_CREATED
     user_id: str
     identifier: str
+
 
 class AuthApi:
     async def create_user(
@@ -125,9 +127,7 @@ async def create_user(
     metadata: UserMetadata | Mapping[str, JsonValue] | None = None,
 ) -> UserView:
     secret = password if isinstance(password, SecretStr) else SecretStr(password)
-    metadata_value = (
-        metadata.root if isinstance(metadata, UserMetadata) else dict(metadata or {})
-    )
+    metadata_value = metadata.root if isinstance(metadata, UserMetadata) else dict(metadata or {})
     user = User(
         email=email,
         name=name,

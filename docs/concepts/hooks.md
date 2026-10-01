@@ -11,6 +11,7 @@ from fastauth.domain.enums import HookPhase
 from fastauth.domain.models import User
 from fastauth.runtime.hooks import HookContext
 
+
 @auth.hook(HookPhase.BEFORE_CREATE, target="user")
 async def stamp_signup_metadata(context: HookContext) -> User:
     user = cast(User, context.payload)

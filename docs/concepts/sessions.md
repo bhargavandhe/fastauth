@@ -14,8 +14,8 @@ session = await context.session_strategy.create(
     ip="203.0.113.4",
     user_agent="curl/8.6.0",
 )
-print(session.token)            # opaque token, set as a signed cookie
-print(session.session.id)        # row id in the sessions collection
+print(session.token)  # opaque token, set as a signed cookie
+print(session.session.id)  # row id in the sessions collection
 ```
 
 Cookie packaging uses an `itsdangerous`-signed envelope so that tokens are

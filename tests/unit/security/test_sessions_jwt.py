@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import SecretStr
 
@@ -9,12 +11,16 @@ from fastauth.security.jwt import JwksRegistry, JwtSessionStrategy, LocalKmsSign
 from fastauth.storage.memory import InMemoryAdapter
 
 
-async def build_registry(adapter: InMemoryAdapter | None = None) -> JwksRegistry:
+async def build_registry(
+    adapter: InMemoryAdapter | None = None,
+    *,
+    alg: JwtAlgorithm = JwtAlgorithm.ED25519,
+) -> JwksRegistry:
     adapter = adapter or InMemoryAdapter()
     registry = JwksRegistry(
         adapter,
         secret_key=SecretStr("k" * 64),
-        alg=JwtAlgorithm.ED25519,
+        alg=alg,
         rotation_interval_seconds=None,
         grace_period_seconds=86400,
         encrypt_private_keys=True,
@@ -43,9 +49,10 @@ async def test_jwks_returned_as_json(registry: JwksRegistry) -> None:
     assert jwks.keys[0]["kty"] in {"OKP", "EC", "RSA"}
 
 
-async def test_strategy_creates_verifiable_token() -> None:
+@pytest.mark.parametrize("alg", list(JwtAlgorithm))
+async def test_strategy_creates_verifiable_token(alg: JwtAlgorithm) -> None:
     adapter = InMemoryAdapter()
-    registry = await build_registry(adapter)
+    registry = await build_registry(adapter, alg=alg)
     signer = LocalKmsSigner(registry)
     strategy = JwtSessionStrategy(
         adapter=adapter,
@@ -63,6 +70,39 @@ async def test_strategy_creates_verifiable_token() -> None:
     decoded = await strategy.read(context.token)
     assert decoded is not None
     assert decoded.user.id == user.id
+
+
+@pytest.mark.parametrize(
+    ("claim", "value"),
+    [("aud", "other"), ("iss", "other"), ("exp", 0), ("sub", "missing-user")],
+)
+async def test_strategy_rejects_invalid_claims(claim: str, value: str | int) -> None:
+    adapter = InMemoryAdapter()
+    registry = await build_registry(adapter)
+    signer = LocalKmsSigner(registry)
+    strategy = JwtSessionStrategy(
+        adapter=adapter,
+        registry=registry,
+        signer=signer,
+        issuer="iss",
+        audience="aud",
+        expires_in_seconds=900,
+        payload_builder=lambda user: {"sub": user.id},
+    )
+    user = await adapter.create_user(User(email="alice@example.com"))
+    claims: dict[str, str | int] = {
+        "sub": user.id,
+        "iss": "iss",
+        "aud": "aud",
+        "exp": int(datetime.now(UTC).timestamp()) + 900,
+    }
+    valid_token = await signer.sign(header={"alg": "Ed25519", "typ": "JWT"}, payload=claims)
+    assert await strategy.read(valid_token) is not None
+
+    claims[claim] = value
+    invalid_token = await signer.sign(header={"alg": "Ed25519", "typ": "JWT"}, payload=claims)
+    assert await strategy.read(invalid_token) is None
+    assert await strategy.read("malformed-token") is None
 
 
 async def test_rotation_keeps_old_keys_valid_during_grace() -> None:

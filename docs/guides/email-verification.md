@@ -58,9 +58,10 @@ Replace the default `ConsoleEmailSender` with your provider's adapter:
 ```python
 from fastauth import FastAuth
 
+
 class SesEmailSender:
-    async def send(self, message: EmailMessage) -> None:
-        ...
+    async def send(self, message: EmailMessage) -> None: ...
+
 
 auth = FastAuth(options, email_sender=SesEmailSender())
 ```
