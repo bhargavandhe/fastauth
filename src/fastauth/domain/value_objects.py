@@ -63,7 +63,17 @@ class UserId(RootModel[HexId]):
     model_config = ConfigDict(frozen=True)
 
 
-class SessionId(RootModel[HexId]):
+class SessionId(
+    RootModel[
+        Annotated[
+            str,
+            StringConstraints(
+                strict=True,
+                pattern=r"^(?:[a-f0-9]{24,32}|jwt:[a-f0-9]{32}|legacy-jwt:[a-f0-9]{64})$",
+            ),
+        ]
+    ]
+):
     model_config = ConfigDict(frozen=True)
 
 

@@ -32,13 +32,15 @@ app = typer.Typer(no_args_is_help=True, help="fastauth CLI")
 
 
 MEMORY_AUTH_SCAFFOLD = '''\
-"""Authkit instance for this application.
+"""FastAuth instance for this application.
 
 This scaffold demonstrates explicit dependency injection. Build your
 ``FastAuthOptions`` in your application code, then pass it to
 ``FastAuth``. fastauth never reads process-level configuration.
 """
 from __future__ import annotations
+
+from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import memory
@@ -47,12 +49,12 @@ from fastauth import email_password
 
 def create_options(secret_key: str) -> FastAuthOptions:
     return FastAuthOptions(
-        secret_key=secret_key,
+        secret_key=SecretStr(secret_key),
         database=memory(),
     )
 
 
-def build_auth(secret_key: str):
+def build_auth(secret_key: str) -> FastAuth:
     return FastAuth(create_options(secret_key), plugins=[email_password()])
 '''
 
@@ -70,6 +72,8 @@ from typing import Any
 
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
+
+from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import mongo
@@ -93,7 +97,7 @@ def create_options(
     collection_suffix: str = "",
 ) -> FastAuthOptions:
     return FastAuthOptions(
-        secret_key=secret_key,
+        secret_key=SecretStr(secret_key),
         database=mongo(
             database=database,
             collection_prefix=collection_prefix,
@@ -102,7 +106,7 @@ def create_options(
     )
 
 
-def build_auth(options: FastAuthOptions):
+def build_auth(options: FastAuthOptions) -> FastAuth:
     return FastAuth(options, plugins=[email_password()])
 
 
@@ -131,6 +135,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from pydantic import SecretStr
+
 from fastauth import FastAuth, FastAuthOptions
 from fastauth.database import postgres
 from fastauth import email_password
@@ -144,7 +150,7 @@ def create_options(
     table_suffix: str = "",
 ) -> FastAuthOptions:
     return FastAuthOptions(
-        secret_key=secret_key,
+        secret_key=SecretStr(secret_key),
         database=postgres(
             url=postgres_url,
             table_prefix=table_prefix,

@@ -2,6 +2,8 @@
 
 A production fastauth deployment has two moving parts: the FastAPI app itself
 and a persistence backend. This guide covers MongoDB and Postgres.
+Start with the [executable backend and email recipes](deployment-recipes.md)
+for complete typed app factories, lifecycle wiring, and tested sender code.
 
 ## Process model
 
@@ -132,7 +134,7 @@ List every browser origin that may call fastauth:
 from fastauth.options import CsrfOptions
 
 csrf = CsrfOptions(
-    trusted_origins=["https://app.example.com", "https://*.app.example.com"],
+    trusted_origins=("https://app.example.com", "https://*.app.example.com"),
 )
 ```
 

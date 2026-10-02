@@ -44,6 +44,7 @@ from fastauth.plugins.schema import (
 from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
 from fastauth.storage.beanie.plugin_migrations import execute_mongo_plugin_migrations
 from tests.adapters.adapter_contract import FullAdapterContract
+from tests.adapters.session_matrix import SessionMatrixContract
 
 
 def plugin_plan(
@@ -80,7 +81,7 @@ def plugin_plan(
 
 
 @pytest.mark.usefixtures("beanie_database")
-class TestBeanieAdapter(FullAdapterContract):
+class TestBeanieAdapter(FullAdapterContract, SessionMatrixContract):
     @pytest.fixture
     async def adapter(self, beanie_database: AsyncDatabase[Any]) -> BeanieAdapter:
         # Wipe collections between tests for isolation.
@@ -196,7 +197,7 @@ class TestBeanieAdapter(FullAdapterContract):
         assert isinstance(audit_doc["_id"], ObjectId)
         assert isinstance(audit_doc["user_id"], ObjectId)
 
-    async def test_delete_refresh_token_family_keeps_token_rows_when_session_delete_fails(
+    async def test_delete_refresh_token_family_fails_closed_when_session_delete_fails(
         self,
         adapter: BeanieAdapter,
         monkeypatch: MonkeyPatch,
@@ -237,8 +238,12 @@ class TestBeanieAdapter(FullAdapterContract):
             await adapter.delete_refresh_token_family(token.family_id)
 
         monkeypatch.setattr(adapter.session_doc, "find", original_find)
-        assert await adapter.get_refresh_token_by_hash("family-session-fail-root") is not None
-        assert await adapter.get_session_by_token_hash("family-session-fail-session") is not None
+        assert await adapter.get_refresh_token_by_hash("family-session-fail-root") is None
+        assert await adapter.get_session_by_token_hash("family-session-fail-session") is None
+        # A failed cleanup remains retryable; revoked family state is authoritative.
+        cleanup = await adapter.delete_refresh_token_family(token.family_id)
+        assert cleanup.deleted_tokens == 1
+        assert cleanup.deleted_sessions == 1
 
     async def test_delete_refresh_token_family_deletes_sessions_and_tokens(
         self,
@@ -443,3 +448,126 @@ class TestBeanieAdapter(FullAdapterContract):
             return len(result.applied)
 
         assert sorted(await asyncio.gather(apply_once(), apply_once())) == [0, 1]
+
+
+async def test_family_revocation_snapshot_racing_rotation_cannot_leave_successor(
+    beanie_database: AsyncDatabase[Any],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    adapter = BeanieAdapter(beanie_database)
+    user = await adapter.create_user(User(email="family-snapshot@example.com"))
+    old_session = await adapter.create_session(
+        Session(
+            user_id=user.id,
+            token_hash="old-session-race",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    root_id = new_id()
+    root = await adapter.create_refresh_token(
+        RefreshToken(
+            id=root_id,
+            family_id=root_id,
+            user_id=user.id,
+            session_id=old_session.id,
+            token_hash="root-race",
+            family_created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+        )
+    )
+    replacement = await adapter.create_session(
+        Session(
+            user_id=user.id,
+            token_hash="replacement-race",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    snapshot_taken, continue_revoke = asyncio.Event(), asyncio.Event()
+    original_find = adapter.refresh_token_doc.find
+
+    class SnapshotQuery:
+        def __init__(self, query: Any) -> None:
+            self.query = query
+
+        async def to_list(self) -> list[Any]:
+            snapshot = await self.query.to_list()
+            snapshot_taken.set()
+            await continue_revoke.wait()
+            return snapshot
+
+        async def delete(self) -> Any:
+            return await self.query.delete()
+
+    def find_with_snapshot(query: Any, *args: Any, **kwargs: Any) -> Any:
+        original = original_find(query, *args, **kwargs)
+        if query == {"family_id": ObjectId(root.family_id)}:
+            return SnapshotQuery(original)
+        return original
+
+    monkeypatch.setattr(adapter.refresh_token_doc, "find", find_with_snapshot)
+    revoking = asyncio.create_task(adapter.delete_refresh_token_family(root.family_id))
+    await asyncio.wait_for(snapshot_taken.wait(), timeout=10)
+    successor = RefreshToken(
+        user_id=user.id,
+        session_id=replacement.id,
+        token_hash="successor-race",
+        family_id=root.family_id,
+        family_created_at=root.family_created_at,
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    try:
+        rotated = await adapter.rotate_refresh_token(
+            current_token_id=root.id, new_token=successor, consumed_at=datetime.now(UTC)
+        )
+    finally:
+        continue_revoke.set()
+    await asyncio.wait_for(revoking, timeout=10)
+    assert await adapter.get_session_by_token_hash(replacement.token_hash) is None
+    assert await adapter.get_refresh_token_by_hash(successor.token_hash) is None
+    assert rotated is None
+
+
+async def test_v015_mongo_migration_replaces_indexes_and_deduplicates_challenges(
+    beanie_database: AsyncDatabase[Any],
+) -> None:
+    from fastauth.storage.beanie import migrate_mongo_storage_v015, preflight_mongo_storage_v015
+
+    prefix = f"migration_{new_id()[:8]}_"
+    users = beanie_database[f"{prefix}users"]
+    verifications = beanie_database[f"{prefix}verifications"]
+    await users.create_index("username", unique=True, sparse=True, name="users_username_unique")
+    await users.insert_one({"email": "one@example.com", "username": None})
+    await verifications.create_index(
+        [("identifier", 1), ("purpose", 1), ("value_hash", 1)],
+        unique=True,
+        name="verifications_lookup_unique",
+    )
+    now = datetime.now(UTC)
+    for age, value in [(2, "old"), (1, "new")]:
+        await verifications.insert_one(
+            {
+                "identifier": "migration@example.com",
+                "purpose": "password-reset",
+                "value_hash": value,
+                "created_at": now - timedelta(seconds=age),
+                "updated_at": now,
+                "expires_at": now + timedelta(minutes=5),
+                "attempt_count": 0,
+            }
+        )
+    with pytest.raises(RuntimeError, match=r"0\.15 migration"):
+        await preflight_mongo_storage_v015(beanie_database, collection_prefix=prefix)
+    migrated = await migrate_mongo_storage_v015(beanie_database, collection_prefix=prefix)
+    assert migrated.removed_username_indexes == ("users_username_unique",)
+    assert migrated.deleted_superseded_verifications == 1
+    await preflight_mongo_storage_v015(beanie_database, collection_prefix=prefix)
+    await users.insert_one({"email": "two@example.com", "username": None})
+    await users.insert_one({"email": "named@example.com", "username": "unique-name"})
+    from pymongo.errors import DuplicateKeyError
+
+    with pytest.raises(DuplicateKeyError):
+        await users.insert_one({"email": "duplicate@example.com", "username": "unique-name"})
+    assert (await verifications.find_one({})) is not None
+    assert await verifications.count_documents({"value_hash": "old"}) == 0
+    replayed = await migrate_mongo_storage_v015(beanie_database, collection_prefix=prefix)
+    assert replayed.deleted_superseded_verifications == 0

@@ -35,12 +35,13 @@ from fastauth.exceptions import (
     DuplicateError,
     InvalidCredentialsError,
     NotFoundError,
-    TokenExpiredError,
     TokenInvalidError,
 )
 from fastauth.flows.callbacks import resolve_callback_url
+from fastauth.flows.challenges import consume_token
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.runtime.context import AuthContext
+from fastauth.runtime.hooks import update_user_with_hooks
 
 __all__ = [
     "ConfirmEmailChangeRequest",
@@ -93,7 +94,9 @@ async def request_email_change(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None or account.password is None:
         raise NotFoundError(resource="credential_account")
-    if not context.password_hasher.verify(request.password.get_secret_value(), account.password):
+    if not await context.password_executor.verify(
+        request.password.get_secret_value(), account.password
+    ):
         raise InvalidCredentialsError()
 
     # Check that no other user is using the address. Race is possible; we
@@ -105,7 +108,7 @@ async def request_email_change(
     # Store the pending change on the user record so the application can
     # display "verification pending: new@example.com" if desired.
     user.pending_email_change = request.new_email
-    await context.adapter.update_user(user)
+    await update_user_with_hooks(context, user, actor_user_id=user.id)
 
     # Create the verification record keyed by the NEW email so the confirm
     # endpoint can look it up.
@@ -170,16 +173,13 @@ async def confirm_email_change(
     user_agent: str | None,
 ) -> EmptyResponse:
     token_hash = context.token_service.hash_only(request.token.get_secret_value())
-    verification = await context.adapter.get_verification(
+    await consume_token(
+        context,
         request.new_email,
         VerificationPurpose.EMAIL_CHANGE,
         token_hash,
+        label="email-change",
     )
-    if verification is None:
-        raise TokenInvalidError(message="invalid email-change token")
-    if verification.expires_at <= datetime.now(UTC):
-        await context.adapter.delete_verification(verification.id)
-        raise TokenExpiredError(message="email-change token expired")
 
     # Find the user whose pending change matches. We don't trust the request
     # to identify the user; we look up by pending_email_change instead.
@@ -191,11 +191,7 @@ async def confirm_email_change(
     other = await context.adapter.get_user_by_email(request.new_email)
     if other is not None and other.id != candidates.id:
         candidates.pending_email_change = None
-        await context.adapter.update_user(candidates)
-        await context.adapter.delete_verifications_for_identifier(
-            request.new_email,
-            VerificationPurpose.EMAIL_CHANGE,
-        )
+        await update_user_with_hooks(context, candidates, actor_user_id=candidates.id)
         raise DuplicateError(resource="user", field="email")
 
     previous_email = candidates.email
@@ -203,11 +199,7 @@ async def confirm_email_change(
     candidates.pending_email_change = None
     # The user has proved possession of the new address; mark it verified.
     candidates.email_verified = True
-    await context.adapter.update_user(candidates)
-    await context.adapter.delete_verifications_for_identifier(
-        request.new_email,
-        VerificationPurpose.EMAIL_CHANGE,
-    )
+    await update_user_with_hooks(context, candidates, actor_user_id=candidates.id)
     await context.lockout_tracker.reset(request.new_email)
 
     await context.event_bus.publish(

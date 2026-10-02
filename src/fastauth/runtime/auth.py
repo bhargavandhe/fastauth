@@ -16,6 +16,7 @@ from fastauth.exceptions import ConfigError, FastAuthError
 from fastauth.messaging.email import ConsoleEmailSender, EmailSender, TemplateRenderer
 from fastauth.options import FastAuthOptions
 from fastauth.plugins.base import Plugin, PluginInfo, PluginRegistry
+from fastauth.runtime.actions import ActionBoundary
 from fastauth.runtime.api import AuthApi
 from fastauth.runtime.capabilities import Capability, CapabilityRegistry
 from fastauth.runtime.context import AuthContext, RuntimeReadiness
@@ -39,17 +40,29 @@ from fastauth.runtime.observability import (
     ObservabilityMiddleware,
     ObservabilitySink,
 )
+from fastauth.runtime.services import AuditLogsApi, EmailOtpApi, JwtApi, VerificationApi
 from fastauth.security.lockout import AccountLockoutTracker
-from fastauth.security.passwords import Argon2idHasher, CredentialService, PasswordHasher
+from fastauth.security.passwords import (
+    Argon2idHasher,
+    BoundedPasswordHasher,
+    CredentialService,
+    PasswordHasher,
+)
+from fastauth.security.policy import PolicyHook, PolicyService, PolicySessionStrategy
 from fastauth.security.rate_limit import (
     DatabaseRateLimitStorage,
     MemoryRateLimitStorage,
     RateLimiter,
 )
 from fastauth.security.refresh_tokens import RefreshTokenService
-from fastauth.security.sessions import DatabaseSessionStrategy, SessionContext, SessionStrategy
+from fastauth.security.sessions import (
+    DatabaseSessionStrategy,
+    RefreshSessionStrategy,
+    SessionContext,
+    SessionStrategy,
+)
 from fastauth.security.tokens import SignedCookieValue, TokenService
-from fastauth.storage.base import JwksKeyStore, RateLimitStore
+from fastauth.storage.base import BaseDatabaseAdapter, JwksKeyStore, RateLimitStore
 from fastauth.web.fastapi import (
     build_router,
     http_status_for,
@@ -86,6 +99,7 @@ class FastAuth:
         plugins: Sequence[Plugin] = (),
         email_sender: EmailSender | None = None,
         password_hasher: PasswordHasher | None = None,
+        policy_hook: PolicyHook | None = None,
         session_strategy: SessionStrategy | None = None,
         token_service: TokenService | None = None,
         observability_sink: ObservabilitySink | None = None,
@@ -198,6 +212,23 @@ class FastAuth:
             token_service=token_service,
         )
         event_bus = EventBus()
+        if config.refresh_token.enabled and not isinstance(
+            session_strategy, RefreshSessionStrategy
+        ):
+            raise ConfigError(
+                message="refresh tokens require a RefreshSessionStrategy.renew implementation"
+            )
+        database_hooks = DatabaseHooks()
+        policy = PolicyService(
+            adapter,
+            session_strategy,
+            config.session,
+            event_bus,
+            policy_hook,
+            hooks=database_hooks,
+        )
+        session_strategy = PolicySessionStrategy(session_strategy, policy)
+        self.policy = policy
         observability = ObservabilityManager(observability_sink)
 
         self.context = AuthContext(
@@ -205,14 +236,18 @@ class FastAuth:
             adapter=adapter,
             session_strategy=session_strategy,
             credential_service=credential_service,
+            policy=policy,
             password_hasher=password_hasher,
+            password_executor=BoundedPasswordHasher(
+                password_hasher, max_concurrency=config.password.max_concurrent_operations
+            ),
             token_service=token_service,
             email_sender=email_sender,
             template_renderer=TemplateRenderer(
                 config.email.template_directory,
                 config.email.template_globals,
             ),
-            hooks=DatabaseHooks(),
+            hooks=database_hooks,
             event_bus=event_bus,
             plugins=plugin_registry,
             signed_cookie=signed_cookie,
@@ -233,6 +268,19 @@ class FastAuth:
         for event_type, handler in self.context.plugins.all_event_handlers():
             self.context.event_bus.subscribe(event_type, handler)  # type: ignore[arg-type]
 
+        if (
+            not callable(getattr(adapter, "attempt_verification", None))
+            or getattr(type(adapter), "attempt_verification", None)
+            is BaseDatabaseAdapter.attempt_verification
+        ):
+            raise ConfigError(
+                message=(
+                    "FastAuth requires atomic verification attempts; implement "
+                    "VerificationStore.attempt_verification and atomic replacement issuance "
+                    "before upgrading this custom adapter to 0.15"
+                )
+            )
+
         self.events: EventBus = event_bus
         self.capabilities: CapabilityRegistry = CapabilityRegistry(
             [
@@ -247,6 +295,7 @@ class FastAuth:
                 *self.context.plugins.all_capabilities(),
             ]
         )
+        self.actions = ActionBoundary(self.context)
         self.api = AuthApi(self.context)
         self.router = build_router(self.context, self.api)
         self.plugins = PluginsManager(self.context.plugins.plugins, self.api.plugins)
@@ -256,6 +305,10 @@ class FastAuth:
         self.users = UsersManager(self)
         self.passwords = PasswordsManager(self)
         self.email_changes = EmailChangesManager(self)
+        self.otp = EmailOtpApi(self.context)
+        self.verification = VerificationApi(self.context)
+        self.jwt = JwtApi(self.context)
+        self.audit = AuditLogsApi(self.context)
         self.depends = DependsManager(self)
         self.CurrentUser: Any = Annotated[
             UserView,

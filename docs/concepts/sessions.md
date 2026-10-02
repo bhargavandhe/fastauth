@@ -26,3 +26,10 @@ Database-backed sessions expire on the server and can be revoked individually
 (`sign-out`) or wholesale (`revoke_all` on password reset). `SessionOptions`
 also supports `idle_timeout`, which expires a session after a period without
 authenticated reads.
+
+
+The stored IP address and user agent are descriptive metadata. Session reads do
+not compare them to the current request; these fields do not bind a session to a
+device or network. See the [0.15 session guide](../migrating/0.15-sessions.md) for
+refresh-family identity, authentication age, JWT revocation limits, and shared
+signing-key behavior.

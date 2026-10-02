@@ -19,6 +19,7 @@ from fastauth.domain.models import (
 )
 from fastauth.exceptions import DuplicateError, NotFoundError
 from fastauth.storage.base import RevokedRefreshFamily
+from fastauth.storage.verification import VerificationAttempt, apply_verification_attempt
 
 __all__ = ["InMemoryAdapter"]
 
@@ -78,28 +79,29 @@ class InMemoryAdapter:
                 existing.username == user.username for existing in self.users.values()
             ):
                 raise DuplicateError(resource="user", field="username")
-            self.users[user.id] = user
-            return user
+            self.users[user.id] = user.model_copy(deep=True)
+            return user.model_copy(deep=True)
 
     async def get_user_by_id(self, user_id: str) -> User | None:
-        return self.users.get(user_id)
+        user = self.users.get(user_id)
+        return user.model_copy(deep=True) if user is not None else None
 
     async def get_user_by_email(self, email: str) -> User | None:
         for user in self.users.values():
             if user.email.lower() == email.lower():
-                return user
+                return user.model_copy(deep=True)
         return None
 
     async def get_user_by_username(self, username: str) -> User | None:
         for user in self.users.values():
             if user.username == username:
-                return user
+                return user.model_copy(deep=True)
         return None
 
     async def find_user_by_pending_email_change(self, new_email: str) -> User | None:
         for user in self.users.values():
             if user.pending_email_change is not None and user.pending_email_change == new_email:
-                return user
+                return user.model_copy(deep=True)
         return None
 
     async def update_user(self, user: User) -> User:
@@ -111,9 +113,19 @@ class InMemoryAdapter:
                 for existing in self.users.values()
             ):
                 raise DuplicateError(resource="user", field="username")
+            user.active = self.users[user.id].active
             user.updated_at = datetime.now(UTC)
-            self.users[user.id] = user
-            return user
+            self.users[user.id] = user.model_copy(deep=True)
+            return user.model_copy(deep=True)
+
+    async def set_user_active(self, user_id: str, *, active: bool) -> User:
+        async with self.lock:
+            user = self.users.get(user_id)
+            if user is None:
+                raise NotFoundError(resource="user")
+            user.active = active
+            user.updated_at = datetime.now(UTC)
+            return user.model_copy(deep=True)
 
     async def delete_user(self, user_id: str) -> None:
         async with self.lock:
@@ -142,25 +154,29 @@ class InMemoryAdapter:
     # ----- Session -----
     async def create_session(self, session: Session) -> Session:
         async with self.lock:
-            self.sessions[session.id] = session
-            return session
+            self.sessions[session.id] = session.model_copy(deep=True)
+            return session.model_copy(deep=True)
 
     async def get_session_by_token_hash(self, token_hash: str) -> Session | None:
         for session in self.sessions.values():
             if session.token_hash == token_hash:
-                return session
+                return session.model_copy(deep=True)
         return None
 
     async def list_sessions_for_user(self, user_id: str) -> list[Session]:
-        return [session for session in self.sessions.values() if session.user_id == user_id]
+        return [
+            session.model_copy(deep=True)
+            for session in self.sessions.values()
+            if session.user_id == user_id
+        ]
 
     async def update_session(self, session: Session) -> Session:
         async with self.lock:
             if session.id not in self.sessions:
                 raise NotFoundError(resource="session")
             session.updated_at = datetime.now(UTC)
-            self.sessions[session.id] = session
-            return session
+            self.sessions[session.id] = session.model_copy(deep=True)
+            return session.model_copy(deep=True)
 
     async def delete_session(self, session_id: str) -> None:
         async with self.lock:
@@ -185,13 +201,13 @@ class InMemoryAdapter:
     # ----- RefreshToken -----
     async def create_refresh_token(self, token: RefreshToken) -> RefreshToken:
         async with self.lock:
-            self.refresh_tokens[token.id] = token
-            return token
+            self.refresh_tokens[token.id] = token.model_copy(deep=True)
+            return token.model_copy(deep=True)
 
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
         for token in self.refresh_tokens.values():
             if token.token_hash == token_hash:
-                return token
+                return token.model_copy(deep=True)
         return None
 
     async def update_refresh_token(self, token: RefreshToken) -> RefreshToken:
@@ -199,8 +215,8 @@ class InMemoryAdapter:
             if token.id not in self.refresh_tokens:
                 raise NotFoundError(resource="refresh_token")
             token.updated_at = datetime.now(UTC)
-            self.refresh_tokens[token.id] = token
-            return token
+            self.refresh_tokens[token.id] = token.model_copy(deep=True)
+            return token.model_copy(deep=True)
 
     async def rotate_refresh_token(
         self,
@@ -215,11 +231,11 @@ class InMemoryAdapter:
                 return None
             now = datetime.now(UTC)
             new_token.updated_at = now
-            self.refresh_tokens[new_token.id] = new_token
+            self.refresh_tokens[new_token.id] = new_token.model_copy(deep=True)
             current.consumed_at = consumed_at
             current.replaced_by = new_token.id
             current.updated_at = now
-            return new_token
+            return new_token.model_copy(deep=True)
 
     async def delete_refresh_token(self, token_id: str) -> None:
         async with self.lock:
@@ -232,22 +248,35 @@ class InMemoryAdapter:
         except_session_id: str | None = None,
     ) -> int:
         async with self.lock:
-            doomed = [
-                tid
-                for tid, tok in self.refresh_tokens.items()
-                if tok.user_id == user_id and tok.session_id != except_session_id
-            ]
+            kept_families = {
+                tok.family_id
+                for tok in self.refresh_tokens.values()
+                if tok.user_id == user_id and tok.session_id == except_session_id
+            }
+            families = {
+                tok.family_id for tok in self.refresh_tokens.values() if tok.user_id == user_id
+            } - kept_families
+            doomed = [tid for tid, tok in self.refresh_tokens.items() if tok.family_id in families]
+            session_ids = {self.refresh_tokens[tid].session_id for tid in doomed}
             for tid in doomed:
                 del self.refresh_tokens[tid]
+            for session_id in session_ids:
+                self.sessions.pop(session_id, None)
             return len(doomed)
 
     async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
         async with self.lock:
-            doomed = [
-                tid for tid, tok in self.refresh_tokens.items() if tok.session_id == session_id
-            ]
+            families = {
+                tok.family_id
+                for tok in self.refresh_tokens.values()
+                if tok.session_id == session_id
+            }
+            doomed = [tid for tid, tok in self.refresh_tokens.items() if tok.family_id in families]
+            session_ids = {self.refresh_tokens[tid].session_id for tid in doomed}
             for tid in doomed:
                 del self.refresh_tokens[tid]
+            for family_session_id in session_ids:
+                self.sessions.pop(family_session_id, None)
             return len(doomed)
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
@@ -272,8 +301,8 @@ class InMemoryAdapter:
     # ----- Account -----
     async def create_account(self, account: Account) -> Account:
         async with self.lock:
-            self.accounts[account.id] = account
-            return account
+            self.accounts[account.id] = account.model_copy(deep=True)
+            return account.model_copy(deep=True)
 
     async def get_account_for_user(
         self,
@@ -282,19 +311,38 @@ class InMemoryAdapter:
     ) -> Account | None:
         for account in self.accounts.values():
             if account.user_id == user_id and account.provider_id is provider_id:
-                return account
+                return account.model_copy(deep=True)
         return None
 
     async def list_accounts_for_user(self, user_id: str) -> list[Account]:
-        return [account for account in self.accounts.values() if account.user_id == user_id]
+        return [
+            account.model_copy(deep=True)
+            for account in self.accounts.values()
+            if account.user_id == user_id
+        ]
 
     async def update_account(self, account: Account) -> Account:
         async with self.lock:
             if account.id not in self.accounts:
                 raise NotFoundError(resource="account")
             account.updated_at = datetime.now(UTC)
-            self.accounts[account.id] = account
-            return account
+            self.accounts[account.id] = account.model_copy(deep=True)
+            return account.model_copy(deep=True)
+
+    async def replace_account_password(
+        self,
+        account_id: str,
+        *,
+        expected_hash: str,
+        new_hash: str,
+    ) -> bool:
+        async with self.lock:
+            account = self.accounts.get(account_id)
+            if account is None or account.password != expected_hash:
+                return False
+            account.password = new_hash
+            account.updated_at = datetime.now(UTC)
+            return True
 
     async def delete_account(self, account_id: str) -> None:
         async with self.lock:
@@ -303,8 +351,38 @@ class InMemoryAdapter:
     # ----- Verification -----
     async def create_verification(self, verification: Verification) -> Verification:
         async with self.lock:
-            self.verifications[verification.id] = verification
-            return verification
+            for key, row in list(self.verifications.items()):
+                if (row.identifier, row.purpose) == (verification.identifier, verification.purpose):
+                    del self.verifications[key]
+            self.verifications[verification.id] = verification.model_copy(deep=True)
+            return verification.model_copy(deep=True)
+
+    async def attempt_verification(
+        self,
+        identifier: str,
+        purpose: VerificationPurpose,
+        value_hash: str,
+        *,
+        now: datetime,
+        max_attempts: int | None = None,
+        consume: bool = True,
+    ) -> VerificationAttempt:
+        async with self.lock:
+            row = next(
+                (
+                    row
+                    for row in self.verifications.values()
+                    if row.identifier == identifier and row.purpose == purpose
+                ),
+                None,
+            )
+            return apply_verification_attempt(
+                row,
+                value_hash,
+                now=now,
+                max_attempts=max_attempts,
+                consume=consume,
+            )
 
     async def get_verification(
         self,
@@ -317,8 +395,9 @@ class InMemoryAdapter:
                 verification.identifier == identifier
                 and verification.purpose is purpose
                 and verification.value_hash == value_hash
+                and verification.consumed_at is None
             ):
-                return verification
+                return verification.model_copy(deep=True)
         return None
 
     async def get_active_verification(
@@ -332,19 +411,19 @@ class InMemoryAdapter:
         candidates = [
             v
             for v in self.verifications.values()
-            if v.identifier == identifier and v.purpose is purpose
+            if v.identifier == identifier and v.purpose is purpose and v.consumed_at is None
         ]
         if not candidates:
             return None
-        return max(candidates, key=lambda v: v.created_at)
+        return max(candidates, key=lambda v: v.created_at).model_copy(deep=True)
 
     async def update_verification(self, verification: Verification) -> Verification:
         async with self.lock:
             if verification.id not in self.verifications:
                 raise NotFoundError(resource="verification")
             verification.updated_at = datetime.now(UTC)
-            self.verifications[verification.id] = verification
-            return verification
+            self.verifications[verification.id] = verification.model_copy(deep=True)
+            return verification.model_copy(deep=True)
 
     async def delete_verification(self, verification_id: str) -> None:
         async with self.lock:
@@ -368,17 +447,18 @@ class InMemoryAdapter:
     # ----- ApiKey -----
     async def create_api_key(self, api_key: ApiKey) -> ApiKey:
         async with self.lock:
-            self.api_keys[api_key.id] = api_key
-            return api_key
+            self.api_keys[api_key.id] = api_key.model_copy(deep=True)
+            return api_key.model_copy(deep=True)
 
     async def get_api_key_by_hash(self, key_hash: str) -> ApiKey | None:
         for api_key in self.api_keys.values():
             if api_key.key_hash == key_hash:
-                return api_key
+                return api_key.model_copy(deep=True)
         return None
 
     async def get_api_key_by_id(self, api_key_id: str) -> ApiKey | None:
-        return self.api_keys.get(api_key_id)
+        api_key = self.api_keys.get(api_key_id)
+        return api_key.model_copy(deep=True) if api_key is not None else None
 
     async def list_api_keys_for_user(
         self,
@@ -387,15 +467,17 @@ class InMemoryAdapter:
         offset: int = 0,
     ) -> tuple[list[ApiKey], int]:
         all_keys = [key for key in self.api_keys.values() if key.user_id == user_id]
-        return all_keys[offset : offset + limit], len(all_keys)
+        return [key.model_copy(deep=True) for key in all_keys[offset : offset + limit]], len(
+            all_keys
+        )
 
     async def update_api_key(self, api_key: ApiKey) -> ApiKey:
         async with self.lock:
             if api_key.id not in self.api_keys:
                 raise NotFoundError(resource="api_key")
             api_key.updated_at = datetime.now(UTC)
-            self.api_keys[api_key.id] = api_key
-            return api_key
+            self.api_keys[api_key.id] = api_key.model_copy(deep=True)
+            return api_key.model_copy(deep=True)
 
     async def delete_api_key(self, api_key_id: str) -> None:
         async with self.lock:
@@ -418,18 +500,18 @@ class InMemoryAdapter:
     # ----- JwksKey -----
     async def create_jwks_key(self, key: JwksKey) -> JwksKey:
         async with self.lock:
-            self.jwks_keys[key.id] = key
-            return key
+            self.jwks_keys[key.id] = key.model_copy(deep=True)
+            return key.model_copy(deep=True)
 
     async def list_jwks_keys(self) -> list[JwksKey]:
-        return list(self.jwks_keys.values())
+        return [key.model_copy(deep=True) for key in self.jwks_keys.values()]
 
     async def update_jwks_key(self, key: JwksKey) -> JwksKey:
         async with self.lock:
             if key.id not in self.jwks_keys:
                 raise NotFoundError(resource="jwks_key")
-            self.jwks_keys[key.id] = key
-            return key
+            self.jwks_keys[key.id] = key.model_copy(deep=True)
+            return key.model_copy(deep=True)
 
     async def delete_jwks_key(self, key_id: str) -> None:
         async with self.lock:
@@ -438,8 +520,8 @@ class InMemoryAdapter:
     # ----- AuditLog -----
     async def create_audit_log(self, row: AuditLog) -> AuditLog:
         async with self.lock:
-            self.audit_logs.append(row)
-            return row
+            self.audit_logs.append(row.model_copy(deep=True))
+            return row.model_copy(deep=True)
 
     async def list_audit_logs(
         self,
@@ -457,7 +539,9 @@ class InMemoryAdapter:
             and (event_type is None or row.event_type is event_type)
             and (identifier is None or row.identifier == identifier)
         ]
-        return filtered[offset : offset + limit], len(filtered)
+        return [row.model_copy(deep=True) for row in filtered[offset : offset + limit]], len(
+            filtered
+        )
 
     async def delete_audit_logs_before(self, *, cutoff: datetime, limit: int) -> int:
         async with self.lock:
@@ -491,18 +575,19 @@ class InMemoryAdapter:
             return updated.count, updated.last_request_ms
 
     async def get_rate_limit(self, key: str) -> RateLimit | None:
-        return self.rate_limits.get(key)
+        rate_limit = self.rate_limits.get(key)
+        return rate_limit.model_copy(deep=True) if rate_limit is not None else None
 
     async def upsert_rate_limit(self, rate_limit: RateLimit) -> RateLimit:
         async with self.lock:
             existing = self.rate_limits.get(rate_limit.key)
             if existing is None:
-                self.rate_limits[rate_limit.key] = rate_limit
+                self.rate_limits[rate_limit.key] = rate_limit.model_copy(deep=True)
             else:
                 existing.count = rate_limit.count
                 existing.last_request_ms = rate_limit.last_request_ms
                 self.rate_limits[rate_limit.key] = existing
-            return self.rate_limits[rate_limit.key]
+            return self.rate_limits[rate_limit.key].model_copy(deep=True)
 
     async def rekey_rate_limit(
         self,

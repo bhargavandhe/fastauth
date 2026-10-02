@@ -106,6 +106,55 @@ async def decouple_refresh_tokens_from_sessions(
         )
 
 
+async def add_authentication_policy_fields(
+    connection: AsyncConnection,
+    schema: PostgresSchema,
+) -> None:
+    quote = connection.dialect.identifier_preparer.quote
+    for table in (schema.sessions, schema.refresh_tokens):
+        await connection.execute(
+            DDL(
+                f"ALTER TABLE {quote(table.name)} ADD COLUMN IF NOT EXISTS "
+                "authenticated_at TIMESTAMP WITH TIME ZONE NULL"
+            )
+        )
+    await connection.execute(
+        DDL(
+            f"ALTER TABLE {quote(schema.users.name)} "
+            "ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE"
+        )
+    )
+    # Pre-0.15 JWT refresh rows do not contain reconstructible session IDs.
+    # All old refresh credentials expire on this controlled upgrade; access
+    # sessions retain their documented lifetime, with unknown auth freshness.
+    await connection.execute(schema.refresh_tokens.delete())
+
+
+async def make_verification_attempts_atomic(
+    connection: AsyncConnection,
+    schema: PostgresSchema,
+) -> None:
+    quote = connection.dialect.identifier_preparer.quote
+    table = quote(schema.verifications.name)
+    unique_index = quote(f"{schema.verifications.name}_identifier_purpose_uq")
+    await connection.execute(
+        DDL(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMP WITH TIME ZONE")
+    )
+    # Keep the most recently issued challenge, including an expired one: an
+    # older challenge must never become valid again after a newer one expires.
+    await connection.execute(
+        DDL(
+            f"DELETE FROM {table} WHERE id IN (SELECT id FROM ("  # noqa: S608 - quoted identifier
+            "SELECT id, ROW_NUMBER() OVER (PARTITION BY identifier, purpose "
+            f"ORDER BY created_at DESC, id DESC) AS position FROM {table}"
+            ") AS ranked WHERE position > 1)"
+        )
+    )
+    await connection.execute(
+        DDL(f"CREATE UNIQUE INDEX IF NOT EXISTS {unique_index} ON {table} (identifier, purpose)")
+    )
+
+
 POSTGRES_MIGRATIONS: tuple[PostgresMigration, ...] = (
     PostgresMigration(
         version=1,
@@ -121,6 +170,16 @@ POSTGRES_MIGRATIONS: tuple[PostgresMigration, ...] = (
         version=3,
         description="preserve refresh token evidence after session rotation",
         apply=decouple_refresh_tokens_from_sessions,
+    ),
+    PostgresMigration(
+        version=4,
+        description="preserve authentication age and invalidate legacy refresh families",
+        apply=add_authentication_policy_fields,
+    ),
+    PostgresMigration(
+        version=5,
+        description="atomic current verification challenges",
+        apply=make_verification_attempts_atomic,
     ),
 )
 

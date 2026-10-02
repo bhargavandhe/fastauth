@@ -20,7 +20,13 @@ from fastauth.api.responses import ApiKeyView, api_key_view
 from fastauth.domain.events import ApiKeyCreated, ApiKeyRevoked, ApiKeyVerifyFailed
 from fastauth.domain.models import ApiKey, WireModel
 from fastauth.domain.value_objects import ApiKeyId, ApiKeyMetadata, PermissionSet, UserId
-from fastauth.exceptions import ConfigError, InvalidCredentialsError, NotFoundError
+from fastauth.exceptions import (
+    ConfigError,
+    EmailNotVerifiedError,
+    InvalidCredentialsError,
+    NotFoundError,
+    PolicyDeniedError,
+)
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.options import parse_duration
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
@@ -53,6 +59,7 @@ class ApiKeyOptions(PluginOptions):
     corresponding value.
     """
 
+    require_verified_user: bool = False
     default_prefix: str = Field(default="ak_", min_length=1, max_length=32)
     default_remaining: int | None = Field(default=None, ge=1)
     default_rate_limit_max: int | None = Field(default=None, ge=1)
@@ -239,6 +246,7 @@ class ApiKeyPlugin(Plugin):
                 method="POST",
                 path="/api-key/create",
                 name="api_key_create",
+                auth_required=True,
                 tags=["ApiKey"],
                 handler=self.create_handler,
                 response_model=CreateApiKeyResponse,
@@ -255,6 +263,7 @@ class ApiKeyPlugin(Plugin):
                 method="GET",
                 path="/api-key/list",
                 name="api_key_list",
+                auth_required=True,
                 tags=["ApiKey"],
                 handler=self.list_handler,
                 response_model=ListApiKeysResponse,
@@ -263,6 +272,7 @@ class ApiKeyPlugin(Plugin):
                 method="POST",
                 path="/api-key/update",
                 name="api_key_update",
+                auth_required=True,
                 tags=["ApiKey"],
                 handler=self.update_handler,
                 response_model=ApiKeyView,
@@ -271,6 +281,7 @@ class ApiKeyPlugin(Plugin):
                 method="POST",
                 path="/api-key/delete",
                 name="api_key_delete",
+                auth_required=True,
                 tags=["ApiKey"],
                 handler=self.delete_handler,
                 response_model=EmptyResponse,
@@ -279,6 +290,7 @@ class ApiKeyPlugin(Plugin):
                 method="POST",
                 path="/api-key/delete-all-expired",
                 name="api_key_delete_expired",
+                server_only=True,
                 tags=["ApiKey"],
                 handler=self.delete_expired_handler,
                 response_model=DeleteExpiredApiKeysResponse,
@@ -337,6 +349,15 @@ class ApiKeyPlugin(Plugin):
             metadata=body.metadata.model_dump(mode="json"),
             permissions=body.permissions.model_dump(mode="json"),
         )
+        user = await context.adapter.get_user_by_id(resolved_user_id)
+        if user is None:
+            raise NotFoundError(resource="user")
+        await context.policy.authorize(
+            user,
+            action="api_key.create",
+            api_key=api_key,
+            require_verified=self.options.require_verified_user,
+        )
         await store.create_api_key(api_key)
         await context.event_bus.publish(
             ApiKeyCreated(user_id=resolved_user_id, api_key_id=api_key.id),
@@ -369,6 +390,23 @@ class ApiKeyPlugin(Plugin):
             return VerifyApiKeyResponse(
                 valid=False,
                 error=VerifyApiKeyError(code="INVALID_KEY", message="unknown key"),
+            )
+
+        user = await context.adapter.get_user_by_id(api_key.user_id)
+        try:
+            if user is None:
+                raise PolicyDeniedError(message="key owner no longer exists")
+            await context.policy.authorize(
+                user,
+                action="api_key.verify",
+                api_key=api_key,
+                require_verified=self.options.require_verified_user,
+            )
+        except (PolicyDeniedError, EmailNotVerifiedError) as exc:
+            await context.event_bus.publish(ApiKeyVerifyFailed(identifier=key_identifier))
+            return VerifyApiKeyResponse(
+                valid=False,
+                error=VerifyApiKeyError(code=exc.code, message=exc.message),
             )
 
         now = datetime.now(UTC)
@@ -503,12 +541,13 @@ class ApiKeyPlugin(Plugin):
         user_id: UserIdInput,
         body: UpdateApiKeyRequest,
     ) -> ApiKeyView:
-        self.assert_bound()
+        context = self.assert_bound()
         store = self.assert_store()
         resolved_user_id = to_user_id_value(user_id)
         api_key = await store.get_api_key_by_id(body.id.root)
         if api_key is None or api_key.user_id != resolved_user_id:
             raise NotFoundError(resource="api_key")
+        api_key = api_key.model_copy(deep=True)
         if body.name is not None:
             api_key.name = body.name
         if body.enabled is not None:
@@ -517,6 +556,15 @@ class ApiKeyPlugin(Plugin):
             api_key.metadata = body.metadata.model_dump(mode="json")
         if body.permissions is not None:
             api_key.permissions = body.permissions.model_dump(mode="json")
+        user = await context.adapter.get_user_by_id(resolved_user_id)
+        if user is None:
+            raise NotFoundError(resource="user")
+        await context.policy.authorize(
+            user,
+            action="api_key.update",
+            api_key=api_key,
+            require_verified=self.options.require_verified_user,
+        )
         await store.update_api_key(api_key)
         return api_key_view(api_key)
 

@@ -48,16 +48,17 @@ class MetadataPlugin(Plugin):
         ]
 
 
-def test_auth_inspector_routes_include_plugin_endpoint_metadata() -> None:
+def test_auth_inspector_retains_unmounted_plugin_metadata() -> None:
     auth = FastAuth(
         FastAuthOptions(secret_key=SecretStr("m" * 64), database=memory()),
         plugins=[MetadataPlugin()],
     )
 
-    route = next(route for route in auth.inspect().routes if route.name == "metadata_ping")
+    inspection = auth.inspect()
+    assert all(route.name != "metadata_ping" for route in inspection.routes)
+    route = inspection.plugins[0].endpoints[0]
 
     assert route.path == "/metadata/ping"
-    assert route.source == "plugin"
     assert route.operation_id == "metadataPing"
     assert route.request_model_name == "InspectRequest"
     assert route.query_model_name == "InspectQuery"

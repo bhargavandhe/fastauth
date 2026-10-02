@@ -18,7 +18,7 @@ async def stamp_signup_metadata(context: HookContext) -> User:
     return user.model_copy(
         update={
             "metadata": {
-                **user.metadata.root,
+                **user.metadata,
                 "source": "marketing-landing",
             }
         },
@@ -38,3 +38,14 @@ auth.hook(HookPhase.AFTER_CREATE, target="user")(record_created_user)
 
 Hook exceptions propagate to the mutation flow. Targets are matched exactly,
 so use the lowercase model names used by FastAuth flows, such as `"user"`.
+
+
+## Supported mutation targets
+
+In 0.15, built-in flow guarantees cover the `"user"` target. Profile, email
+verification and email-change writes run before/after update hooks; both account
+deletion flows run before/after delete hooks. Direct adapter writes and mutations
+of accounts, sessions, tokens or API keys are not automatically intercepted.
+Before-delete may abort but does not change the deletion target. After-hook
+failures propagate after persistence and do not roll back committed changes.
+See the [0.15 hook matrix and migration notes](../migrating/0.15-sdk.md#user-mutation-hooks).

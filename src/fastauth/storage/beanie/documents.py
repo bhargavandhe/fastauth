@@ -45,6 +45,7 @@ from fastauth.domain.models import (
 )
 from fastauth.storage.beanie.helpers import (
     require_object_id,
+    session_reference,
     to_pydantic_object_id_or_none,
 )
 
@@ -93,6 +94,7 @@ class UserDoc(Document):
     name: str | None = None
     image: str | None = None
     email_verified: bool = False
+    active: bool = True
     pending_email_change: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -102,11 +104,17 @@ class UserDoc(Document):
         name = "users"
         indexes: ClassVar[list[IndexModel]] = [
             IndexModel("email", unique=True, name="users_email_unique"),
-            IndexModel("username", unique=True, sparse=True, name="users_username_unique"),
+            IndexModel(
+                "username",
+                unique=True,
+                name="users_username_strings_unique",
+                partialFilterExpression={"username": {"$type": "string"}},
+            ),
         ]
 
 
 class SessionDoc(Document):
+    authenticated_at: datetime | None = None
     id: PydanticObjectId | None = Field(default=None, alias="_id")
     user_id: PydanticObjectId
     token_hash: str
@@ -126,9 +134,10 @@ class SessionDoc(Document):
 
 
 class RefreshTokenDoc(Document):
+    authenticated_at: datetime | None = None
     id: PydanticObjectId | None = Field(default=None, alias="_id")
     user_id: PydanticObjectId
-    session_id: PydanticObjectId
+    session_id: PydanticObjectId | str
     token_hash: str
     family_id: PydanticObjectId
     family_created_at: datetime
@@ -184,6 +193,7 @@ class VerificationDoc(Document):
     purpose: VerificationPurpose
     expires_at: datetime
     attempt_count: int = 0
+    consumed_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -194,10 +204,9 @@ class VerificationDoc(Document):
                 [
                     ("identifier", pymongo.ASCENDING),
                     ("purpose", pymongo.ASCENDING),
-                    ("value_hash", pymongo.ASCENDING),
                 ],
                 unique=True,
-                name="verifications_lookup_unique",
+                name="verifications_current_unique",
             ),
             IndexModel("expires_at", expireAfterSeconds=0, name="verifications_ttl"),
         ]
@@ -396,11 +405,25 @@ async def init_beanie_documents(
     collection_prefix: str = "",
     collection_suffix: str = "",
 ) -> None:
+    from fastauth.storage.beanie.migrations import preflight_mongo_storage_v015
+
+    await preflight_mongo_storage_v015(
+        database,
+        collection_prefix=collection_prefix,
+        collection_suffix=collection_suffix,
+    )
     document_models = build_beanie_document_models(
         collection_prefix=collection_prefix,
         collection_suffix=collection_suffix,
     )
     await init_beanie(database=database, document_models=document_models.all)
+    # The family coordination document uses atomic Mongo single-document CAS,
+    # independent of replica-set transactions and Beanie model-global state.
+    families = database[f"{RefreshTokenDoc.Settings.name}_families"]
+    await families.create_index(
+        [("session_ids", 1), ("revoked", 1)], name="family_session_revocation"
+    )
+    await families.create_index("user_id", name="family_user")
 
 
 # --- Domain ↔ Doc conversion ---
@@ -439,7 +462,7 @@ def from_refresh_token(
     if include_id:
         data["id"] = document_id(token.id)
     data["user_id"] = require_object_id(token.user_id)
-    data["session_id"] = require_object_id(token.session_id)
+    data["session_id"] = session_reference(token.session_id)
     data["family_id"] = require_object_id(token.family_id)
     if token.replaced_by is not None:
         data["replaced_by"] = require_object_id(token.replaced_by)

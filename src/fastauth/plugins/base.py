@@ -481,6 +481,12 @@ class Plugin(ABC):  # noqa: B024 -- hooks are intentionally optional; subclasses
     async def extend_session_response(self, user: User, response: Response) -> None:
         return None
 
+    async def extend_session_context_response(
+        self, session_context: SessionContext, response: Response
+    ) -> None:
+        """Richer additive hook; existing user-only plugin overrides remain supported."""
+        await self.extend_session_response(session_context.user, response)
+
     async def lifespan_startup(self) -> None:
         return None
 
@@ -509,6 +515,7 @@ class PluginRegistry:
         capabilities: dict[str, str] = {}
         routes: dict[tuple[str, str], str] = {}
         operation_ids: dict[str, str] = {}
+        endpoint_names: set[str] = set()
         client_namespaces: dict[str, str] = {}
         error_codes: dict[str, str] = {}
         for plugin in self.plugins:
@@ -543,6 +550,8 @@ class PluginRegistry:
             plugin_operation_ids: set[str] = set()
             plugin_client_namespaces: set[str] = set()
             for endpoint in plugin_endpoints:
+                if endpoint.csrf_policy not in {None, "inherit", "require", "required"}:
+                    raise ValueError(f"unsupported csrf_policy: {endpoint.csrf_policy!r}")
                 route_key = (endpoint.method, endpoint.path)
                 if route_key in plugin_routes:
                     raise ValueError(
@@ -557,6 +566,9 @@ class PluginRegistry:
                         f"from {routes[route_key]} and {plugin.id}",
                     )
                 routes[route_key] = plugin.id
+                if endpoint.name in endpoint_names:
+                    raise ValueError(f"duplicate plugin endpoint name: {endpoint.name}")
+                endpoint_names.add(endpoint.name)
                 if endpoint.operation_id is not None:
                     if endpoint.operation_id in plugin_operation_ids:
                         raise ValueError(

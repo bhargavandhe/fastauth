@@ -17,7 +17,7 @@ from fastauth.exceptions import (
 )
 from fastauth.flows.credentials import SessionResponse
 from fastauth.runtime.context import AuthContext
-from fastauth.security.sessions import SessionContext
+from fastauth.security.sessions import RefreshSessionStrategy, SessionContext
 
 __all__ = ["RefreshTokenRequest", "refresh_session"]
 
@@ -58,8 +58,14 @@ async def refresh_session(
     if user is None:
         await context.refresh_token_service.revoke_family(existing.family_id)
         raise TokenInvalidError()
-    session_context = await context.session_strategy.create(
+    if not isinstance(context.session_strategy, RefreshSessionStrategy):
+        raise InvalidRequestError(
+            message="session strategy does not support secure refresh renewal"
+        )
+    session_context = await context.session_strategy.renew(
         user,
+        session_id=existing.session_id,
+        authenticated_at=existing.authenticated_at,
         ip=ip,
         user_agent=user_agent,
     )

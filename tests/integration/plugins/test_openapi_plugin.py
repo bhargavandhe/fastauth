@@ -50,3 +50,15 @@ async def test_reference_uses_consumer_selected_router_prefix(auth: FastAuth) ->
 
     assert response.status_code == 200
     assert 'data-url="/api/auth/openapi.json"' in response.text
+
+
+async def test_offline_schema_does_not_poison_mounted_prefix(auth: FastAuth) -> None:
+    await auth.api.generate_openapi_schema()
+    app = FastAPI()
+    app.include_router(auth.router, prefix="/mounted")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/mounted/openapi.json")
+    assert "/mounted/user" in response.json()["paths"]
+    assert "/user" not in response.json()["paths"]
