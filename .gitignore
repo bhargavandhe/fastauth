@@ -37,3 +37,6 @@ site/
 # Local environment files
 .env
 .env.*
+
+# Application-owned deployment recipe secrets
+deployment.json

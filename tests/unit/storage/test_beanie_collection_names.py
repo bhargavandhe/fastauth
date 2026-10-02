@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pymongo.asynchronous.database import AsyncDatabase
 
-from fastauth.storage.beanie import documents
+from fastauth.storage.beanie import documents, migrations
 
 
 def collection_name(model: Any) -> str:
@@ -80,15 +81,30 @@ async def test_init_beanie_documents_initializes_public_document_classes(
         del database
         initialized_models.extend(document_models)
 
+    async def fake_preflight(
+        database: AsyncDatabase[Any],
+        *,
+        collection_prefix: str,
+        collection_suffix: str,
+    ) -> None:
+        del database
+        assert collection_prefix == "auth_"
+        assert collection_suffix == ""
+
+    monkeypatch.setattr(migrations, "preflight_mongo_storage_v015", fake_preflight)
     monkeypatch.setattr(documents, "init_beanie", fake_init_beanie)
 
+    database = MagicMock()
+    database.__getitem__.return_value.create_index = AsyncMock()
     await documents.init_beanie_documents(
-        cast(AsyncDatabase[Any], object()),
+        cast(AsyncDatabase[Any], database),
         collection_prefix="auth_",
     )
 
     assert initialized_models == documents.DOCUMENT_MODELS
     assert collection_name(documents.UserDoc) == "auth_users"
+    database.__getitem__.assert_called_once_with("auth_refresh_tokens_families")
+    assert database.__getitem__.return_value.create_index.await_count == 2
 
 
 @pytest.mark.parametrize(

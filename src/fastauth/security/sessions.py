@@ -12,7 +12,7 @@ from fastauth.options import SessionOptions
 from fastauth.security.tokens import TokenService
 from fastauth.storage.base import DatabaseAdapter
 
-__all__ = ["DatabaseSessionStrategy", "SessionContext", "SessionStrategy"]
+__all__ = ["DatabaseSessionStrategy", "RefreshSessionStrategy", "SessionContext", "SessionStrategy"]
 
 
 class SessionContext(BaseModel):
@@ -44,6 +44,21 @@ class SessionStrategy(Protocol):
     async def rotate(self, token: str) -> SessionContext | None: ...
 
 
+@runtime_checkable
+class RefreshSessionStrategy(Protocol):
+    """Refresh issuance preserves authentication age and logical JWT identity."""
+
+    async def renew(
+        self,
+        user: User,
+        *,
+        session_id: str,
+        authenticated_at: datetime | None,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> SessionContext: ...
+
+
 class DatabaseSessionStrategy:
     def __init__(
         self,
@@ -62,8 +77,27 @@ class DatabaseSessionStrategy:
         ip: str | None,
         user_agent: str | None,
     ) -> SessionContext:
+        return await self.renew(
+            user,
+            session_id="",
+            authenticated_at=datetime.now(UTC),
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def renew(
+        self,
+        user: User,
+        *,
+        session_id: str,
+        authenticated_at: datetime | None,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> SessionContext:
+        del session_id  # Database access credentials get fresh physical session rows.
         pair = self.tokens.generate_pair()
         session = Session(
+            authenticated_at=authenticated_at,
             user_id=user.id,
             token_hash=pair.hashed,
             expires_at=datetime.now(UTC) + timedelta(seconds=self.config.max_age_seconds),
@@ -110,8 +144,10 @@ class DatabaseSessionStrategy:
         if current is None:
             return None
         await self.adapter.delete_session(current.session.id)
-        return await self.create(
+        return await self.renew(
             current.user,
+            session_id=current.session.id,
+            authenticated_at=current.session.authenticated_at,
             ip=current.session.ip_address,
             user_agent=current.session.user_agent,
         )

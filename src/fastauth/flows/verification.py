@@ -5,17 +5,29 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
-from pydantic import ConfigDict, EmailStr, SecretStr, field_validator
+from pydantic import ConfigDict, EmailStr, Field, SecretStr, field_validator
 
+from fastauth.api.commands import (
+    BearerCredentialDelivery,
+    CookieCredentialDelivery,
+    CredentialDelivery,
+)
 from fastauth.api.responses import authentication_response
 from fastauth.domain.enums import EmailMessageKind, VerificationPurpose
 from fastauth.domain.events import EmailVerificationSent, OtpGenerated, UserEmailVerified
 from fastauth.domain.models import EmailMessage, Verification, WireModel
 from fastauth.domain.value_objects import normalize_email
-from fastauth.exceptions import TokenExpiredError, TokenInvalidError
+from fastauth.exceptions import TokenInvalidError
 from fastauth.flows.callbacks import resolve_callback_url
-from fastauth.flows.credentials import EmptyResponse, SessionResponse
+from fastauth.flows.challenges import consume_token
+from fastauth.flows.credentials import (
+    EmptyResponse,
+    SessionResponse,
+    maybe_issue_refresh_token,
+    validate_email_password_delivery,
+)
 from fastauth.runtime.context import AuthContext
+from fastauth.runtime.hooks import update_user_with_hooks
 from fastauth.security.sessions import SessionContext
 from fastauth.web.callbacks import validate_callback_url
 
@@ -42,6 +54,7 @@ class VerifyEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
     token: SecretStr
+    delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
     @field_validator("email", mode="before")
     @classmethod
@@ -134,17 +147,15 @@ async def verify_email(
     user_agent: str | None,
 ) -> tuple[SessionResponse, SessionContext]:
     """Verify a token, mark the user's email verified, and issue a fresh session."""
+    validate_email_password_delivery(context, request.delivery)
     token_hash = context.token_service.hash_only(request.token.get_secret_value())
-    verification = await context.adapter.get_verification(
+    await consume_token(
+        context,
         request.email,
         VerificationPurpose.EMAIL_VERIFICATION,
         token_hash,
+        label="verification",
     )
-    if verification is None:
-        raise TokenInvalidError(message="invalid verification token")
-    if verification.expires_at <= datetime.now(UTC):
-        await context.adapter.delete_verification(verification.id)
-        raise TokenExpiredError(message="verification token expired")
 
     user = await context.adapter.get_user_by_email(request.email)
     if user is None:
@@ -152,11 +163,7 @@ async def verify_email(
         raise TokenInvalidError(message="invalid verification token")
 
     user.email_verified = True
-    user = await context.adapter.update_user(user)
-    await context.adapter.delete_verifications_for_identifier(
-        request.email,
-        VerificationPurpose.EMAIL_VERIFICATION,
-    )
+    user = await update_user_with_hooks(context, user, actor_user_id=user.id)
 
     session_context = await context.session_strategy.create(
         user,
@@ -171,4 +178,25 @@ async def verify_email(
             user_agent=user_agent,
         ),
     )
-    return (authentication_response(user=user, session=session_context.session), session_context)
+    refresh_token = await maybe_issue_refresh_token(
+        context,
+        user_id=user.id,
+        session_id=session_context.session.id,
+        authenticated_at=session_context.session.authenticated_at,
+        delivery=request.delivery,
+        ip=ip,
+        user_agent=user_agent,
+    )
+    bearer = isinstance(request.delivery, BearerCredentialDelivery)
+    return (
+        authentication_response(
+            user=user,
+            session=session_context.session,
+            token=session_context.token if bearer else None,
+            refresh_token=refresh_token
+            if isinstance(request.delivery, BearerCredentialDelivery)
+            and request.delivery.include_refresh_token
+            else None,
+        ),
+        session_context,
+    )

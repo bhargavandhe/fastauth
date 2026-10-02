@@ -55,6 +55,11 @@ from fastauth.storage.beanie.helpers import (
     to_object_id_or_none,
     truncate_to_millis,
 )
+from fastauth.storage.beanie.migrations import (
+    MongoStorageMigrationResult,
+    migrate_mongo_storage_v015,
+    preflight_mongo_storage_v015,
+)
 
 __all__ = [
     "DOCUMENT_MODELS",
@@ -64,6 +69,7 @@ __all__ = [
     "BeanieAdapter",
     "BeanieDocumentModels",
     "JwksKeyDoc",
+    "MongoStorageMigrationResult",
     "RateLimitDoc",
     "RefreshTokenDoc",
     "SessionDoc",
@@ -80,7 +86,9 @@ __all__ = [
     "from_user",
     "from_verification",
     "init_beanie_documents",
+    "migrate_mongo_storage_v015",
     "normalise_datetimes",
+    "preflight_mongo_storage_v015",
     "to_account",
     "to_api_key",
     "to_audit_log",

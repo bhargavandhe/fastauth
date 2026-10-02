@@ -1,10 +1,10 @@
 [project]
 name = "fastauth-py"
-version = "0.14.1"
+version = "0.15.0"
 description = "A modular, Pydantic-native, async-only authentication library for FastAPI."
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [{ name = "Bhargav Andhe", email = "bhargavandhe2310@gmail.com" }]
 keywords = [
   "fastapi",
@@ -25,12 +25,11 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
 dependencies = [
   "fastapi>=0.115",
-  "pydantic[email]>=2.8",
+  "pydantic[email]>=2.11,<3",
   "starlette>=0.40",
   "typing-extensions>=4.12",
   "jinja2>=3.1",
@@ -49,8 +48,8 @@ Security = "https://github.com/bhargavandhe/fastauth/security/policy"
 [project.optional-dependencies]
 beanie = ["beanie>=2,<3"]
 postgres = ["sqlalchemy[asyncio]>=2.0,<3", "asyncpg>=0.29"]
-jwt = ["joserfc>=1.0", "cryptography>=43.0"]
-cli = ["typer>=0.12", "rich>=13.7"]
+jwt = ["joserfc>=1.5", "cryptography>=43.0"]
+cli = ["typer>=0.17.5", "rich>=13.7"]
 dev = [
   "ruff>=0.6",
   "pyright>=1.1.380",
@@ -96,6 +95,7 @@ ignore = ["S101"]  # allow assert in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "ANN"]
+".github/scripts/**" = ["S"]
 "examples/**/tests/**" = ["S", "ANN"]
 "src/fastauth/testing/adapter_contract.py" = ["S106"]
 

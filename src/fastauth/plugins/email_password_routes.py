@@ -160,12 +160,13 @@ class EmailPasswordRouteHandlers:
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
         )
-        set_session_cookie(
-            response,
-            context,
-            session_context.token,
-            context.config.session.max_age_seconds,
-        )
+        if isinstance(body.delivery, CookieCredentialDelivery):
+            set_session_cookie(
+                response,
+                context,
+                session_context.token,
+                context.config.session.max_age_seconds,
+            )
         return result
 
     async def forgot_password_handler(
@@ -400,6 +401,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/change-password",
                 name="change_password",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=EmptyResponse,
                 handler=self.change_password_handler,
@@ -407,6 +409,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/set-password",
                 name="set_password",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=EmptyResponse,
                 handler=self.set_password_handler,
@@ -414,6 +417,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/verify-password",
                 name="verify_password",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=VerifyPasswordResponse,
                 handler=self.verify_password_handler,
@@ -426,6 +430,7 @@ class EmailPasswordRouteHandlers:
                 "PATCH",
                 "/user",
                 name="update_user",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=UserView,
                 handler=self.update_user_handler,
@@ -433,6 +438,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/delete-account",
                 name="delete_account",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=EmptyResponse,
                 handler=self.delete_account_handler,
@@ -440,6 +446,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/delete-account/request",
                 name="request_delete_account",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=EmptyResponse,
                 handler=self.request_delete_account_handler,
@@ -447,6 +454,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/delete-account/confirm",
                 name="confirm_delete_account",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=EmptyResponse,
                 handler=self.confirm_delete_account_handler,
@@ -454,6 +462,7 @@ class EmailPasswordRouteHandlers:
             EndpointSpec.post(
                 "/change-email/request",
                 name="request_email_change",
+                auth_required=True,
                 tags=["Auth"],
                 response_model=EmptyResponse,
                 handler=self.request_email_change_handler,

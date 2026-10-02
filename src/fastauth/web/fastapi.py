@@ -10,14 +10,17 @@ from ipaddress import IPv4Address, IPv6Address
 from typing import Any, ClassVar
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi.params import Depends as DependsParameter
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 
 from fastauth.api.commands import CookieCredentialDelivery
-from fastauth.api.responses import authentication_response
+from fastauth.api.responses import ErrorResponse, authentication_response
 from fastauth.exceptions import (
     EXCEPTION_HTTP_STATUS,
     AccountLockedError,
+    CsrfError,
     FastAuthError,
     RateLimitError,
 )
@@ -39,7 +42,7 @@ from fastauth.runtime.api import (
 )
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
-from fastauth.web.csrf import CsrfMiddleware
+from fastauth.web.csrf import SAFE_METHODS, CsrfMiddleware, is_trusted_origin
 from fastauth.web.security_headers import SecurityHeadersMiddleware
 
 __all__ = [
@@ -302,6 +305,7 @@ class FastAuthRoute(APIRoute):
 
     fastauth_context: ClassVar[AuthContext | None] = None
     relative_paths: ClassVar[dict[tuple[str, str], str]] = {}
+    endpoint_specs: ClassVar[dict[tuple[str, str], EndpointSpec]] = {}
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         original = super().get_route_handler()
@@ -349,6 +353,15 @@ class FastAuthRoute(APIRoute):
         context: AuthContext,
     ) -> Response:
         route = self
+        await rate_limit_dependency(context)(request)
+        if self.name in {"list_sessions", "revoke_session", "revoke_other_sessions"}:
+            await require_session(request, context)
+        spec = self.endpoint_specs.get((request.method, self.name))
+        if spec is not None:
+            if spec.auth_required:
+                await require_session(request, context)
+            if spec.csrf_policy in {"require", "required"}:
+                await required_csrf_dependency(context)(request)
         endpoint = endpoint_metadata(request, route)
 
         for hook in context.plugins.all_request_hooks():
@@ -504,6 +517,9 @@ def fastauth_route_class(context: AuthContext) -> type[FastAuthRoute]:
     class ContextFastAuthRoute(FastAuthRoute):
         fastauth_context: ClassVar[AuthContext | None] = context
         relative_paths: ClassVar[dict[tuple[str, str], str]] = {}
+        endpoint_specs: ClassVar[dict[tuple[str, str], EndpointSpec]] = {
+            (spec.method, spec.name): spec for spec in context.plugins.all_endpoints()
+        }
 
     return ContextFastAuthRoute
 
@@ -524,8 +540,48 @@ def existing_route_keys(router: APIRouter) -> set[tuple[str, str]]:
     return keys
 
 
-def add_plugin_route(router: APIRouter, spec: EndpointSpec) -> None:
-    if spec.handler is None:
+def session_security_dependency(context: AuthContext) -> Callable[..., Awaitable[SessionContext]]:
+    """Enforce session authentication and document both accepted transports."""
+    cookie = APIKeyCookie(
+        name=context.config.cookie.name, scheme_name="SessionCookie", auto_error=False
+    )
+    bearer = HTTPBearer(scheme_name="SessionBearer", auto_error=False)
+
+    async def dependency(
+        request: Request,
+        cookie_token: str | None = Depends(cookie),
+        bearer_token: HTTPAuthorizationCredentials | None = Depends(bearer),  # noqa: B008
+    ) -> SessionContext:
+        del cookie_token, bearer_token
+        return await require_session(request, context)
+
+    return dependency
+
+
+def required_csrf_dependency(context: AuthContext) -> Callable[[Request], Awaitable[None]]:
+    """Require a trusted origin for unsafe ambient-cookie requests, even without middleware."""
+
+    async def dependency(request: Request) -> None:
+        if request.method in SAFE_METHODS:
+            return
+        if context.config.cookie.name not in request.cookies and request.headers.get(
+            "authorization", ""
+        ).lower().startswith("bearer "):
+            return
+        origin = request.headers.get("origin") or request.headers.get("referer", "")
+        if origin and is_trusted_origin(
+            origin,
+            [*context.config.csrf.trusted_origins, *context.plugins.all_trusted_origins()],
+            allow_relative=False,
+        ):
+            return
+        raise CsrfError(message="origin not trusted")
+
+    return dependency
+
+
+def add_plugin_route(router: APIRouter, spec: EndpointSpec, context: AuthContext) -> None:
+    if spec.handler is None or spec.server_only:
         return
     route_key = (spec.method, prefixed_plugin_path(router, spec.path))
     if route_key in existing_route_keys(router):
@@ -533,14 +589,30 @@ def add_plugin_route(router: APIRouter, spec: EndpointSpec) -> None:
         raise ValueError(
             f"plugin endpoint {method} {spec.path} collides with existing auth route {path}",
         )
+    dependencies: list[DependsParameter] = []
+    if spec.auth_required:
+        dependencies.append(Depends(session_security_dependency(context)))
+    if spec.csrf_policy in {"require", "required"}:
+        dependencies.append(Depends(required_csrf_dependency(context)))
+    extra = dict(spec.openapi_extra or {})
+    if spec.error_codes:
+        extra["x-fastauth-error-codes"] = list(spec.error_codes)
     router.add_api_route(
         path=spec.path,
         endpoint=spec.handler,
         methods=[spec.method],
         name=spec.name,
+        operation_id=spec.operation_id or spec.name,
         tags=list(spec.tags),
         response_model=spec.response_model,
         response_class=JSONResponse,
+        dependencies=dependencies,
+        deprecated=spec.deprecated,
+        openapi_extra=extra or None,
+        responses={
+            status: {"model": ErrorResponse}
+            for status in (400, 401, 403, 404, 409, 423, 429, 500, 503)
+        },
     )
     for route in reversed(router.routes):
         if isinstance(route, APIRoute) and route.name == spec.name:
@@ -550,6 +622,7 @@ def add_plugin_route(router: APIRouter, spec: EndpointSpec) -> None:
 
 def register_session_routes(router: APIRouter, context: AuthContext) -> None:
     internal_api = RouterAuthApi(context)
+    protected = [Depends(session_security_dependency(context))]
 
     @router.post(
         "/refresh",
@@ -601,12 +674,14 @@ def register_session_routes(router: APIRouter, context: AuthContext) -> None:
             session=session_context.session,
         )
         for plugin in context.plugins.plugins:
-            await plugin.extend_session_response(session_context.user, response)
+            await plugin.extend_session_context_response(session_context, response)
         return session_response
 
     @router.get(
         "/sessions",
         name="list_sessions",
+        operation_id="list_sessions",
+        dependencies=protected,
         response_model=ListSessionsResponse,
     )
     async def list_sessions_handler(  # pyright: ignore[reportUnusedFunction]
@@ -621,6 +696,8 @@ def register_session_routes(router: APIRouter, context: AuthContext) -> None:
     @router.delete(
         "/sessions/{session_id}",
         name="revoke_session",
+        operation_id="revoke_session",
+        dependencies=protected,
         response_model=RevokeSessionsResponse,
     )
     async def revoke_session_handler(  # pyright: ignore[reportUnusedFunction]
@@ -633,6 +710,8 @@ def register_session_routes(router: APIRouter, context: AuthContext) -> None:
     @router.delete(
         "/sessions",
         name="revoke_other_sessions",
+        operation_id="revoke_other_sessions",
+        dependencies=protected,
         response_model=RevokeSessionsResponse,
     )
     async def revoke_other_sessions_handler(  # pyright: ignore[reportUnusedFunction]
@@ -651,8 +730,11 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     router = APIRouter(
         tags=["fastauth"],
         route_class=route_class,
-        dependencies=[Depends(rate_limit_dependency(context))],
         default_response_class=JSONResponse,
+        responses={
+            status: {"model": ErrorResponse}
+            for status in (400, 401, 403, 404, 409, 423, 429, 500, 503)
+        },
     )
 
     @router.get(
@@ -676,10 +758,19 @@ def build_router(context: AuthContext, api: AuthApi) -> APIRouter:
     for spec in context.plugins.all_endpoints():
         if spec.handler is None:
             continue
-        add_plugin_route(router, spec)
+        add_plugin_route(router, spec, context)
+    names: set[str] = set()
+    operation_ids: set[str] = set()
     for route in router.routes:
         if not isinstance(route, APIRoute):
             continue
+        if route.name in names:
+            raise ValueError(f"duplicate auth endpoint name: {route.name}")
+        names.add(route.name)
+        route.operation_id = route.operation_id or route.name
+        if route.operation_id in operation_ids:
+            raise ValueError(f"duplicate auth operation_id: {route.operation_id}")
+        operation_ids.add(route.operation_id)
         for method in route.methods or ():
             route_class.relative_paths[(method, route.name)] = route.path
     return router

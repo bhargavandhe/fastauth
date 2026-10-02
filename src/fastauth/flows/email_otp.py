@@ -12,7 +12,7 @@ is the SHA-256 of the plaintext OTP. The plaintext is never persisted —
 it lives only in the email body delivered to the user.
 
 **Resend strategy.** This module implements only the "rotate" strategy:
-issuing a fresh OTP discards every prior un-consumed OTP for the same
+issuing a fresh OTP atomically replaces the prior OTP for the same
 ``(identifier, purpose)`` pair. The "reuse" strategy from better-auth
 requires plaintext-recoverable storage and is not supported with hashed
 storage.
@@ -68,6 +68,7 @@ from fastauth.exceptions import (
     TokenExpiredError,
     TokenInvalidError,
 )
+from fastauth.flows.creation import persist_user_account
 from fastauth.flows.credentials import (
     EmptyResponse,
     SessionResponse,
@@ -76,6 +77,7 @@ from fastauth.flows.credentials import (
 from fastauth.options import FastAuthOptions
 from fastauth.plugins.email_otp_options import EmailOtpOptions
 from fastauth.runtime.context import AuthContext
+from fastauth.runtime.hooks import update_user_with_hooks
 from fastauth.security.otp import OtpService
 from fastauth.security.sessions import SessionContext
 
@@ -226,11 +228,9 @@ async def issue_otp(
 ) -> str:
     """Mint a new OTP, persist its hash, send the email, return the plaintext.
 
-    Implements the "rotate" resend strategy: any pre-existing un-consumed
-    OTPs for the same ``(identifier, purpose)`` pair are deleted first
-    so only the newest code is valid.
+    Implements the "rotate" resend strategy: issuance atomically replaces
+    the challenge for this ``(identifier, purpose)`` pair.
     """
-    await context.adapter.delete_verifications_for_identifier(identifier, purpose)
     pair = otp_service.generate_pair()
     expires_at = datetime.now(UTC) + config.expires_in
     await context.adapter.create_verification(
@@ -286,13 +286,11 @@ async def consume_otp(
 ) -> Verification:
     """Verify ``plain_otp``, increment the attempt counter on miss, return the row.
 
-    On success the row is **deleted** before this function returns
-    (one-time-use). The caller can rely on the returned row's fields but
-    must not attempt further reads against the same id.
+    On success the row is atomically marked consumed before returning.
+    The returned model is a snapshot; replay is rejected by storage.
 
-    On miss the row's ``attempt_count`` is bumped. When it equals or
-    exceeds ``config.max_attempts`` the row is deleted and a fresh
-    OTP is required.
+    On miss storage atomically increments ``attempt_count``. Reaching
+    ``config.max_attempts`` burns the challenge and requires a fresh OTP.
 
     When ``feed_lockout=True`` (the default for sign-in / verify-email /
     reset / change-email) every miss is also fed to
@@ -300,52 +298,29 @@ async def consume_otp(
     applies. ``check_otp`` (the optional pre-check endpoint) sets this
     to ``False`` so a UX double-check doesn't trigger lockout.
     """
-    row = await context.adapter.get_active_verification(identifier, purpose)
-    if row is None:
-        if feed_lockout:
-            await context.lockout_tracker.record_failure(identifier)
-        await context.event_bus.publish(
-            OtpVerifyFailed(identifier=identifier, purpose=purpose.value, attempt_count=0),
-        )
-        raise TokenInvalidError(message="no active otp for this email")
-
-    if row.expires_at <= datetime.now(UTC):
-        await context.adapter.delete_verification(row.id)
-        if feed_lockout:
-            await context.lockout_tracker.record_failure(identifier)
-        await context.event_bus.publish(
-            OtpVerifyFailed(
-                identifier=identifier,
-                purpose=purpose.value,
-                attempt_count=row.attempt_count,
-            ),
-        )
-        raise TokenExpiredError(message="otp expired")
-
-    if not otp_service.verify_match(plain_otp, row.value_hash):
-        row.attempt_count += 1
-        if row.attempt_count >= config.max_attempts:
-            # Burned. Delete; user must request a fresh one.
-            await context.adapter.delete_verification(row.id)
-        else:
-            await context.adapter.update_verification(row)
+    result = await context.adapter.attempt_verification(
+        identifier,
+        purpose,
+        otp_service.hash_only(plain_otp),
+        now=datetime.now(UTC),
+        max_attempts=config.max_attempts,
+    )
+    if result.status != "accepted" or result.verification is None:
         if feed_lockout:
             await context.lockout_tracker.record_failure(identifier)
         await context.event_bus.publish(
             OtpVerifyFailed(
                 identifier=identifier,
                 purpose=purpose.value,
-                attempt_count=row.attempt_count,
-            ),
+                attempt_count=result.attempt_count,
+            )
         )
-        raise TokenInvalidError(message="incorrect otp")
-
-    # Success — delete the row (one-time-use) and reset lockout for this
-    # identifier so a successful sign-in clears any partial-failure state.
-    await context.adapter.delete_verification(row.id)
+        if result.status == "expired":
+            raise TokenExpiredError(message="otp expired")
+        raise TokenInvalidError(message="incorrect or inactive otp")
     if feed_lockout:
         await context.lockout_tracker.reset(identifier)
-    return row
+    return result.verification
 
 
 # --- Top-level flows ---------------------------------------------------------
@@ -418,19 +393,18 @@ async def check_otp(
     consume it next.
     """
     purpose = purpose_for_kind(request.purpose)
-    row = await context.adapter.get_active_verification(request.email, purpose)
-    if row is None:
-        raise TokenInvalidError(message="no active otp for this email")
-    if row.expires_at <= datetime.now(UTC):
-        await context.adapter.delete_verification(row.id)
+    result = await context.adapter.attempt_verification(
+        request.email,
+        purpose,
+        otp_service.hash_only(request.otp.get_secret_value()),
+        now=datetime.now(UTC),
+        max_attempts=config.max_attempts,
+        consume=False,
+    )
+    if result.status == "expired":
         raise TokenExpiredError(message="otp expired")
-    if not otp_service.verify_match(request.otp.get_secret_value(), row.value_hash):
-        row.attempt_count += 1
-        if row.attempt_count >= config.max_attempts:
-            await context.adapter.delete_verification(row.id)
-        else:
-            await context.adapter.update_verification(row)
-        raise TokenInvalidError(message="incorrect otp")
+    if result.status != "accepted":
+        raise TokenInvalidError(message="incorrect or inactive otp")
     return EmptyResponse(success=True)
 
 
@@ -486,20 +460,17 @@ async def sign_in_with_otp(
             new_user,
             actor_user_id=None,
         )
-        new_user = await context.adapter.create_user(new_user)
+        new_user = await persist_user_account(
+            context.adapter,
+            new_user,
+            provider_id=ProviderId.EMAIL_OTP,
+            password_hash=None,
+        )
         await context.hooks.run(
             HookPhase.AFTER_CREATE,
             "user",
             new_user,
             actor_user_id=new_user.id,
-        )
-        await context.adapter.create_account(
-            Account(
-                user_id=new_user.id,
-                provider_id=ProviderId.EMAIL_OTP,
-                account_id=new_user.id,
-                password=None,  # OTP-only account; password may be added later
-            ),
         )
         await context.event_bus.publish(
             UserSignedUp(
@@ -522,7 +493,7 @@ async def sign_in_with_otp(
         # Existing user signing in via OTP for the first time. The OTP
         # delivery proves email ownership — flip the flag.
         user.email_verified = True
-        user = await context.adapter.update_user(user)
+        user = await update_user_with_hooks(context, user, actor_user_id=user.id)
 
     session_context = await context.session_strategy.create(user, ip=ip, user_agent=user_agent)
 
@@ -555,6 +526,7 @@ async def sign_in_with_otp(
         context,
         user_id=user.id,
         session_id=session_context.session.id,
+        authenticated_at=session_context.session.authenticated_at,
         delivery=request.delivery,
         ip=ip,
         user_agent=user_agent,
@@ -603,7 +575,7 @@ async def verify_email_with_otp(
     )
     if not user.email_verified:
         user.email_verified = True
-        await context.adapter.update_user(user)
+        await update_user_with_hooks(context, user, actor_user_id=user.id)
     await context.event_bus.publish(
         UserEmailVerified(
             user_id=user.id,
@@ -662,6 +634,9 @@ async def reset_password_with_otp(
     ip: str | None,
     user_agent: str | None,
 ) -> EmptyResponse:
+    from fastauth.flows.credentials import validate_password_policy
+
+    raw_password = validate_password_policy(context, request.password)
     user = await context.adapter.get_user_by_email(request.email)
     if user is None:
         raise TokenInvalidError(message="invalid otp")
@@ -674,9 +649,7 @@ async def reset_password_with_otp(
         plain_otp=request.otp.get_secret_value(),
         feed_lockout=True,
     )
-    from fastauth.flows.credentials import validate_password_policy
-
-    new_hash = context.password_hasher.hash(validate_password_policy(context, request.password))
+    new_hash = await context.password_executor.hash(raw_password)
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None:
         # User signed up via OTP and never set a password. Create the
@@ -767,7 +740,7 @@ async def request_email_change_otp(
         )
 
     user.pending_email_change = request.new_email
-    await context.adapter.update_user(user)
+    await update_user_with_hooks(context, user, actor_user_id=user.id)
     await issue_otp(
         context,
         config=config,
@@ -817,7 +790,7 @@ async def change_email_with_otp(
     user.email = request.new_email
     user.email_verified = True
     user.pending_email_change = None
-    await context.adapter.update_user(user)
+    await update_user_with_hooks(context, user, actor_user_id=user.id)
     await context.lockout_tracker.reset(request.new_email)
     await context.event_bus.publish(
         UserEmailChanged(

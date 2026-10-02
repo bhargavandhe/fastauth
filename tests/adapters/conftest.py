@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -15,10 +16,15 @@ from fastauth.storage.beanie import init_beanie_documents
 
 @pytest.fixture(scope="session")
 def mongo_url() -> str:
+    external_url = os.environ.get("FASTAUTH_TEST_MONGO_URL")
+    if external_url:
+        return external_url
     try:
         container = MongoDbContainer("mongo:7")
         container.start()
     except Exception as exc:
+        if os.environ.get("FASTAUTH_REQUIRE_DATABASES") == "1":
+            pytest.fail(f"Required real database unavailable: {exc}")
         pytest.skip(f"Docker is required for Beanie adapter tests: {exc}")
     url = container.get_connection_url()
 

@@ -5,6 +5,7 @@ from collections.abc import Callable
 # pyright: reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from bson import ObjectId
@@ -291,12 +292,32 @@ async def test_update_methods_replace_documents(
     monkeypatch.setattr(document_class, "set", fake_set)
     monkeypatch.setattr(document_class, "replace", fake_replace)
 
+    if method_name == "update_user":
+        collection = MagicMock()
+
+        async def fake_atomic_update(selector: Any, update: Any, **kwargs: Any) -> Any:
+            del selector, kwargs
+            assert "active" not in update["$set"]
+            set_calls.append(update["$set"])
+            data = doc.model_dump(by_alias=True)
+            data.update(update["$set"])
+            return data
+
+        collection.find_one_and_update = fake_atomic_update
+        monkeypatch.setattr(
+            document_class, "get_pymongo_collection", staticmethod(lambda: collection)
+        )
+
     adapter = BeanieAdapter(database=object())  # type: ignore[arg-type]
     result = await getattr(adapter, method_name)(model)
 
     assert result == model
-    assert replace_calls == [True]
-    assert set_calls == []
+    if method_name == "update_user":
+        assert replace_calls == []
+        assert len(set_calls) == 1
+    else:
+        assert replace_calls == [True]
+        assert set_calls == []
 
     object_id_fields = {
         "update_session": ["user_id"],

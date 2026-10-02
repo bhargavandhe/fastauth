@@ -6,10 +6,13 @@ from fastauth.testing import (
     AuditLogAdapterContract,
     ContractAdapter,
     CoreAdapterContract,
+    CreationAdapterContract,
     FullAdapterContract,
     JwksAdapterContract,
+    PasswordRehashAdapterContract,
     RateLimitAdapterContract,
     RefreshTokenAdapterContract,
+    UserStatusAdapterContract,
 )
 from fastauth.testing.adapter_contract import (
     AdapterContract as DirectAdapterContract,
@@ -26,12 +29,15 @@ def test_adapter_contract_is_publicly_importable() -> None:
 
 
 def test_split_adapter_contracts_are_publicly_importable() -> None:
+    assert CreationAdapterContract.__name__ == "CreationAdapterContract"
     assert CoreAdapterContract.__name__ == "CoreAdapterContract"
     assert RefreshTokenAdapterContract.__name__ == "RefreshTokenAdapterContract"
     assert ApiKeyAdapterContract.__name__ == "ApiKeyAdapterContract"
     assert JwksAdapterContract.__name__ == "JwksAdapterContract"
     assert AuditLogAdapterContract.__name__ == "AuditLogAdapterContract"
+    assert PasswordRehashAdapterContract.__name__ == "PasswordRehashAdapterContract"
     assert RateLimitAdapterContract.__name__ == "RateLimitAdapterContract"
+    assert UserStatusAdapterContract.__name__ == "UserStatusAdapterContract"
     assert FullAdapterContract.__name__ == "FullAdapterContract"
 
 
@@ -51,9 +57,12 @@ def test_adapter_contract_module_exports_split_contracts() -> None:
         "AuditLogAdapterContract",
         "ContractAdapter",
         "CoreAdapterContract",
+        "CreationAdapterContract",
         "FullAdapterContract",
         "JwksAdapterContract",
         "MaintenanceAdapterContract",
+        "PasswordRehashAdapterContract",
         "RateLimitAdapterContract",
         "RefreshTokenAdapterContract",
+        "UserStatusAdapterContract",
     }

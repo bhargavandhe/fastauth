@@ -63,6 +63,8 @@ class OpenApiPlugin(Plugin):
         self.options = options or OpenApiOptions()
         self.context: AuthContext | None = None
         self.cached_schema: dict[str, Any] | None = None
+        self.cached_app: FastAPI | None = None
+        self.cached_route_count: int = 0
 
     def bind(self, context: AuthContext) -> None:
         """Attach the assembled ``AuthContext`` so handlers can read app config."""
@@ -112,7 +114,11 @@ class OpenApiPlugin(Plugin):
         for the same reason. One of the four documented carve-outs in
         CONTRIBUTING.md.
         """
-        if self.cached_schema is not None:
+        if (
+            self.cached_schema is not None
+            and self.cached_app is app
+            and self.cached_route_count == len(app.routes)
+        ):
             return self.cached_schema
         context = self.assert_bound()
         schema = get_openapi(
@@ -123,6 +129,8 @@ class OpenApiPlugin(Plugin):
             routes=app.routes,
         )
         self.cached_schema = schema
+        self.cached_app = app
+        self.cached_route_count = len(app.routes)
         return schema
 
     async def reference_handler(self, request: Request) -> HTMLResponse:

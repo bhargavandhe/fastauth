@@ -81,6 +81,7 @@ class User(FastAuthModel):
     name: str | None = None
     image: str | None = None
     email_verified: bool = False
+    active: bool = True
     pending_email_change: EmailStr | None = None
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -93,6 +94,7 @@ class User(FastAuthModel):
 
 
 class Session(FastAuthModel):
+    authenticated_at: datetime | None = None
     id: NonEmptyString = Field(default_factory=new_id)
     user_id: NonEmptyString
     token_hash: NonEmptyString
@@ -135,6 +137,7 @@ class RefreshToken(FastAuthModel):
     family_id: NonEmptyString
     family_created_at: datetime
     expires_at: datetime
+    authenticated_at: datetime | None = None
     consumed_at: datetime | None = None
     replaced_by: NonEmptyString | None = None
     ip_address: str | None = None
@@ -168,10 +171,10 @@ class Verification(FastAuthModel):
     purpose: VerificationPurpose
     expires_at: datetime
     # Number of failed verify attempts. Bumped by ``EmailOtpPlugin`` to enforce
-    # the per-OTP attempt cap; token-based flows ignore the field. The row is
-    # deleted (not just expired) once the cap is exceeded so the next request
-    # has to mint a fresh OTP.
+    # the per-OTP attempt cap. Atomic storage burns the challenge by setting
+    # consumed_at at the cap or on success; a new issuance resets the state.
     attempt_count: int = 0
+    consumed_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

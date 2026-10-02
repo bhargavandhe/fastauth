@@ -17,8 +17,9 @@ from fastauth.domain.events import (
 )
 from fastauth.domain.models import EmailMessage, Verification, WireModel
 from fastauth.domain.value_objects import normalize_email
-from fastauth.exceptions import TokenExpiredError, TokenInvalidError
+from fastauth.exceptions import TokenInvalidError
 from fastauth.flows.callbacks import resolve_callback_url
+from fastauth.flows.challenges import consume_token
 from fastauth.flows.credentials import EmptyResponse, validate_password_policy
 from fastauth.runtime.context import AuthContext
 from fastauth.web.callbacks import validate_callback_url
@@ -146,17 +147,15 @@ async def reset_password(
     user_agent: str | None,
 ) -> EmptyResponse:
     """Verify the reset token, change the password, and revoke every active session."""
+    raw_password = validate_password_policy(context, request.new_password)
     token_hash = context.token_service.hash_only(request.token.get_secret_value())
-    verification = await context.adapter.get_verification(
+    await consume_token(
+        context,
         request.email,
         VerificationPurpose.PASSWORD_RESET,
         token_hash,
+        label="reset",
     )
-    if verification is None:
-        raise TokenInvalidError(message="invalid reset token")
-    if verification.expires_at <= datetime.now(UTC):
-        await context.adapter.delete_verification(verification.id)
-        raise TokenExpiredError(message="reset token expired")
 
     user = await context.adapter.get_user_by_email(request.email)
     if user is None:
@@ -165,17 +164,11 @@ async def reset_password(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None:
         raise TokenInvalidError(message="credential account not found")
-    account.password = context.password_hasher.hash(
-        validate_password_policy(context, request.new_password),
-    )
+    account.password = await context.password_executor.hash(raw_password)
     await context.adapter.update_account(account)
 
     revoked = await context.session_strategy.revoke_all(user.id)
     await context.refresh_token_service.revoke_for_user(user.id)
-    await context.adapter.delete_verifications_for_identifier(
-        request.email,
-        VerificationPurpose.PASSWORD_RESET,
-    )
     await context.lockout_tracker.reset(user.email)
     if user.username is not None:
         await context.lockout_tracker.reset(user.username)

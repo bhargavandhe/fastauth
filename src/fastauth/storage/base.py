@@ -20,6 +20,7 @@ from fastauth.domain.models import (
     Verification,
 )
 from fastauth.exceptions import AdapterFeatureUnsupportedError
+from fastauth.storage.verification import VerificationAttempt
 
 __all__ = [
     "AccountStore",
@@ -30,11 +31,14 @@ __all__ = [
     "DatabaseAdapter",
     "JwksKeyStore",
     "MaintenanceStore",
+    "PasswordRehashStore",
     "RateLimitStore",
     "RefreshTokenStore",
     "RevokedRefreshFamily",
     "SessionStore",
+    "UserStatusStore",
     "UserStore",
+    "VerificationAttempt",
     "VerificationStore",
 ]
 
@@ -56,6 +60,13 @@ class UserStore(Protocol):
     async def find_user_by_pending_email_change(self, new_email: str) -> User | None: ...
     async def update_user(self, user: User) -> User: ...
     async def delete_user(self, user_id: str) -> None: ...
+
+
+@runtime_checkable
+class UserStatusStore(Protocol):
+    """Privileged activation changes, isolated from ordinary profile updates."""
+
+    async def set_user_active(self, user_id: str, *, active: bool) -> User: ...
 
 
 @runtime_checkable
@@ -111,7 +122,31 @@ class AccountStore(Protocol):
 
 
 @runtime_checkable
+class PasswordRehashStore(Protocol):
+    """Optional optimistic password upgrade; never overwrite a concurrent reset."""
+
+    async def replace_account_password(
+        self,
+        account_id: str,
+        *,
+        expected_hash: str,
+        new_hash: str,
+    ) -> bool: ...
+
+
+@runtime_checkable
 class VerificationStore(Protocol):
+    async def attempt_verification(
+        self,
+        identifier: str,
+        purpose: VerificationPurpose,
+        value_hash: str,
+        *,
+        now: datetime,
+        max_attempts: int | None = None,
+        consume: bool = True,
+    ) -> VerificationAttempt: ...
+
     async def create_verification(self, verification: Verification) -> Verification: ...
     async def get_verification(
         self,
@@ -355,6 +390,18 @@ class BaseDatabaseAdapter:
 
     async def delete_account(self, account_id: str) -> None:
         raise self.unsupported("accounts")
+
+    async def attempt_verification(
+        self,
+        identifier: str,
+        purpose: VerificationPurpose,
+        value_hash: str,
+        *,
+        now: datetime,
+        max_attempts: int | None = None,
+        consume: bool = True,
+    ) -> VerificationAttempt:
+        raise self.unsupported("atomic verification attempts")
 
     async def create_verification(self, verification: Verification) -> Verification:
         raise self.unsupported("verifications")

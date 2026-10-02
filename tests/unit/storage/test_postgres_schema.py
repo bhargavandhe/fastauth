@@ -57,10 +57,7 @@ def test_postgres_migration_registry_is_ordered() -> None:
 
     assert versions == sorted(versions)
     assert versions == list(range(1, CURRENT_SCHEMA_VERSION + 1))
-    assert (
-        POSTGRES_MIGRATIONS[-1].description
-        == "preserve refresh token evidence after session rotation"
-    )
+    assert POSTGRES_MIGRATIONS[-1].description == "atomic current verification challenges"
 
 
 def test_postgres_pending_migrations_rejects_future_database_version() -> None:

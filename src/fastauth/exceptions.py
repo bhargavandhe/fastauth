@@ -24,6 +24,7 @@ __all__ = [
     "MaintenanceError",
     "NotFoundError",
     "PasswordAlreadySetError",
+    "PolicyDeniedError",
     "RateLimitError",
     "RefreshSessionConsistencyError",
     "RefreshTokenReuseError",
@@ -84,6 +85,10 @@ class PasswordAlreadySetError(FastAuthError):
 
 class AuthenticationError(FastAuthError):
     default_code = "AUTHENTICATION_ERROR"
+
+
+class PolicyDeniedError(AuthenticationError):
+    default_code = "POLICY_DENIED"
 
 
 class InvalidRequestError(FastAuthError):
@@ -242,6 +247,7 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     FastAuthDependencyError: HTTPStatus.UNAUTHORIZED,
     InvalidCredentialsError: HTTPStatus.UNAUTHORIZED,
     EmailNotVerifiedError: HTTPStatus.FORBIDDEN,
+    PolicyDeniedError: HTTPStatus.FORBIDDEN,
     SessionExpiredError: HTTPStatus.UNAUTHORIZED,
     ServiceUnavailableError: HTTPStatus.SERVICE_UNAVAILABLE,
     MaintenanceError: HTTPStatus.INTERNAL_SERVER_ERROR,

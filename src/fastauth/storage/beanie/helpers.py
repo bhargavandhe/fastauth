@@ -59,6 +59,8 @@ def apply_model_updates(doc: Document, model: BaseModel) -> None:
 
 
 def coerce_document_value(doc: Document, field_name: str, value: object) -> object:
+    if field_name == "session_id" and isinstance(value, str):
+        return session_reference(value)
     if value is None or not field_stores_object_id(doc, field_name):
         return value
     if isinstance(value, ObjectId):
@@ -110,3 +112,14 @@ def require_object_id(value: str | None) -> ObjectId:
     if oid is None:
         raise ValueError("expected a Mongo ObjectId hex string")
     return oid
+
+
+def session_reference(value: str) -> ObjectId | str:
+    """Preserve protocol JWT IDs; Mongo-owned session references remain ObjectIds."""
+    if (
+        value.startswith("jwt:")
+        and len(value) == 36
+        and all(character in "0123456789abcdef" for character in value[4:])
+    ):
+        return value
+    return require_object_id(value)

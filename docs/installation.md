@@ -1,7 +1,13 @@
 # Installation
 
 `fastauth` is published as the `fastauth-py` distribution with optional
-extras. Install the combination you need:
+extras. Version 0.15 requires Python 3.11–3.13 (`>=3.11,<3.14`) and Pydantic 2.11–2.x.
+Python 3.14 is not supported: current Beanie 2.x releases declare an upper bound
+of `<3.14`. The same Python range applies to core and every extra so the supported
+release includes all first-party adapters. Use a Python 3.11, 3.12, or 3.13
+environment before installing; do not bypass dependency Python-version checks.
+
+The CLI extra requires Typer 0.17.5+; JWT requires joserfc 1.5+. Install the combination you need:
 
 ```bash
 pip install "fastauth-py[beanie,jwt,cli]"

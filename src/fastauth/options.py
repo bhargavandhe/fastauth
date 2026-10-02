@@ -158,6 +158,7 @@ class AppOptions(OptionsSection):
 
 
 class SessionOptions(OptionsSection):
+    require_verified_user: bool = False
     strategy: SessionStrategyKind = SessionStrategyKind.DATABASE
     expires_in: timedelta = Field(default=timedelta(days=7), gt=timedelta(0))
     idle_timeout: timedelta | None = Field(default=None, gt=timedelta(0))
@@ -194,6 +195,7 @@ class CookieOptions(OptionsSection):
 
 
 class PasswordOptions(OptionsSection):
+    max_concurrent_operations: int = Field(default=2, ge=1, le=64)
     min_length: int = Field(default=8, ge=8, le=1024)
     max_length: int = Field(default=128, ge=8, le=4096)
     argon2_time_cost: int = Field(default=3, ge=1, le=64)

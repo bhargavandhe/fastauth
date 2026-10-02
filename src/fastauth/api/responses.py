@@ -27,6 +27,7 @@ __all__ = [
     "ApiKeyView",
     "AuthenticationResponse",
     "CredentialsView",
+    "ErrorResponse",
     "ResponseModel",
     "SessionView",
     "UserView",
@@ -47,6 +48,13 @@ class ResponseModel(BaseModel):
     )
 
 
+class ErrorResponse(ResponseModel):
+    """Stable HTTP error envelope shared by authentication endpoints."""
+
+    code: str
+    message: str
+
+
 class UserView(ResponseModel):
     id: UserId
     email: EmailStr
@@ -54,12 +62,14 @@ class UserView(ResponseModel):
     name: str | None = None
     image: str | None = None
     email_verified: bool
+    active: bool = True
     metadata: UserMetadata = Field(default_factory=lambda: UserMetadata({}))
     created_at: datetime
     updated_at: datetime
 
 
 class SessionView(ResponseModel):
+    authenticated_at: datetime | None = None
     id: SessionId
     user_id: UserId
     expires_at: datetime
@@ -102,6 +112,7 @@ def user_view(user: User) -> UserView:
         name=user.name,
         image=user.image,
         email_verified=user.email_verified,
+        active=user.active,
         metadata=UserMetadata.model_validate(user.metadata),
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -111,6 +122,7 @@ def user_view(user: User) -> UserView:
 def session_view(session: Session) -> SessionView:
     return SessionView(
         id=SessionId(session.id),
+        authenticated_at=session.authenticated_at,
         user_id=UserId(session.user_id),
         expires_at=session.expires_at,
         ip_address=session.ip_address,
