@@ -124,3 +124,6 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["src/fastauth"]
+
+[tool.coverage.report]
+precision = 2

@@ -173,7 +173,7 @@ checks. They remain unconditional and cannot be disabled through
 This design permits a TLS-terminating deployment to set:
 
 ```python
-production_safety=ProductionSafetyOptions(
+production_safety = ProductionSafetyOptions(
     require_https=False,
     require_secure_cookies=False,
 )
@@ -221,8 +221,7 @@ async def get_user(
     by_id: UserId | str | None = None,
     by_email: EmailStr | str | None = None,
     by_username: Username | str | None = None,
-) -> UserView | None:
-    ...
+) -> UserView | None: ...
 ```
 
 Exactly one selector is required. Zero or multiple selectors raise

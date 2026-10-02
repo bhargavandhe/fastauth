@@ -39,13 +39,15 @@ auth = FastAuth(
     ),
     plugins=[
         email_password(),
-        email_otp(EmailOtpOptions(
-            code_length=6,
-            expires_in=timedelta(minutes=5),
-            max_attempts=3,
-            allow_sign_up=True,
-            email_change=EmailChangeOtpOptions(enabled=False),
-        )),
+        email_otp(
+            EmailOtpOptions(
+                code_length=6,
+                expires_in=timedelta(minutes=5),
+                max_attempts=3,
+                allow_sign_up=True,
+                email_change=EmailChangeOtpOptions(enabled=False),
+            )
+        ),
     ],
 )
 ```
@@ -263,8 +265,10 @@ auth = FastAuth(
 )
 
 # Trigger send
-await client.post("/auth/email-otp/send-verification-otp",
-                 json={"email": "alice@example.com", "purpose": "sign-in"})
+await client.post(
+    "/auth/email-otp/send-verification-otp",
+    json={"email": "alice@example.com", "purpose": "sign-in"},
+)
 # Read it back
 helpers = auth.context.plugins.by_id["fastauth-test-utils"].helpers
 otp = helpers.get_otp("alice@example.com")

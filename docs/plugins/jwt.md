@@ -48,11 +48,13 @@ auth = FastAuth(
     ),
     plugins=[
         email_password(),
-        jwt(JwtOptions(
-            issuer="https://app.example.com",
-            audience="https://api.example.com",
-            rotation_interval=timedelta(days=30),
-        )),
+        jwt(
+            JwtOptions(
+                issuer="https://app.example.com",
+                audience="https://api.example.com",
+                rotation_interval=timedelta(days=30),
+            )
+        ),
     ],
 )
 ```

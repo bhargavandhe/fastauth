@@ -18,6 +18,7 @@ user = await auth.api.create_user(
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 auth.add_middleware(app)
 
+
 @app.get("/me")
 async def get_me(user: auth.CurrentUser) -> UserView:
     return user
@@ -38,8 +39,7 @@ async def create_user(
     name: str | None = None,
     username: Username | str | None = None,
     metadata: UserMetadata | Mapping[str, JsonValue] | None = None,
-) -> UserView:
-    ...
+) -> UserView: ...
 ```
 
 The method is a trusted, in-process administrative operation. It will:
@@ -141,6 +141,7 @@ annotations are enabled:
 
 ```python
 auth = FastAuth(...)
+
 
 @app.get("/me")
 async def get_me(user: auth.CurrentUser) -> UserView:

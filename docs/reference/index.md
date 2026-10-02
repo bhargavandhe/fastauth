@@ -108,8 +108,7 @@ Registers an async database hook for an exact phase and target:
 
 ```python
 @auth.hook(HookPhase.BEFORE_CREATE, target="user")
-async def prepare_user(context: HookContext) -> User:
-    ...
+async def prepare_user(context: HookContext) -> User: ...
 ```
 
 Before-hook return values replace the payload passed to subsequent hooks.

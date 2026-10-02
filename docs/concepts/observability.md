@@ -8,6 +8,7 @@ own metrics or tracing system.
 ```python
 from fastauth import FastAuth, OperationalEvent
 
+
 class MetricsSink:
     async def emit(self, event: OperationalEvent) -> None:
         metrics.increment(
@@ -18,6 +19,7 @@ class MetricsSink:
                 "route": event.route or "none",
             },
         )
+
 
 auth = FastAuth(options, observability_sink=MetricsSink())
 ```
@@ -32,9 +34,9 @@ Subscribe imperatively or with a decorator:
 ```python
 auth.observability.subscribe("readiness.checked", record_readiness)
 
+
 @auth.observability.on("maintenance.completed")
-async def record_maintenance(event: OperationalEvent) -> None:
-    ...
+async def record_maintenance(event: OperationalEvent) -> None: ...
 ```
 
 For an OpenTelemetry bridge, start or annotate a span inside a sink and copy

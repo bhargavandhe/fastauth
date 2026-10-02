@@ -13,6 +13,7 @@ KMS/HSM-backed signer and run an application-specific security review.
 from typing import Any
 from fastauth.security.jwt import KmsSigner
 
+
 class CloudKmsSigner:
     def __init__(self, registry: JwksRegistry, key_id: str) -> None:
         self.registry = registry

@@ -15,8 +15,10 @@ from fastauth.domain.models import WireModel
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin
 from fastauth import email_password
 
+
 class HelloResponse(WireModel):
     message: str
+
 
 class HelloPlugin(Plugin):
     id: ClassVar[str] = "myapp-hello"
@@ -43,6 +45,7 @@ class HelloPlugin(Plugin):
 
     async def hello(self) -> HelloResponse:
         return HelloResponse(message="world")
+
 
 auth = FastAuth(
     FastAuthOptions(
@@ -114,6 +117,7 @@ alterations, renames, and data migrations are intentionally excluded.
 ```python
 from fastauth.plugins import FieldSpec, IndexSpec, MigrationSpec, PluginSchema, TableSpec
 
+
 def schemas(self):
     return [
         PluginSchema(
@@ -133,9 +137,7 @@ def schemas(self):
                     ),
                 ),
             ),
-            migrations=(
-                MigrationSpec(name="create_webhook_deliveries", version=1),
-            ),
+            migrations=(MigrationSpec(name="create_webhook_deliveries", version=1),),
         )
     ]
 ```

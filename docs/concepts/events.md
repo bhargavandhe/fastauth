@@ -8,6 +8,7 @@ listen to everything.
 ```python
 from fastauth.domain.events import UserSignedUp
 
+
 @auth.on(UserSignedUp)
 async def welcome(event: UserSignedUp) -> None:
     print(f"new user {event.user_id} ({event.identifier})")

@@ -83,9 +83,11 @@ dependencies:
 ```python
 from fastauth import UserView
 
+
 @app.get("/me")
 async def me(user: auth.CurrentUser) -> UserView:
     return user
+
 
 @app.get("/my-session")
 async def my_session(session: auth.CurrentSession) -> dict[str, str]:
@@ -101,6 +103,7 @@ For an auth instance created inside a factory or closure, use the explicit form:
 ```python
 from fastapi import Depends
 from fastauth import UserView
+
 
 @app.get("/me")
 async def me(user: UserView = Depends(auth.depends.user())) -> UserView:
