@@ -39,3 +39,8 @@ def test_hooks_documentation_executes_with_domain_metadata() -> None:
     context = HookContext(phase=HookPhase.BEFORE_CREATE, model_name="user", payload=user)
     updated = asyncio.run(namespace["stamp_signup_metadata"](context))
     assert updated.metadata == {"existing": True, "source": "marketing-landing"}
+
+
+def test_beanie_extra_requires_security_patched_pymongo() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    assert "pymongo>=4.18.3,<5" in project["optional-dependencies"]["beanie"]

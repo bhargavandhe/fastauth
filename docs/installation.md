@@ -82,3 +82,14 @@ uv run fastauth migrate --postgres-url postgresql+asyncpg://user:pass@localhost/
 The Mongo command initializes Beanie documents and indexes. The Postgres
 command applies tracked fastauth schema migrations and records the current
 schema version in the database.
+
+## MongoDB compatibility
+
+The `beanie` extra requires PyMongo 4.18.3 or newer within the 4.x series, which
+includes the upstream security fixes. PyMongo 4.18 raises the minimum supported
+MongoDB server version to **4.4**. Upgrade MongoDB 4.2 or older before upgrading
+this extra; dependency installation alone does not upgrade the server. Production
+applications should use a currently supported MongoDB server release.
+
+See the [upstream upgrade notes](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/reference/upgrade/)
+and [security release notes](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/reference/release-notes/).
