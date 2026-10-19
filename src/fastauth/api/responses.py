@@ -7,8 +7,9 @@ Only fields intended for HTTP clients are represented here.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, RootModel
 from pydantic.alias_generators import to_camel
 
 from fastauth.domain.models import ApiKey, Session, User
@@ -27,8 +28,11 @@ __all__ = [
     "ApiKeyView",
     "AuthenticationResponse",
     "CredentialsView",
+    "EmailVerificationRequiredResponse",
+    "ErrorResponse",
     "ResponseModel",
     "SessionView",
+    "SignUpResponse",
     "UserView",
     "api_key_view",
     "authentication_response",
@@ -47,6 +51,13 @@ class ResponseModel(BaseModel):
     )
 
 
+class ErrorResponse(ResponseModel):
+    """Stable HTTP error envelope shared by authentication endpoints."""
+
+    code: str
+    message: str
+
+
 class UserView(ResponseModel):
     id: UserId
     email: EmailStr
@@ -54,12 +65,14 @@ class UserView(ResponseModel):
     name: str | None = None
     image: str | None = None
     email_verified: bool
+    active: bool = True
     metadata: UserMetadata = Field(default_factory=lambda: UserMetadata({}))
     created_at: datetime
     updated_at: datetime
 
 
 class SessionView(ResponseModel):
+    authenticated_at: datetime | None = None
     id: SessionId
     user_id: UserId
     expires_at: datetime
@@ -78,6 +91,19 @@ class AuthenticationResponse(ResponseModel):
     user: UserView
     session: SessionView
     credentials: CredentialsView | None = None
+
+
+class EmailVerificationRequiredResponse(ResponseModel):
+    """An account was created, but email verification must precede authentication."""
+
+    user: UserView
+    verification_required: Literal[True] = True
+
+
+class SignUpResponse(RootModel[AuthenticationResponse | EmailVerificationRequiredResponse]):
+    """HTTP schema for signup's authenticated and verification-required outcomes."""
+
+    model_config = ConfigDict(frozen=True)
 
 
 class ApiKeyView(ResponseModel):
@@ -102,6 +128,7 @@ def user_view(user: User) -> UserView:
         name=user.name,
         image=user.image,
         email_verified=user.email_verified,
+        active=user.active,
         metadata=UserMetadata.model_validate(user.metadata),
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -111,6 +138,7 @@ def user_view(user: User) -> UserView:
 def session_view(session: Session) -> SessionView:
     return SessionView(
         id=SessionId(session.id),
+        authenticated_at=session.authenticated_at,
         user_id=UserId(session.user_id),
         expires_at=session.expires_at,
         ip_address=session.ip_address,

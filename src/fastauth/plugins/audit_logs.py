@@ -114,6 +114,14 @@ class AuditLogsPlugin(Plugin):
             raise RuntimeError("AuditLogsPlugin is not bound to an AuditLogStore")
         return self.store
 
+    def server_api_name(self) -> str:
+        return "audit"
+
+    def server_api(self) -> object:
+        from fastauth.runtime.services import AuditLogsApi
+
+        return AuditLogsApi(self.require_context())
+
     def capabilities(self) -> Sequence[Capability]:
         return [
             Capability(
@@ -159,6 +167,7 @@ class AuditLogsPlugin(Plugin):
                 method="GET",
                 path="/audit-logs",
                 name="audit_logs_list",
+                auth_required=True,
                 tags=["AuditLogs"],
                 handler=self.list_handler,
                 response_model=AuditLogsResponse,
@@ -167,6 +176,7 @@ class AuditLogsPlugin(Plugin):
                 method="GET",
                 path="/audit-logs/all",
                 name="audit_logs_list_all",
+                auth_required=True,
                 tags=["AuditLogs"],
                 handler=self.list_all_handler,
                 response_model=AuditLogsResponse,

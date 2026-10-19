@@ -256,3 +256,18 @@ async def test_delete_account_with_email_token(
     assert response.json() == {"success": True}
     assert await adapter.get_user_by_id(user_id) is None
     assert (await client.get("/auth/get-session")).status_code == 204
+
+
+async def test_profile_name_validation_and_explicit_clear(client: httpx.AsyncClient) -> None:
+    await sign_up(client)
+    rejected = await client.patch("/auth/user", json={"name": "x" * 20000})
+    assert rejected.status_code == 422
+    trimmed = await client.patch("/auth/user", json={"name": "  Alice Updated  "})
+    assert trimmed.status_code == 200
+    assert trimmed.json()["name"] == "Alice Updated"
+    omitted = await client.patch("/auth/user", json={"image": "https://example.com/image.png"})
+    assert omitted.status_code == 200
+    assert omitted.json()["name"] == "Alice Updated"
+    cleared = await client.patch("/auth/user", json={"name": " \t\n"})
+    assert cleared.status_code == 200
+    assert cleared.json()["name"] is None

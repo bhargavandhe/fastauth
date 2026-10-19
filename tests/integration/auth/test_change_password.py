@@ -144,7 +144,7 @@ async def test_change_password_rejects_short_new_password(
         json={"current_password": SIGNUP["password"], "new_password": "short"},
     )
     assert response.status_code == 400
-    assert response.json()["code"] == "INVALID_REQUEST"
+    assert response.json()["code"] == "PASSWORD_TOO_SHORT"
 
 
 async def test_change_password_requires_authentication(client: httpx.AsyncClient) -> None:

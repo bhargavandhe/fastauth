@@ -11,6 +11,8 @@ Mongo-owned ids stored as ObjectId in BSON:
 
 * ``Session.user_id``        → ``users._id``
 * ``RefreshToken.user_id``   → ``users._id``
+* ``RefreshToken.session_id`` → ``sessions._id`` for database sessions;
+  ``jwt:<32 hex>`` is instead a string protocol identity, never a Mongo reference
 * ``RefreshToken.family_id`` → ``refresh_tokens._id`` family chain root
 * ``RefreshToken.replaced_by`` → ``refresh_tokens._id`` successor id
 * ``Account.user_id``        → ``users._id``
@@ -69,7 +71,6 @@ from fastauth.storage.beanie.documents import (
     from_rate_limit,
     from_session,
     from_user,
-    from_verification,
     init_beanie_documents,
     to_account,
     to_api_key,
@@ -85,10 +86,12 @@ from fastauth.storage.beanie.helpers import (
     apply_model_updates,
     normalise_datetimes,
     require_object_id,
+    session_reference,
     to_object_id_or_none,
     to_pydantic_object_id_or_none,
     truncate_to_millis,
 )
+from fastauth.storage.verification import VerificationAttempt, apply_verification_attempt
 
 __all__ = ["BeanieAdapter"]
 
@@ -198,12 +201,12 @@ class BeanieAdapter:
         # Drop the domain-side ``id`` (UUID-hex from ``new_id()``) so Beanie generates
         # a fresh ObjectId. The new id is written back into the input model below.
         doc = from_user(user, include_id=False)
+        doc.id = PydanticObjectId()
+        user.id = str(doc.id)
         try:
             await doc.insert()
         except DuplicateKeyError as exc:
             raise DuplicateError(resource="user", field=duplicate_user_field(exc)) from exc
-        if doc.id is not None:
-            user.id = str(doc.id)
         return user
 
     async def get_user_by_id(self, user_id: str) -> User | None:
@@ -229,17 +232,33 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user.id)
         if oid is None:
             raise NotFoundError(resource="user")
-        doc = await self.user_doc.find_one(self.user_doc.id == oid)
-        if doc is None:
-            raise NotFoundError(resource="user")
         user.updated_at = datetime.now(UTC)
         normalise_datetimes(user)
-        apply_model_updates(doc, user)
+        data = user.model_dump(exclude={"id", "active"})
         try:
-            await doc.replace()
+            row = await self.user_doc.get_pymongo_collection().find_one_and_update(
+                {"_id": oid},
+                {"$set": data},
+                return_document=ReturnDocument.AFTER,
+            )
         except DuplicateKeyError as exc:
             raise DuplicateError(resource="user", field=duplicate_user_field(exc)) from exc
-        return user
+        if row is None:
+            raise NotFoundError(resource="user")
+        return to_user(self.user_doc.model_validate(row))
+
+    async def set_user_active(self, user_id: str, *, active: bool) -> User:
+        oid = to_object_id_or_none(user_id)
+        if oid is None:
+            raise NotFoundError(resource="user")
+        row = await self.user_doc.get_pymongo_collection().find_one_and_update(
+            {"_id": oid},
+            {"$set": {"active": active, "updated_at": truncate_to_millis(datetime.now(UTC))}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if row is None:
+            raise NotFoundError(resource="user")
+        return to_user(self.user_doc.model_validate(row))
 
     async def delete_user(self, user_id: str) -> None:
         oid = to_object_id_or_none(user_id)
@@ -252,7 +271,7 @@ class BeanieAdapter:
         if doc.pending_email_change is not None:
             identifiers.add(str(doc.pending_email_change))
         await self.session_doc.find({"user_id": oid}).delete()
-        await self.refresh_token_doc.find({"user_id": oid}).delete()
+        await self.delete_refresh_tokens_for_user(user_id)
         await self.account_doc.find({"user_id": oid}).delete()
         await self.api_key_doc.find({"user_id": oid}).delete()
         if identifiers:
@@ -280,7 +299,12 @@ class BeanieAdapter:
 
     async def get_session_by_token_hash(self, token_hash: str) -> Session | None:
         doc = await self.session_doc.find_one({"token_hash": token_hash})
-        return to_session(doc) if doc else None
+        if doc is None:
+            return None
+        revoked = await self.database[f"{self.refresh_token_doc.Settings.name}_families"].find_one(
+            {"session_ids": doc.id, "revoked": True},
+        )
+        return None if revoked else to_session(doc)
 
     async def list_sessions_for_user(self, user_id: str) -> list[Session]:
         oid = to_object_id_or_none(user_id)
@@ -346,13 +370,31 @@ class BeanieAdapter:
                 raise ValueError("refresh token family_id must reference a token id")
             family_id = doc_id
         data["user_id"] = require_object_id(token.user_id)
-        data["session_id"] = require_object_id(token.session_id)
+        data["session_id"] = session_reference(token.session_id)
         data["family_id"] = family_id
         if token.replaced_by is not None:
             data["replaced_by"] = require_object_id(token.replaced_by)
         doc = self.refresh_token_doc(**data)
         doc.id = doc_id
+        if family_id != doc_id:
+            raise ValueError(
+                "create_refresh_token starts a family; use rotate_refresh_token for successors"
+            )
         await doc.insert()
+        try:
+            await self.database[f"{self.refresh_token_doc.Settings.name}_families"].insert_one(
+                {
+                    "_id": family_id,
+                    "user_id": data["user_id"],
+                    "active_token_id": doc_id,
+                    "session_ids": [data["session_id"]],
+                    "revoked": False,
+                    "expires_at": token.expires_at,
+                }
+            )
+        except BaseException:
+            await doc.delete()
+            raise
         token.id = str(doc.id)
         token.family_id = str(doc.family_id)
         if doc.replaced_by is not None:
@@ -361,7 +403,20 @@ class BeanieAdapter:
 
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
         doc = await self.refresh_token_doc.find_one({"token_hash": token_hash})
-        return to_refresh_token(doc) if doc else None
+        if doc is None:
+            return None
+        family = await self.database[f"{self.refresh_token_doc.Settings.name}_families"].find_one(
+            {"_id": doc.family_id, "revoked": False},
+        )
+        if family is None:
+            # Pre-0.15 rows have no atomic family state and require reauthentication.
+            return None
+        token = to_refresh_token(doc)
+        if family["active_token_id"] != doc.id and token.consumed_at is None:
+            # CAS is the authoritative consume boundary, even after a crash before
+            # the denormalized old-token row was updated.
+            token.consumed_at = datetime.now(UTC)
+        return token
 
     async def update_refresh_token(self, token: RefreshToken) -> RefreshToken:
         oid = to_object_id_or_none(token.id)
@@ -389,27 +444,67 @@ class BeanieAdapter:
         normalise_datetimes(new_token)
         data = new_token.model_dump(exclude={"id"})
         data["user_id"] = require_object_id(new_token.user_id)
-        data["session_id"] = require_object_id(new_token.session_id)
+        data["session_id"] = session_reference(new_token.session_id)
         data["family_id"] = require_object_id(new_token.family_id)
         new_oid = PydanticObjectId()
         new_token.id = str(new_oid)
         doc = self.refresh_token_doc(**data)
         doc.id = new_oid
         await doc.insert()
-        result = await self.database[self.refresh_token_doc.Settings.name].update_one(
-            {"_id": oid, "consumed_at": None},
+        # A single-document CAS publishes both the successor and its session.
+        # Revocation atomically closes the same state before taking its snapshot.
+        # No replica-set transaction, process lock, or expiring lease is needed.
+        family = await self.database[
+            f"{self.refresh_token_doc.Settings.name}_families"
+        ].find_one_and_update(
             {
-                "$set": {
-                    "consumed_at": truncate_to_millis(consumed_at),
-                    "replaced_by": new_oid,
-                    "updated_at": truncate_to_millis(datetime.now(UTC)),
-                },
+                "_id": data["family_id"],
+                "active_token_id": oid,
+                "revoked": False,
+                "expires_at": {"$gt": truncate_to_millis(consumed_at)},
             },
+            {
+                "$set": {"active_token_id": new_oid, "expires_at": new_token.expires_at},
+                "$addToSet": {"session_ids": data["session_id"]},
+            },
+            return_document=ReturnDocument.BEFORE,
         )
-        if result.modified_count == 1:
-            return new_token
-        await doc.delete()
-        return None
+        if family is None:
+            await doc.delete()
+            state = await self.database[
+                f"{self.refresh_token_doc.Settings.name}_families"
+            ].find_one(
+                {"_id": data["family_id"]},
+            )
+            if state is None or data["session_id"] not in state["session_ids"]:
+                await self.delete_session(new_token.session_id)
+            return None
+        try:
+            await self.database[self.refresh_token_doc.Settings.name].update_one(
+                {"_id": oid},
+                {
+                    "$set": {
+                        "consumed_at": truncate_to_millis(consumed_at),
+                        "replaced_by": new_oid,
+                        "updated_at": truncate_to_millis(datetime.now(UTC)),
+                    }
+                },
+            )
+            # Keep family state bounded: once old sessions are physically removed,
+            # the revoker only needs the current published session. JWT IDs persist.
+            for old_session in family["session_ids"]:
+                if old_session != data["session_id"]:
+                    await self.delete_session(str(old_session))
+                    await self.database[
+                        f"{self.refresh_token_doc.Settings.name}_families"
+                    ].update_one(
+                        {"_id": data["family_id"]},
+                        {"$pull": {"session_ids": old_session}},
+                    )
+        except BaseException:
+            await self.delete_refresh_token_family(new_token.family_id)
+            raise
+        return new_token
 
     async def delete_refresh_token(self, token_id: str) -> None:
         oid = to_object_id_or_none(token_id)
@@ -426,20 +521,24 @@ class BeanieAdapter:
         oid = to_object_id_or_none(user_id)
         if oid is None:
             return 0
-        query: dict[str, object] = {"user_id": oid}
-        if except_session_id is not None:
-            except_oid = to_object_id_or_none(except_session_id)
-            if except_oid is not None:
-                query["session_id"] = {"$ne": except_oid}
-        result = await self.refresh_token_doc.find(query).delete()
-        return int(result.deleted_count) if result and result.deleted_count else 0
+        docs = await self.refresh_token_doc.find({"user_id": oid}).to_list()
+        kept = {doc.family_id for doc in docs if str(doc.session_id) == except_session_id}
+        families = {doc.family_id for doc in docs} - kept
+        deleted = 0
+        for family_id in families:
+            deleted += (await self.delete_refresh_token_family(str(family_id))).deleted_tokens
+        return deleted
 
     async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
-        oid = to_object_id_or_none(session_id)
-        if oid is None:
+        try:
+            reference = session_reference(session_id)
+        except ValueError:
             return 0
-        result = await self.refresh_token_doc.find({"session_id": oid}).delete()
-        return int(result.deleted_count) if result and result.deleted_count else 0
+        docs = await self.refresh_token_doc.find({"session_id": reference}).to_list()
+        deleted = 0
+        for family_id in {doc.family_id for doc in docs}:
+            deleted += (await self.delete_refresh_token_family(str(family_id))).deleted_tokens
+        return deleted
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
         return (await self.delete_refresh_token_family(family_id)).deleted_tokens
@@ -448,8 +547,19 @@ class BeanieAdapter:
         oid = to_object_id_or_none(family_id)
         if oid is None:
             return RevokedRefreshFamily(deleted_tokens=0, session_ids=frozenset())
+        family = await self.database[
+            f"{self.refresh_token_doc.Settings.name}_families"
+        ].find_one_and_update(
+            {"_id": oid},
+            {"$set": {"revoked": True}},
+            return_document=ReturnDocument.AFTER,
+        )
+        # Missing state is legacy data: it cannot rotate, but still clean it up.
         docs = await self.refresh_token_doc.find({"family_id": oid}).to_list()
-        session_ids = frozenset(str(doc.session_id) for doc in docs)
+        session_ids = frozenset(
+            [str(doc.session_id) for doc in docs]
+            + ([str(value) for value in family["session_ids"]] if family else [])
+        )
         session_oids = [
             session_oid
             for session_id in session_ids
@@ -457,12 +567,8 @@ class BeanieAdapter:
         ]
         deleted_sessions = 0
         if session_oids:
-            session_result = await self.session_doc.find({"_id": {"$in": session_oids}}).delete()
-            deleted_sessions = (
-                int(session_result.deleted_count)
-                if session_result and session_result.deleted_count
-                else 0
-            )
+            result = await self.session_doc.find({"_id": {"$in": session_oids}}).delete()
+            deleted_sessions = int(result.deleted_count) if result and result.deleted_count else 0
         result = await self.refresh_token_doc.find({"family_id": oid}).delete()
         deleted = int(result.deleted_count) if result and result.deleted_count else 0
         return RevokedRefreshFamily(
@@ -513,6 +619,22 @@ class BeanieAdapter:
         await doc.replace()
         return account
 
+    async def replace_account_password(
+        self,
+        account_id: str,
+        *,
+        expected_hash: str,
+        new_hash: str,
+    ) -> bool:
+        oid = to_object_id_or_none(account_id)
+        if oid is None:
+            return False
+        result = await self.account_doc.get_pymongo_collection().update_one(
+            {"_id": oid, "password": expected_hash},
+            {"$set": {"password": new_hash, "updated_at": truncate_to_millis(datetime.now(UTC))}},
+        )
+        return bool(result.matched_count)
+
     async def delete_account(self, account_id: str) -> None:
         oid = to_object_id_or_none(account_id)
         if oid is None:
@@ -532,11 +654,77 @@ class BeanieAdapter:
 
     async def create_verification(self, verification: Verification) -> Verification:
         normalise_datetimes(verification)
-        doc = from_verification(verification, include_id=False)
-        await doc.insert()
-        if doc.id is not None:
-            verification.id = str(doc.id)
+        collection = self.verification_doc.get_pymongo_collection()
+        data = verification.model_dump(exclude={"id"})
+        data["purpose"] = verification.purpose.value
+        selector = {"identifier": verification.identifier, "purpose": verification.purpose.value}
+        try:
+            row = await collection.find_one_and_update(
+                selector,
+                {"$set": data},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            # Concurrent first issuance may lose the unique-key upsert race.
+            row = await collection.find_one_and_update(
+                selector,
+                {"$set": data},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        assert row is not None
+        verification.id = str(row["_id"])
         return verification
+
+    async def attempt_verification(
+        self,
+        identifier: str,
+        purpose: VerificationPurpose,
+        value_hash: str,
+        *,
+        now: datetime,
+        max_attempts: int | None = None,
+        consume: bool = True,
+    ) -> VerificationAttempt:
+        if max_attempts is not None and max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
+        now = truncate_to_millis(now)
+        collection = self.verification_doc.get_pymongo_collection()
+        # A single document update linearizes expiry, matching, consumption and
+        # attempt increments with concurrent attempts AND replacement issuance.
+        live: dict[str, Any] = {"$gt": ["$expires_at", now]}
+        if max_attempts is not None:
+            live = {"$and": [live, {"$lt": ["$attempt_count", max_attempts]}]}
+        matches = {"$eq": ["$value_hash", {"$literal": value_hash}]}
+        wrong = {"$and": [live, {"$not": [matches]}]}
+        count = {"$cond": [wrong, {"$add": ["$attempt_count", 1]}, "$attempt_count"]}
+        terminal: list[Any] = [{"$not": [live]}]
+        if consume:
+            terminal.append({"$and": [live, matches]})
+        if max_attempts is not None:
+            terminal.append({"$gte": [count, max_attempts]})
+        row = await collection.find_one_and_update(
+            {"identifier": identifier, "purpose": purpose.value, "consumed_at": None},
+            [
+                {
+                    "$set": {
+                        "attempt_count": count,
+                        "consumed_at": {"$cond": [{"$or": terminal}, now, None]},
+                        "updated_at": now,
+                    }
+                }
+            ],
+            return_document=ReturnDocument.BEFORE,
+        )
+        previous = to_verification(self.verification_doc.model_validate(row)) if row else None
+        return apply_verification_attempt(
+            previous,
+            value_hash,
+            now=now,
+            max_attempts=max_attempts,
+            consume=consume,
+        )
 
     async def get_verification(
         self,
@@ -549,6 +737,7 @@ class BeanieAdapter:
                 "identifier": identifier,
                 "purpose": purpose.value,
                 "value_hash": value_hash,
+                "consumed_at": None,
             },
         )
         return to_verification(doc) if doc else None
@@ -560,7 +749,7 @@ class BeanieAdapter:
     ) -> Verification | None:
         doc = (
             await self.verification_doc.find(
-                {"identifier": identifier, "purpose": purpose.value},
+                {"identifier": identifier, "purpose": purpose.value, "consumed_at": None},
             )
             .sort("-created_at")
             .first_or_none()

@@ -24,5 +24,5 @@ A modular, Pydantic-native, async-only authentication library for FastAPI applic
 - **Pydantic everywhere** — every config, payload, and domain model
 - **No private variables** — leading underscores are forbidden project-wide
 - **Modular** — adding a feature means adding a `Plugin`, not editing core
-- **Async-only**, Python 3.11+
+- **Async-only**, Python 3.11–3.13 (`>=3.11,<3.14`)
 - **`pyright --strict` clean**

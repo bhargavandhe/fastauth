@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastauth.domain.enums import HookPhase
+from fastauth.domain.models import User
 
-__all__ = ["DatabaseHooks", "HookContext", "HookHandler"]
+if TYPE_CHECKING:
+    from fastauth.runtime.context import AuthContext
+
+__all__ = ["DatabaseHooks", "HookContext", "HookHandler", "update_user_with_hooks"]
 
 
 HookHandler = Callable[["HookContext"], Awaitable[Any | None]]
@@ -57,3 +61,17 @@ class DatabaseHooks(BaseModel):
                 current = result
                 context = context.model_copy(update={"payload": current})
         return current
+
+
+async def update_user_with_hooks(
+    context: AuthContext, user: User, *, actor_user_id: str | None
+) -> User:
+    """Persist a user update between before/after hooks; after runs only on success."""
+    transformed = await context.hooks.run(
+        HookPhase.BEFORE_UPDATE, "user", user, actor_user_id=actor_user_id
+    )
+    if not isinstance(transformed, User):
+        raise TypeError("before-update user hook must return User or None")
+    updated = await context.adapter.update_user(transformed)
+    await context.hooks.run(HookPhase.AFTER_UPDATE, "user", updated, actor_user_id=actor_user_id)
+    return updated

@@ -31,7 +31,13 @@ from fastauth.api.commands import (
     UserPrincipal,
     VerifyPasswordCommand,
 )
-from fastauth.api.responses import AuthenticationResponse, UserView, user_view
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    UserView,
+    user_view,
+)
+from fastauth.domain.enums import SessionStrategyKind
 from fastauth.domain.models import User, WireModel
 from fastauth.domain.value_objects import UserId, UserMetadata, Username
 from fastauth.exceptions import (
@@ -139,6 +145,7 @@ from fastauth.flows.verification import (
 from fastauth.plugins.base import PluginApiRegistry
 from fastauth.plugins.email_password import require_email_password, require_username_sign_in
 from fastauth.runtime.context import AuthContext
+from fastauth.runtime.services import VerificationApi
 from fastauth.security.sessions import SessionContext
 
 __all__ = ["AuthApi", "LivenessResponse", "ReadinessResponse"]
@@ -234,8 +241,25 @@ async def resolve_session_command_user(
     context: AuthContext,
     command: PrincipalCommandInput,
 ) -> User:
+    """Resolve an application-authorized session reference, not a bearer credential.
+
+    Database sessions retain their ownership lookup. First-party JWT sessions
+    have logical IDs and no session rows: a trusted principal may reference that
+    identity without claiming that its token was verified here. At untrusted
+    boundaries, obtain the IDs from ``auth.policy.authenticate(token)`` first.
+    """
     user = await resolve_command_user(context, command)
     session_id = require_command_session_id(command)
+    if (
+        context.config.session.strategy is SessionStrategyKind.JWT
+        and "fastauth-jwt" in context.plugins.by_id
+    ):
+        from fastauth.security.jwt import JwtSessionStrategy
+
+        if isinstance(context.policy.sessions, JwtSessionStrategy) and session_id.startswith(
+            ("jwt:", "legacy-jwt:")
+        ):
+            return user
     sessions = await context.adapter.list_sessions_for_user(user.id)
     if not any(session.id == session_id for session in sessions):
         raise InvalidCredentialsError()
@@ -527,6 +551,7 @@ class AuthApi:
         self.session = SessionApi(self)
         self.password = PasswordApi(self)
         self.user = UserApi(self)
+        self.verification = VerificationApi(context)
 
     async def liveness(self) -> LivenessResponse:
         return LivenessResponse(status="alive", name=self.context.config.app.name)
@@ -604,7 +629,9 @@ class SignUpApi:
     def __init__(self, api: AuthApi) -> None:
         self._api = api
 
-    async def email(self, command: SignUpEmailCommand) -> AuthenticationResponse:
+    async def email(
+        self, command: SignUpEmailCommand
+    ) -> AuthenticationResponse | EmailVerificationRequiredResponse:
         require_email_password(self._api.context)
         response, _session = await sign_up_email_flow(
             self._api.context,
@@ -770,10 +797,7 @@ class UserApi:
         payload = command.model_dump(
             include={"name", "image", "metadata", "username"},
             exclude_unset=True,
-            exclude_none=True,
         )
-        if "username" in command.model_fields_set and command.username is None:
-            payload["username"] = None
         updated = await update_user_flow(
             self._api.context,
             user,

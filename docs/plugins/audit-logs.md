@@ -1,7 +1,12 @@
 # Audit logs
 
-`AuditLogsPlugin` subscribes a catch-all handler to `AuthEvent` so every
-domain event is persisted as a row in the `audit_logs` collection. It also
+`AuditLogsPlugin` subscribes a catch-all handler to `AuthEvent` to attempt
+best-effort persistence of eligible domain events in `audit_logs`. Handlers are
+awaited sequentially; storage failures are logged and isolated from the auth
+operation. There is no durable outbox, automatic retry, or exactly-once guarantee.
+Slow audit storage can add latency, and a successful auth response does not prove
+that an audit row was committed. For compliance-grade completeness, design a
+transactional application-owned delivery path and monitor it. The plugin also
 contributes two read-only HTTP endpoints.
 
 ## Endpoints

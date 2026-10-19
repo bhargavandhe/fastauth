@@ -19,8 +19,8 @@ from joserfc.errors import JoseError
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from fastauth.domain.enums import JwtAlgorithm
-from fastauth.domain.models import JwksKey, Session, User
-from fastauth.exceptions import JwksDecryptionError
+from fastauth.domain.models import JwksKey, Session, User, new_id
+from fastauth.exceptions import JwksDecryptionError, TokenInvalidError
 from fastauth.security.sessions import SessionContext
 from fastauth.storage.base import JwksKeyStore, UserStore
 
@@ -118,7 +118,11 @@ class JwksRegistry:
         signed can still verify. A fresh key replaces it.
         """
         keys = await self.adapter.list_jwks_keys()
-        active = [key for key in keys if key.rotated_at is None]
+        active = sorted(
+            (key for key in keys if key.rotated_at is None and key.alg == self.alg.value),
+            key=lambda key: (key.created_at, key.kid),
+            reverse=True,
+        )
         for candidate in active:
             try:
                 self.decrypt_private_jwk(candidate)
@@ -166,17 +170,24 @@ class JwksRegistry:
         return key
 
     async def rotate_now(self) -> JwksKey:
-        if self.current_key is not None:
-            now = datetime.now(UTC)
-            self.current_key.rotated_at = now
-            self.current_key.expires_at = now + timedelta(seconds=self.grace_period_seconds)
-            await self.adapter.update_jwks_key(self.current_key)
-        return await self.create_key()
+        # Publish first. Concurrent rotations may leave several active keys;
+        # ensure_key deterministically selects the newest (created_at, kid).
+        # Never retire a key created after this snapshot or delete grace keys.
+        previous = await self.adapter.list_jwks_keys()
+        replacement = await self.create_key()
+        now = datetime.now(UTC)
+        for key in previous:
+            if key.rotated_at is None and key.alg == self.alg.value:
+                key.rotated_at = now
+                key.expires_at = now + timedelta(seconds=self.grace_period_seconds)
+                await self.adapter.update_jwks_key(key)
+        return replacement
 
     async def rotate_if_due(self) -> JwksKey | None:
-        if self.rotation_interval_seconds is None or self.current_key is None:
+        current = await self.ensure_key()
+        if self.rotation_interval_seconds is None:
             return None
-        age = (datetime.now(UTC) - self.current_key.created_at).total_seconds()
+        age = (datetime.now(UTC) - current.created_at).total_seconds()
         if age >= self.rotation_interval_seconds:
             return await self.rotate_now()
         return None
@@ -264,9 +275,10 @@ class LocalKmsSigner:
         self.registry = registry
 
     async def sign(self, *, header: dict[str, Any], payload: dict[str, Any]) -> str:
-        key = self.registry.current_key
-        if key is None:
-            key = await self.registry.ensure_key()
+        # Cached keys cannot be authoritative across workers. Refresh shared
+        # state on every sign and perform lazy interval rotation without restart.
+        await self.registry.rotate_if_due()
+        key = await self.registry.ensure_key()
         private = self.registry.decrypt_private_jwk(key)
         header_with_kid = {**header, "kid": key.kid}
         return jwt.encode(
@@ -306,26 +318,52 @@ class JwtSessionStrategy:
         ip: str | None,
         user_agent: str | None,
     ) -> SessionContext:
+        return await self.renew(
+            user,
+            session_id=f"jwt:{new_id()}",
+            authenticated_at=datetime.now(UTC),
+            ip=ip,
+            user_agent=user_agent,
+        )
+
+    async def renew(
+        self,
+        user: User,
+        *,
+        session_id: str,
+        authenticated_at: datetime | None,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> SessionContext:
+        if not valid_jwt_session_id(session_id):
+            raise TokenInvalidError(message="JWT refresh requires a v0.15 session; sign in again")
         now = datetime.now(UTC)
         expires_at = now + timedelta(seconds=self.expires_in_seconds)
+        # Registered/session-security claims always win over custom payloads.
         payload: dict[str, Any] = {
+            **self.payload_builder(user),
             "iss": self.issuer,
             "aud": self.audience,
             "sub": user.id,
+            "sid": session_id,
             "iat": int(now.timestamp()),
             "exp": int(expires_at.timestamp()),
-            **self.payload_builder(user),
+            "auth_time": authenticated_at.timestamp() if authenticated_at is not None else None,
         }
         token = await self.signer.sign(
             header={"alg": self.registry.alg.value, "typ": "JWT"},
             payload=payload,
         )
         synthetic = Session(
+            id=session_id,
             user_id=user.id,
-            token_hash="jwt",  # noqa: S106 — stateless JWT placeholder, not a credential
+            token_hash="jwt",  # noqa: S106 — stateless placeholder, not a credential
             expires_at=expires_at,
             ip_address=ip,
             user_agent=user_agent,
+            authenticated_at=authenticated_at,
+            created_at=now,
+            updated_at=now,
         )
         return SessionContext(user=user, session=synthetic, token=token)
 
@@ -334,20 +372,46 @@ class JwtSessionStrategy:
         key_set = jwk.KeySet([jwk.import_key(item) for item in jwks.keys])
         try:
             decoded = jwt.decode(token, key_set, algorithms=[self.registry.alg.value])
-        except JoseError:
+        except (JoseError, ValueError, TypeError):
             return None
         claims = decoded.claims
         if claims.get("aud") != self.audience or claims.get("iss") != self.issuer:
             return None
-        if int(claims.get("exp", 0)) < int(datetime.now(UTC).timestamp()):
+        subject, expires, session_id = claims.get("sub"), claims.get("exp"), claims.get("sid")
+        if not isinstance(subject, str) or not subject:
             return None
-        user = await self.adapter.get_user_by_id(claims["sub"])
+        if not isinstance(expires, (int, float)) or isinstance(expires, bool):
+            return None
+        if expires <= datetime.now(UTC).timestamp():
+            return None
+        # Existing v0.14 access JWTs remain valid until expiry. Their deterministic
+        # legacy identity cannot match old random refresh session ids; operators
+        # must invalidate legacy refresh families during the 0.15 upgrade.
+        if session_id is None:
+            session_id = "legacy-jwt:" + hashlib.sha256(token.encode()).hexdigest()
+        elif not valid_jwt_session_id(session_id):
+            return None
+        authenticated = claims.get("auth_time")
+        if authenticated is not None and (
+            not isinstance(authenticated, (int, float)) or isinstance(authenticated, bool)
+        ):
+            return None
+        try:
+            expires_at = datetime.fromtimestamp(expires, tz=UTC)
+            authenticated_at = (
+                datetime.fromtimestamp(authenticated, tz=UTC) if authenticated is not None else None
+            )
+        except (ValueError, OverflowError, OSError):
+            return None
+        user = await self.adapter.get_user_by_id(subject)
         if user is None:
             return None
         session = Session(
+            id=session_id,
             user_id=user.id,
-            token_hash="jwt",  # noqa: S106 — stateless JWT placeholder, not a credential
-            expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
+            token_hash="jwt",  # noqa: S106 — stateless placeholder, not a credential
+            expires_at=expires_at,
+            authenticated_at=authenticated_at,
         )
         return SessionContext(user=user, session=session, token=token)
 
@@ -364,8 +428,20 @@ class JwtSessionStrategy:
         current = await self.read(token)
         if current is None:
             return None
-        return await self.create(
+        return await self.renew(
             current.user,
+            session_id=current.session.id,
+            authenticated_at=current.session.authenticated_at,
             ip=current.session.ip_address,
             user_agent=current.session.user_agent,
         )
+
+
+def valid_jwt_session_id(value: object) -> bool:
+    """JWT logical identities are protocol strings, never Mongo-owned references."""
+    return (
+        isinstance(value, str)
+        and value.startswith("jwt:")
+        and len(value) == 36
+        and all(character in "0123456789abcdef" for character in value[4:])
+    )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import (
     ConfigDict,
     EmailStr,
@@ -15,7 +17,12 @@ from fastauth.api.commands import (
     CookieCredentialDelivery,
     CredentialDelivery,
 )
-from fastauth.api.responses import AuthenticationResponse, authentication_response
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    authentication_response,
+    user_view,
+)
 from fastauth.domain.enums import HookPhase, ProviderId
 from fastauth.domain.events import (
     AccountLockedOut,
@@ -25,12 +32,14 @@ from fastauth.domain.events import (
     UserSignedOut,
     UserSignedUp,
 )
-from fastauth.domain.models import Account, User, WireModel
-from fastauth.domain.value_objects import Username, normalize_email
+from fastauth.domain.models import User, WireModel
+from fastauth.domain.value_objects import ProfileName, Username, normalize_email
 from fastauth.exceptions import EmailNotVerifiedError, InvalidCredentialsError, InvalidRequestError
+from fastauth.flows.creation import persist_user_account
 from fastauth.plugins.email_password import email_password_options
 from fastauth.runtime.context import AuthContext
 from fastauth.security.sessions import SessionContext
+from fastauth.storage.base import PasswordRehashStore
 
 __all__ = [
     "EmptyResponse",
@@ -60,6 +69,7 @@ async def maybe_issue_refresh_token(
     *,
     user_id: str,
     session_id: str,
+    authenticated_at: datetime | None = None,
     delivery: CredentialDelivery,
     ip: str | None,
     user_agent: str | None,
@@ -78,6 +88,7 @@ async def maybe_issue_refresh_token(
     issued = await context.refresh_token_service.issue(
         user_id=user_id,
         session_id=session_id,
+        authenticated_at=authenticated_at,
         ip_address=ip,
         user_agent=user_agent,
     )
@@ -137,7 +148,7 @@ class SignUpEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
     password: SecretStr
-    name: str | None = None
+    name: ProfileName = None
     username: Username | None = None
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
@@ -179,31 +190,37 @@ async def sign_up_email(
     *,
     ip: str | None,
     user_agent: str | None,
-) -> tuple[SessionResponse, SessionContext]:
+    app_base_url: str | None = None,
+) -> tuple[SessionResponse | EmailVerificationRequiredResponse, SessionContext | None]:
     validate_email_password_delivery(context, request.delivery)
     plugin_options = email_password_options(context)
     if plugin_options is not None and plugin_options.require_username and request.username is None:
         raise InvalidRequestError(message="username is required")
+    password_hash = await context.password_executor.hash(
+        validate_password_policy(context, request.password)
+    )
     user = User(
         email=request.email,
         name=request.name,
         username=request.username,
     )
     user = await context.hooks.run(HookPhase.BEFORE_CREATE, "user", user, actor_user_id=None)
-    user = await context.adapter.create_user(user)
+    user = await persist_user_account(
+        context.adapter,
+        user,
+        provider_id=ProviderId.CREDENTIAL,
+        password_hash=password_hash,
+    )
     await context.hooks.run(HookPhase.AFTER_CREATE, "user", user, actor_user_id=user.id)
 
-    account = Account(
-        user_id=user.id,
-        provider_id=ProviderId.CREDENTIAL,
-        account_id=user.id,
-        password=context.password_hasher.hash(
-            validate_password_policy(context, request.password),
-        ),
+    verification_required = (
+        context.config.email_verification.require_verified_for_sign_in and not user.email_verified
     )
-    await context.adapter.create_account(account)
-
-    session_context = await context.session_strategy.create(user, ip=ip, user_agent=user_agent)
+    session_context = (
+        None
+        if verification_required
+        else await context.session_strategy.create(user, ip=ip, user_agent=user_agent)
+    )
 
     await context.event_bus.publish(
         UserSignedUp(
@@ -213,6 +230,21 @@ async def sign_up_email(
             user_agent=user_agent,
         ),
     )
+    if session_context is None:
+        from fastauth.flows.verification import (
+            SendVerificationEmailRequest,
+            send_verification_email,
+        )
+
+        await send_verification_email(
+            context,
+            SendVerificationEmailRequest(email=user.email),
+            ip=ip,
+            user_agent=user_agent,
+            app_base_url=app_base_url,
+        )
+        return EmailVerificationRequiredResponse(user=user_view(user)), None
+
     await context.event_bus.publish(
         SessionCreated(
             user_id=user.id,
@@ -226,6 +258,7 @@ async def sign_up_email(
         context,
         user_id=user.id,
         session_id=session_context.session.id,
+        authenticated_at=session_context.session.authenticated_at,
         delivery=request.delivery,
         ip=ip,
         user_agent=user_agent,
@@ -303,18 +336,42 @@ async def complete_sign_in(
 
     if user is None:
         # Constant-time path: hash anyway so timing is uniform.
-        context.password_hasher.verify(password.get_secret_value(), PLACEHOLDER_HASH)
+        await context.password_executor.verify(password.get_secret_value(), PLACEHOLDER_HASH)
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
 
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     stored = account.password if account is not None else None
-    if stored is None or not context.password_hasher.verify(password.get_secret_value(), stored):
+    if stored is None or not await context.password_executor.verify(
+        password.get_secret_value(), stored
+    ):
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
 
     if context.config.email_verification.require_verified_for_sign_in and not user.email_verified:
         raise EmailNotVerifiedError()
+
+    await context.policy.authorize(
+        user,
+        action="password.sign_in",
+        require_verified=context.config.session.require_verified_user,
+    )
+
+    if (
+        account is not None
+        and isinstance(context.adapter, PasswordRehashStore)
+        and await context.password_executor.needs_rehash(stored)
+    ):
+        upgraded = await context.password_executor.hash(password.get_secret_value())
+        changed = await context.adapter.replace_account_password(
+            account.id,
+            expected_hash=stored,
+            new_hash=upgraded,
+        )
+        if not changed:
+            # A concurrent reset/change wins. Never overwrite it or issue a
+            # session based on a credential that changed while rehashing.
+            raise InvalidCredentialsError()
 
     # Successful sign-in: clear the failure counter so future attempts have
     # a clean slate.
@@ -348,6 +405,7 @@ async def complete_sign_in(
                 context,
                 user_id=user.id,
                 session_id=session_context.session.id,
+                authenticated_at=session_context.session.authenticated_at,
                 delivery=delivery,
                 ip=ip,
                 user_agent=user_agent,

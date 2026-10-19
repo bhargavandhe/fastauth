@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import EmailStr, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr
 
 from fastauth.api.commands import (
     BearerCredentialDelivery,
@@ -34,7 +34,11 @@ from fastauth.api.commands import (
     UserPrincipal,
     VerifyPasswordCommand,
 )
-from fastauth.api.responses import AuthenticationResponse, UserView
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    UserView,
+)
 from fastauth.domain.value_objects import UserMetadata, Username
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.flows.sessions import ListSessionsResponse, RevokeSessionsResponse
@@ -45,13 +49,24 @@ if TYPE_CHECKING:
     from fastauth.runtime.auth import FastAuth
 
 __all__ = [
+    "OMITTED",
     "EmailChangesManager",
+    "Omitted",
     "PasswordsManager",
     "SessionsManager",
     "SignInManager",
     "SignUpManager",
     "UsersManager",
 ]
+
+
+class Omitted(BaseModel):
+    """Explicit sentinel distinguishing an omitted patch field from null."""
+
+    model_config = ConfigDict(frozen=True)
+
+
+OMITTED = Omitted()
 
 
 class SignUpManager:
@@ -67,7 +82,7 @@ class SignUpManager:
         username: Username | None = None,
         context: RequestContext | None = None,
         delivery: CredentialDelivery | None = None,
-    ) -> AuthenticationResponse:
+    ) -> AuthenticationResponse | EmailVerificationRequiredResponse:
         return await self._auth.api.sign_up.email(
             SignUpEmailCommand(
                 email=email,
@@ -181,21 +196,29 @@ class UsersManager:
         self,
         uid: UserIdInput,
         *,
-        name: str | None = None,
-        image: str | None = None,
-        metadata: UserMetadata | None = None,
-        username: Username | None = None,
+        name: str | Omitted | None = OMITTED,
+        image: str | Omitted | None = OMITTED,
+        metadata: UserMetadata | Omitted | None = OMITTED,
+        username: Username | Omitted | None = OMITTED,
         context: RequestContext | None = None,
     ) -> UserView:
-        optional_username = {"username": username} if username is not None else {}
+        values = {
+            key: value
+            for key, value in {
+                "name": name,
+                "image": image,
+                "metadata": metadata,
+                "username": username,
+            }.items()
+            if not isinstance(value, Omitted)
+        }
         return await self._auth.api.user.update(
-            UpdateUserCommand(
-                principal=UserPrincipal(user_id=to_user_id(uid)),
-                name=name,
-                image=image,
-                metadata=metadata,
-                context=context or RequestContext(),
-                **optional_username,
+            UpdateUserCommand.model_validate(
+                {
+                    "principal": UserPrincipal(user_id=to_user_id(uid)),
+                    "context": context or RequestContext(),
+                    **values,
+                }
             )
         )
 

@@ -10,9 +10,10 @@ from pydantic import EmailStr, JsonValue, SecretStr, TypeAdapter
 from fastauth.api.responses import UserView, user_view
 from fastauth.domain.enums import HookPhase, ProviderId
 from fastauth.domain.events import UserCreated
-from fastauth.domain.models import Account, User
+from fastauth.domain.models import User
 from fastauth.domain.value_objects import UserId, UserMetadata, Username, normalize_email
 from fastauth.exceptions import InvalidRequestError
+from fastauth.flows.creation import persist_user_account
 from fastauth.flows.credentials import validate_password_policy
 from fastauth.runtime.context import AuthContext
 
@@ -55,6 +56,7 @@ async def create_user(
 ) -> UserView:
     """Provision a credential user without creating a session or sending email."""
     secret = password if isinstance(password, SecretStr) else SecretStr(password)
+    password_hash = await context.password_executor.hash(validate_password_policy(context, secret))
     metadata_value = metadata.root if isinstance(metadata, UserMetadata) else dict(metadata or {})
     user = User.model_validate(
         {
@@ -70,16 +72,12 @@ async def create_user(
         user,
         actor_user_id=None,
     )
-    user = await context.adapter.create_user(user)
-    account = Account(
-        user_id=user.id,
+    user = await persist_user_account(
+        context.adapter,
+        user,
         provider_id=ProviderId.CREDENTIAL,
-        account_id=user.id,
-        password=context.password_hasher.hash(
-            validate_password_policy(context, secret),
-        ),
+        password_hash=password_hash,
     )
-    await context.adapter.create_account(account)
     await context.hooks.run(
         HookPhase.AFTER_CREATE,
         "user",

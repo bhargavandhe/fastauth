@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import ConfigDict, JsonValue, RootModel, StringConstraints, field_validator
+from pydantic import (
+    BeforeValidator,
+    ConfigDict,
+    JsonValue,
+    RootModel,
+    StringConstraints,
+    field_validator,
+)
 
 __all__ = [
     "AccountId",
@@ -17,6 +24,7 @@ __all__ = [
     "NonEmptyString",
     "PasswordHash",
     "PermissionSet",
+    "ProfileName",
     "RawToken",
     "RefreshTokenId",
     "SessionId",
@@ -63,7 +71,17 @@ class UserId(RootModel[HexId]):
     model_config = ConfigDict(frozen=True)
 
 
-class SessionId(RootModel[HexId]):
+class SessionId(
+    RootModel[
+        Annotated[
+            str,
+            StringConstraints(
+                strict=True,
+                pattern=r"^(?:[a-f0-9]{24,32}|jwt:[a-f0-9]{32}|legacy-jwt:[a-f0-9]{64})$",
+            ),
+        ]
+    ]
+):
     model_config = ConfigDict(frozen=True)
 
 
@@ -146,3 +164,16 @@ def normalize_email(value: object) -> object:
     if value is None:
         return None
     return str(value).lower()
+
+
+def normalize_profile_name(value: object) -> object:
+    """Trim submitted display names and interpret blank input as clearing the name."""
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+ProfileName = Annotated[
+    Annotated[str, StringConstraints(strict=True, min_length=1, max_length=100)] | None,
+    BeforeValidator(normalize_profile_name),
+]

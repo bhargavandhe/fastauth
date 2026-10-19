@@ -1,7 +1,13 @@
 # Installation
 
 `fastauth` is published as the `fastauth-py` distribution with optional
-extras. Install the combination you need:
+extras. Version 0.15 requires Python 3.11–3.13 (`>=3.11,<3.14`) and Pydantic 2.11–2.x.
+Python 3.14 is not supported: current Beanie 2.x releases declare an upper bound
+of `<3.14`. The same Python range applies to core and every extra so the supported
+release includes all first-party adapters. Use a Python 3.11, 3.12, or 3.13
+environment before installing; do not bypass dependency Python-version checks.
+
+The CLI extra requires Typer 0.17.5+; JWT requires joserfc 1.5+. Install the combination you need:
 
 ```bash
 pip install "fastauth-py[beanie,jwt,cli]"
@@ -76,3 +82,14 @@ uv run fastauth migrate --postgres-url postgresql+asyncpg://user:pass@localhost/
 The Mongo command initializes Beanie documents and indexes. The Postgres
 command applies tracked fastauth schema migrations and records the current
 schema version in the database.
+
+## MongoDB compatibility
+
+The `beanie` extra requires PyMongo 4.18.3 or newer within the 4.x series, which
+includes the upstream security fixes. PyMongo 4.18 raises the minimum supported
+MongoDB server version to **4.4**. Upgrade MongoDB 4.2 or older before upgrading
+this extra; dependency installation alone does not upgrade the server. Production
+applications should use a currently supported MongoDB server release.
+
+See the [upstream upgrade notes](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/reference/upgrade/)
+and [security release notes](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/reference/release-notes/).

@@ -18,15 +18,22 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from fastapi import Request, Response
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 from fastauth.domain.enums import JwtAlgorithm
-from fastauth.domain.models import User, WireModel
+from fastauth.domain.models import Session, User, WireModel, new_id
 from fastauth.exceptions import ConfigError, InvalidCredentialsError
 from fastauth.options import parse_duration
 from fastauth.plugins.base import Capability, EndpointSpec, Plugin, PluginOptions
 from fastauth.runtime.context import AuthContext
-from fastauth.security.jwt import JwksDocument, JwksRegistry, KmsSigner, LocalKmsSigner
+from fastauth.security.jwt import (
+    JwksDocument,
+    JwksRegistry,
+    KmsSigner,
+    LocalKmsSigner,
+    valid_jwt_session_id,
+)
+from fastauth.security.sessions import SessionContext
 from fastauth.storage.base import JwksKeyStore
 
 __all__ = [
@@ -59,6 +66,12 @@ class JwtOptions(PluginOptions):
     @classmethod
     def normalize_duration_input(cls, value: object) -> object:
         return parse_duration(value)
+
+    @model_validator(mode="after")
+    def validate_retirement_grace(self) -> JwtOptions:
+        if self.grace_period < self.expires_in:
+            raise ValueError("grace_period must cover expires_in so rotation preserves live tokens")
+        return self
 
     @property
     def expires_in_seconds(self) -> int:
@@ -122,6 +135,7 @@ class JwtPlugin(Plugin):
                 method="POST",
                 path=self.options.token_path,
                 name="auth_token",
+                auth_required=True,
                 tags=["Jwt"],
                 handler=self.token_handler,
                 response_model=TokenResponse,
@@ -135,6 +149,14 @@ class JwtPlugin(Plugin):
                 response_model=JwksDocument,
             ),
         ]
+
+    def server_api_name(self) -> str:
+        return "jwt"
+
+    def server_api(self) -> object:
+        from fastauth.runtime.services import JwtApi
+
+        return JwtApi(self.require_context())
 
     def capabilities(self) -> Sequence[Capability]:
         return [
@@ -205,7 +227,7 @@ class JwtPlugin(Plugin):
             raise RuntimeError("JwtPlugin is not bound to an AuthContext")
         return self.context, self.registry, self.signer
 
-    async def issue_token_for(self, user: User) -> str:
+    async def issue_token_for(self, user: User, *, session: Session | None = None) -> str:
         """Sign a JWT for ``user`` using the plugin's configured signer."""
         from fastauth.web.callbacks import resolve_configured_base_url
 
@@ -215,12 +237,18 @@ class JwtPlugin(Plugin):
         issuer = self.options.issuer or default_base_url
         audience = self.options.audience or default_base_url
         payload: dict[str, Any] = {
+            **self.payload_builder(user),
+            "sid": session.id
+            if session is not None and valid_jwt_session_id(session.id)
+            else f"jwt:{new_id()}",
+            "auth_time": session.authenticated_at.timestamp()
+            if session is not None and session.authenticated_at is not None
+            else None,
             "iss": issuer,
             "aud": audience,
             "sub": user.id,
             "iat": int(now.timestamp()),
             "exp": int((now + self.options.expires_in).timestamp()),
-            **self.payload_builder(user),
         }
         return await signer.sign(
             header={"alg": self.options.alg.value, "typ": "JWT"},
@@ -231,6 +259,18 @@ class JwtPlugin(Plugin):
         if self.options.disable_setting_jwt_header:
             return
         response.headers["set-auth-jwt"] = await self.issue_token_for(user)
+
+    async def extend_session_context_response(
+        self,
+        session_context: SessionContext,
+        response: Response,
+    ) -> None:
+        if self.options.disable_setting_jwt_header:
+            return
+        response.headers["set-auth-jwt"] = await self.issue_token_for(
+            session_context.user,
+            session=session_context.session,
+        )
 
     async def token_handler(self, request: Request) -> TokenResponse:
         """``POST /auth/token`` — issue a JWT for the user attached to the current session."""
@@ -243,7 +283,9 @@ class JwtPlugin(Plugin):
         session_context = await context.session_strategy.read(token)
         if session_context is None:
             raise InvalidCredentialsError()
-        return TokenResponse(token=await self.issue_token_for(session_context.user))
+        return TokenResponse(
+            token=await self.issue_token_for(session_context.user, session=session_context.session)
+        )
 
     async def jwks_handler(self) -> JwksDocument:
         """``GET /auth/jwks`` — public JWKS document for verifying issued tokens."""

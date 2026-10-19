@@ -451,6 +451,7 @@ async def test_session_principal_rejects_mismatched_user_and_session() -> None:
             password=SecretStr("correct-horse-battery"),
         )
     )
+    assert isinstance(second, AuthenticationResponse)
 
     with pytest.raises(InvalidCredentialsError):
         await auth.api.password.change(

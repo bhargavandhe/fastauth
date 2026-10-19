@@ -51,13 +51,13 @@ async def change_password(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None or account.password is None:
         raise NotFoundError(resource="credential_account")
-    if not context.password_hasher.verify(
+    if not await context.password_executor.verify(
         request.current_password.get_secret_value(),
         account.password,
     ):
         raise InvalidCredentialsError()
 
-    account.password = context.password_hasher.hash(
+    account.password = await context.password_executor.hash(
         validate_password_policy(context, request.new_password),
     )
     await context.adapter.update_account(account)

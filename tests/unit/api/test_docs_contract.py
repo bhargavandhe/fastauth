@@ -32,6 +32,10 @@ def test_runtime_and_examples_do_not_read_process_environment() -> None:
     forbidden = ("os.environ", "os.getenv", "getenv(", "environ[")
     offenders: list[str] = []
     for path in project_files("src/fastauth", "examples"):
+        # Database test infrastructure may select disposable CI services; this
+        # contract forbids process configuration in library/application code.
+        if "tests" in path.parts:
+            continue
         if path.suffix not in {".py", ".md"}:
             continue
         text = path.read_text(encoding="utf-8")
@@ -228,13 +232,60 @@ def test_readme_no_longer_calls_docs_under_construction() -> None:
     assert "under construction" not in text
 
 
-def test_ci_checks_supported_python_and_package_build() -> None:
-    workflow = read_project_file(".github/workflows/ci.yml")
+def test_release_python_support_metadata_matches_adapter_compatibility() -> None:
+    import tomllib
 
-    assert 'python-version: ["3.11", "3.12", "3.13", "3.14"]' in workflow
-    assert 'python-version: ["3.11", "3.14"]' in workflow
+    project = tomllib.loads(read_project_file("pyproject.toml"))["project"]
+    lock = tomllib.loads(read_project_file("uv.lock"))
+
+    assert project["requires-python"] == ">=3.11,<3.14"
+    assert {bound.strip() for bound in lock["requires-python"].split(",")} == {">=3.11", "<3.14"}
+    assert {
+        classifier.removeprefix("Programming Language :: Python :: ")
+        for classifier in project["classifiers"]
+        if classifier.startswith("Programming Language :: Python :: ")
+    } == {"3.11", "3.12", "3.13"}
+
+
+@pytest.mark.parametrize("job", ["lint-typecheck", "tests", "docker-tests"])
+def test_ci_checks_every_supported_python_without_exemptions(job: str) -> None:
+    workflow = read_project_file(".github/workflows/ci.yml")
+    # Read until the next job, rather than matching another job's matrix.
+    job_config = re.split(r"\n  [a-z][a-z-]*:\n", workflow.split(f"\n  {job}:\n", 1)[1])[0]
+
+    assert 'python-version: ["3.11", "3.12", "3.13"]' in job_config
+    assert "continue-on-error" not in job_config
+    assert "exclude:" not in job_config
+    if job == "docker-tests":
+        assert 'FASTAUTH_REQUIRE_DATABASES: "1"' in job_config
+        assert "tests/adapters/test_beanie_adapter.py" in job_config
+        assert "tests/adapters/test_postgres_adapter.py" in job_config
+        assert "examples/quickstart/tests" in job_config
+
+
+def test_ci_checks_supported_consumer_installs_and_package_build() -> None:
+    workflow = read_project_file(".github/workflows/ci.yml")
+    consumer_job = workflow.split("\n  consumer-installs:\n", 1)[1]
+
+    assert 'python-version: ["3.11", "3.12", "3.13"]' in consumer_job
+    assert 'resolution: ["highest"]' in consumer_job
+    assert '- python-version: "3.11"\n            resolution: "lowest-direct"' in consumer_job
+    assert "exclude:" not in consumer_job
+    assert "continue-on-error" not in consumer_job
+    assert "3.14" not in workflow
     assert "uv build" in workflow
     assert "twine check" in workflow
+
+
+@pytest.mark.parametrize(
+    "filename", ["README.md", "docs/index.md", "docs/installation.md", "docs/migrating/0.15.md"]
+)
+def test_current_docs_state_supported_python_range(filename: str) -> None:
+    text = read_project_file(filename)
+
+    assert "Python 3.11\u20133.13" in text
+    assert "Python 3.11+" not in text
+    assert "Python 3.11\u20133.14" not in text
 
 
 @pytest.mark.parametrize("filename", ["ci.yml", "docs-pages.yml", "publish.yml", "security.yml"])

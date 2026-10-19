@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from fastapi import Request
+from fastapi import Depends, Request
+from fastapi.security import APIKeyHeader
+from pydantic import SecretStr
 
-from fastauth.api.responses import UserView, user_view
+from fastauth.api.responses import ApiKeyView, UserView, user_view
+from fastauth.domain.value_objects import PermissionSet
 from fastauth.exceptions import FastAuthDependencyError
+from fastauth.plugins.api_key import ApiKeysApi
 from fastauth.plugins.base import Plugin, PluginApiRegistry, PluginApiT
 from fastauth.security.sessions import SessionContext
 from fastauth.web.fastapi import extract_session_token
@@ -28,6 +33,27 @@ class DependsManager:
     def __init__(self, auth: FastAuth) -> None:
         self.auth = auth
 
+    def api_key(
+        self, *, required_permissions: PermissionSet | None = None, header_name: str = "x-api-key"
+    ) -> Callable[..., Any]:
+        """Resolve an API key with required permissions; publish its actual header scheme."""
+        api = self.auth.plugins.get(ApiKeysApi)
+        # Hex preserves distinct header spellings using only valid OpenAPI component characters.
+        scheme_name = (
+            "ApiKey" if header_name == "x-api-key" else f"ApiKey_{header_name.encode().hex()}"
+        )
+        header = APIKeyHeader(name=header_name, scheme_name=scheme_name, auto_error=False)
+
+        async def dependency(key: str | None = Depends(header)) -> ApiKeyView:
+            if key is None:
+                raise FastAuthDependencyError()
+            result = await api.verify(SecretStr(key), permissions=required_permissions)
+            if not result.valid or result.api_key is None:
+                raise FastAuthDependencyError()
+            return result.api_key
+
+        return dependency
+
     def session(self) -> Callable[..., Any]:
         return self.session_dependency
 
@@ -36,6 +62,35 @@ class DependsManager:
 
     def user(self) -> Callable[..., Any]:
         return self.user_dependency
+
+    def verified_user(self) -> Callable[..., Any]:
+        return self.verified_user_dependency
+
+    def recent_session(self, *, max_age: timedelta = timedelta(minutes=5)) -> Callable[..., Any]:
+        if max_age <= timedelta(0):
+            raise ValueError("max_age must be positive")
+
+        async def dependency(request: Request) -> SessionContext:
+            session = await self.session_dependency(request)
+            await self.auth.policy.authorize(
+                session.user,
+                action="session.recent",
+                session=session.session,
+                max_age=max_age,
+            )
+            return session
+
+        return dependency
+
+    async def verified_user_dependency(self, request: Request) -> UserView:
+        session = await self.session_dependency(request)
+        await self.auth.policy.authorize(
+            session.user,
+            action="session.verified",
+            session=session.session,
+            require_verified=True,
+        )
+        return user_view(session.user)
 
     def optional_user(self) -> Callable[..., Any]:
         return self.optional_user_dependency

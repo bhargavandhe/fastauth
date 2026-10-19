@@ -55,8 +55,9 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **Pydantic v2 everywhere.** Every public domain model, request body, and
   response is a `BaseModel`. Runtime wiring may use ordinary Python types
   internally, but the API boundary stays Pydantic-native.
-- **Async-only.** No sync wrappers, no thread-pool shims. Your event loop
-  doesn't get hijacked.
+- **Async-first.** Authentication flows expose async APIs. CPU/memory-heavy
+  Argon2 work runs off the event loop with a bounded concurrency limit
+  (default 2 per hasher; configure `password.max_concurrent_operations`).
 - **Strict-typed.** `pyright --strict` passes with **0 errors, 0 warnings**.
   `py.typed` marker ships with the wheel — your IDE and your CI get full
   type information.
@@ -94,7 +95,7 @@ v2 + async-only + MongoDB or Postgres persistence:
 - Multi-session management: list, revoke one, revoke-all-except-current
 
 ### Sessions
-- Database-backed sessions (revocable, IP/UA bound) **or** JWT sessions
+- Database-backed sessions (revocable, with recorded IP/UA metadata) **or** JWT sessions
   (stateless, JWKS-signed). One config flag flips between them.
 - JWKS with auto-generated keys, AES-GCM at-rest encryption with master-key
   rotation support, and an opt-in `set-auth-jwt` response header that
@@ -126,8 +127,8 @@ v2 + async-only + MongoDB or Postgres persistence:
 - **email_otp()** — passwordless sign-in, email verification, password
   reset, and (optional) email change via 6-digit OTPs delivered to email.
   Hashed storage, per-OTP attempt cap, lockout-coupled.
-- **audit_logs()** — auto-captures every `AuthEvent` into a paginated
-  audit-log collection.
+- **audit_logs()** — best-effort recording of security events into a paginated
+  audit-log collection; event handlers are awaited, without a durable outbox.
 - **openapi()** — Scalar UI at `/auth/reference`, OpenAPI 3.1 schema
   at `/auth/openapi.json`.
 - **test_utils()** — factories, login helpers, OTP capture for tests.
@@ -167,7 +168,8 @@ Extras: `beanie` (MongoDB), `postgres` (SQLAlchemy async + asyncpg), `jwt`
 (JOSE signing + crypto for at-rest JWK encryption), `cli` (Typer CLI),
 `docs` (mkdocs-material toolchain).
 
-Python 3.11+ required. FastAPI 0.115+, Pydantic 2.8+.
+Python 3.11–3.13 required (`>=3.11,<3.14`). FastAPI 0.115+, Pydantic 2.11–2.x.
+Python 3.14 is not supported in 0.15 because current Beanie 2.x releases exclude it.
 
 ## Protecting routes
 

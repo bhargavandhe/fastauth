@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -32,14 +33,20 @@ from fastauth.plugins.schema import (
 from fastauth.storage.postgres import PostgresAdapter
 from fastauth.storage.postgres.plugin_migrations import execute_postgres_plugin_migrations
 from tests.adapters.adapter_contract import FullAdapterContract
+from tests.adapters.session_matrix import SessionMatrixContract
 
 
 @pytest.fixture(scope="session")
 def postgres_url() -> str:
+    external_url = os.environ.get("FASTAUTH_TEST_POSTGRES_URL")
+    if external_url:
+        return external_url
     try:
         container = PostgresContainer("postgres:16-alpine")
         container.start()
     except Exception as exc:
+        if os.environ.get("FASTAUTH_REQUIRE_DATABASES") == "1":
+            pytest.fail(f"Required real database unavailable: {exc}")
         pytest.skip(f"Docker is required for Postgres adapter tests: {exc}")
 
     url = container.get_connection_url()
@@ -142,7 +149,7 @@ async def postgres_engine(postgres_url: str) -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
-class TestPostgresAdapter(FullAdapterContract):
+class TestPostgresAdapter(FullAdapterContract, SessionMatrixContract):
     @pytest.fixture
     async def adapter(self, postgres_engine: AsyncEngine) -> PostgresAdapter:
         adapter = PostgresAdapter(
@@ -337,3 +344,61 @@ class TestPostgresAdapter(FullAdapterContract):
             return len(result.applied)
 
         assert sorted(await asyncio.gather(apply_once(), apply_once())) == [0, 1]
+
+
+async def test_v015_postgres_migration_deduplicates_and_serializes_challenges(
+    postgres_engine: AsyncEngine,
+) -> None:
+    from sqlalchemy import DDL, insert, select
+
+    from fastauth.domain.enums import VerificationPurpose
+    from fastauth.domain.models import Verification
+
+    adapter = PostgresAdapter(postgres_engine, table_prefix=f"migration_{uuid4().hex[:8]}_")
+    await adapter.apply_migrations()
+    table = adapter.schema.verifications
+    async with postgres_engine.begin() as connection:
+        quote = connection.dialect.identifier_preparer.quote
+        await connection.execute(
+            DDL(
+                f"ALTER TABLE {quote(table.name)} DROP CONSTRAINT "
+                f"{quote(table.name + '_identifier_purpose_uq')}"
+            )
+        )
+        await connection.execute(DDL(f"ALTER TABLE {quote(table.name)} DROP COLUMN consumed_at"))
+        await connection.execute(
+            adapter.schema.schema_migrations.delete().where(
+                adapter.schema.schema_migrations.c.version == 5,
+            )
+        )
+        now = datetime.now(UTC)
+        for age, value in [(2, "old"), (1, "new")]:
+            row = Verification(
+                identifier="migration@example.com",
+                purpose=VerificationPurpose.PASSWORD_RESET,
+                value_hash=value,
+                created_at=now - timedelta(seconds=age),
+                expires_at=now + timedelta(minutes=5),
+            )
+            data = row.model_dump(exclude={"consumed_at"})
+            data["purpose"] = row.purpose.value
+            await connection.execute(insert(table).values(**data))
+    assert await adapter.apply_migrations() == [5]
+    async with postgres_engine.connect() as connection:
+        rows = (await connection.execute(select(table))).mappings().all()
+    assert len(rows) == 1
+    assert rows[0]["value_hash"] == "new"
+    assert rows[0]["consumed_at"] is None
+    assert await adapter.apply_migrations() == []
+    decisions = await asyncio.gather(
+        *(
+            adapter.attempt_verification(
+                "migration@example.com",
+                VerificationPurpose.PASSWORD_RESET,
+                "new",
+                now=attempt_time,
+            )
+            for attempt_time in [datetime.now(UTC)] * 4
+        )
+    )
+    assert sum(result.status == "accepted" for result in decisions) == 1

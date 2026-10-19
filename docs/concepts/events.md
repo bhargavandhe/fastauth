@@ -27,8 +27,11 @@ For advanced infrastructure use, `auth.events` exposes the underlying
 Every domain event carries `event_id`, `occurred_at`, `audit_event_type`, and
 optional `ip_address` / `user_agent` fields. Handler exceptions are logged and
 isolated so a misbehaving subscriber cannot break sign-in or prevent later
-handlers from running. Handlers run in registration order. The
-`AuditLogsPlugin` ships a catch-all subscriber that turns every event into a row
+handlers from running. Handlers are awaited sequentially, grouped by subscribed
+event type and in registration order within each group; slow handlers add request
+latency. There is no durable queue, retry, replay, or exactly-once delivery
+guarantee. A crash or storage failure can leave an event unrecorded. The
+`AuditLogsPlugin` ships a catch-all subscriber that attempts to turn eligible events into a row
 in the `audit_logs` collection.
 
 Core account-management flows publish typed events for profile updates and

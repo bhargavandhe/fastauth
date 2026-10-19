@@ -43,6 +43,7 @@ from fastauth.storage.postgres.migrations import (
     pending_postgres_migrations,
 )
 from fastauth.storage.postgres.schema import build_postgres_schema
+from fastauth.storage.verification import VerificationAttempt, apply_verification_attempt
 
 __all__ = ["PostgresAdapter"]
 
@@ -362,11 +363,13 @@ class PostgresAdapter(
 
     async def update_user(self, user: User) -> User:
         user.updated_at = current_utc_time()
+        data = model_data(user)
+        data.pop("active", None)
         try:
             return await self.update_row_by_id(
                 self.schema.users,
                 user.id,
-                model_data(user),
+                data,
                 row_to_user,
                 resource="user",
             )
@@ -375,6 +378,15 @@ class PostgresAdapter(
                 resource="user",
                 field=duplicate_user_field(exc),
             ) from exc
+
+    async def set_user_active(self, user_id: str, *, active: bool) -> User:
+        return await self.update_row_by_id(
+            self.schema.users,
+            user_id,
+            {"active": active, "updated_at": current_utc_time()},
+            row_to_user,
+            resource="user",
+        )
 
     async def delete_user(self, user_id: str) -> None:
         async with self.engine.begin() as connection:
@@ -542,26 +554,31 @@ class PostgresAdapter(
         *,
         except_session_id: str | None = None,
     ) -> int:
-        predicate = self.schema.refresh_tokens.c.user_id == user_id
-        if except_session_id is not None:
-            predicate = and_(
-                predicate,
-                self.schema.refresh_tokens.c.session_id != except_session_id,
-            )
-        async with self.engine.begin() as connection:
+        async with self.engine.connect() as connection:
             result = await connection.execute(
-                delete(self.schema.refresh_tokens).where(predicate),
+                select(
+                    self.schema.refresh_tokens.c.family_id, self.schema.refresh_tokens.c.session_id
+                ).where(self.schema.refresh_tokens.c.user_id == user_id),
             )
-        return int(result.rowcount or 0)
+            rows = result.all()
+        kept = {row.family_id for row in rows if row.session_id == except_session_id}
+        deleted = 0
+        for family_id in {row.family_id for row in rows} - kept:
+            deleted += (await self.delete_refresh_token_family(family_id)).deleted_tokens
+        return deleted
 
     async def delete_refresh_tokens_for_session(self, session_id: str) -> int:
-        async with self.engine.begin() as connection:
+        async with self.engine.connect() as connection:
             result = await connection.execute(
-                delete(self.schema.refresh_tokens).where(
-                    self.schema.refresh_tokens.c.session_id == session_id,
-                ),
+                select(self.schema.refresh_tokens.c.family_id)
+                .distinct()
+                .where(self.schema.refresh_tokens.c.session_id == session_id),
             )
-        return int(result.rowcount or 0)
+            families = result.scalars().all()
+        deleted = 0
+        for family_id in families:
+            deleted += (await self.delete_refresh_token_family(family_id)).deleted_tokens
+        return deleted
 
     async def delete_refresh_tokens_in_family(self, family_id: str) -> int:
         return (await self.delete_refresh_token_family(family_id)).deleted_tokens
@@ -631,6 +648,25 @@ class PostgresAdapter(
             resource="account",
         )
 
+    async def replace_account_password(
+        self,
+        account_id: str,
+        *,
+        expected_hash: str,
+        new_hash: str,
+    ) -> bool:
+        table = self.schema.accounts
+        async with self.engine.begin() as connection:
+            result = await connection.execute(
+                update(table)
+                .where(
+                    table.c.id == account_id,
+                    table.c.password == expected_hash,
+                )
+                .values(password=new_hash, updated_at=current_utc_time())
+            )
+            return bool(result.rowcount)
+
     async def delete_account(self, account_id: str) -> None:
         async with self.engine.begin() as connection:
             await connection.execute(
@@ -638,13 +674,59 @@ class PostgresAdapter(
             )
 
     async def create_verification(self, verification: Verification) -> Verification:
-        return await self.insert_row(
-            self.schema.verifications,
-            model_data(verification, enum_fields=("purpose",)),
-            row_to_verification,
-            duplicate_resource="verification",
-            duplicate_field="value_hash",
-        )
+        table = self.schema.verifications
+        data = model_data(verification, enum_fields=("purpose",))
+        statement = postgres_insert(table).values(**data)
+        statement = statement.on_conflict_do_update(
+            index_elements=[table.c.identifier, table.c.purpose],
+            set_=data,
+        ).returning(table)
+        async with self.engine.begin() as connection:
+            result = await connection.execute(statement)
+            return row_to_verification(result.mappings().one())
+
+    async def attempt_verification(
+        self,
+        identifier: str,
+        purpose: VerificationPurpose,
+        value_hash: str,
+        *,
+        now: datetime,
+        max_attempts: int | None = None,
+        consume: bool = True,
+    ) -> VerificationAttempt:
+        if max_attempts is not None and max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
+        table = self.schema.verifications
+        async with self.engine.begin() as connection:
+            result = await connection.execute(
+                select(table)
+                .where(
+                    table.c.identifier == identifier,
+                    table.c.purpose == purpose.value,
+                )
+                .with_for_update()
+            )
+            mapping = result.mappings().one_or_none()
+            row = row_to_verification(mapping) if mapping is not None else None
+            decision = apply_verification_attempt(
+                row,
+                value_hash,
+                now=now,
+                max_attempts=max_attempts,
+                consume=consume,
+            )
+            if row is not None:
+                await connection.execute(
+                    update(table)
+                    .where(table.c.id == row.id)
+                    .values(
+                        attempt_count=row.attempt_count,
+                        consumed_at=row.consumed_at,
+                        updated_at=row.updated_at,
+                    )
+                )
+            return decision
 
     async def delete_expired_verifications(self, *, cutoff: datetime, limit: int) -> int:
         return await self.delete_bounded(
@@ -665,6 +747,7 @@ class PostgresAdapter(
                 self.schema.verifications.c.identifier == identifier,
                 self.schema.verifications.c.purpose == purpose.value,
                 self.schema.verifications.c.value_hash == value_hash,
+                self.schema.verifications.c.consumed_at.is_(None),
             ),
             row_to_verification,
         )
@@ -679,6 +762,7 @@ class PostgresAdapter(
             .where(
                 self.schema.verifications.c.identifier == identifier,
                 self.schema.verifications.c.purpose == purpose.value,
+                self.schema.verifications.c.consumed_at.is_(None),
             )
             .order_by(self.schema.verifications.c.created_at.desc())
             .limit(1),

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from fastauth.domain.enums import RateLimitStorageKind
 from fastauth.plugins.base import EndpointInfo, PluginInfo
 from fastauth.runtime.capabilities import Capability
 
@@ -70,7 +71,21 @@ class AuthInspector:
             plugins=tuple(self.plugins()),
             capabilities=tuple(self.capabilities()),
             routes=tuple(self.routes()),
+            production_warnings=self.production_warnings(),
         )
+
+    def production_warnings(self) -> tuple[str, ...]:
+        options = self._auth.options
+        if (
+            options.deployment == "production"
+            and options.rate_limit.enabled
+            and options.rate_limit.storage is RateLimitStorageKind.MEMORY
+        ):
+            return (
+                "The memory rate limiter is process-local; use database storage "
+                "for shared multi-worker rate limits.",
+            )
+        return ()
 
     def capabilities(self) -> list[Capability]:
         return self._auth.capabilities.list()

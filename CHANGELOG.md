@@ -4,6 +4,57 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-02
+
+### Added
+
+- Typed OTP, email-verification, JWT and audit services, authenticated actors,
+  verified-user and recent-session dependencies, trusted suspension management,
+  and an explicit SDK action/rate-limit boundary.
+- Shared adapter regression contracts for atomic identity creation, one-time
+  challenge consumption, failed-attempt accounting, and refresh-family revocation.
+- Executable typed memory/Mongo/Postgres deployment factories and an async
+  production-email sender recipe with bounded retries and idempotency.
+- Independent installed-wheel checks for core and every optional extra, minimum
+  direct dependency resolution, and latest-compatible consumer resolution.
+
+### Fixed
+
+- Invalid or interrupted signup/provisioning no longer silently strands a
+  non-retryable identity; verification/OTP consumption uses atomic adapter operations.
+- Stable JWT session identity and refresh-family coordination preserve logout,
+  revoke-other and reuse-detection semantics across the first-party backends.
+- Shared JWKS signing/rotation observes durable key state across workers.
+- Plugin authentication, server-only and supported CSRF declarations are enforced;
+  OpenAPI describes actual auth schemes and stable operations.
+- HTTP/Python omitted-versus-null profile semantics and user mutation hooks agree.
+- Generated CLI scaffolds correctly construct `SecretStr` configuration.
+- Corrected session IP/UA binding claims, metadata hook examples, password-minimum
+  migration text, and best-effort awaited audit/event delivery documentation.
+
+### Changed
+
+- Python support is `>=3.11,<3.14` (3.11–3.13) for core and every extra. Current
+  Beanie 2.x releases exclude Python 3.14, so 0.15 narrows the earlier support
+  claim instead of skipping an incompatible adapter or pinning an older Beanie.
+  Recreate Python 3.14 environments on a supported interpreter before upgrading.
+  Lint, typing, unit/integration, and required database jobs cover 3.11–3.13.
+- Argon2 work runs off-loop with a configurable bound (default two operations
+  per runtime); successful password verification can upgrade outdated hashes.
+- Pydantic requires `>=2.11,<3` for consistent DTO alias serialization; the CLI
+  extra requires Typer `>=0.17.5` for supported annotations/Click behavior, and
+  JWT requires joserfc `>=1.5` for the default Ed25519 signing algorithm.
+- Existing users default active; existing sessions have unknown authentication
+  age and require reauthentication for recent-auth policies.
+- Refresh storage migration invalidates legacy refresh credentials. Stop old
+  workers before migrating and require users to sign in for new refresh tokens.
+  New required adapter/strategy capabilities fail closed instead of using unsafe
+  fallbacks. The expired-API-key cleanup route is now server-only.
+
+Read [the 0.15 migration guide](docs/migrating/0.15.md) and its backend/session/SDK
+appendices before upgrading. JWT access revocation remains bounded by token
+expiry at external verifiers; audit and email recipes do not add durable outboxes.
+
 ## [0.14.1] — 2026-09-01
 
 ### Changed

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -26,9 +27,11 @@ from fastauth.storage.base import (
     AuditLogStore,
     DatabaseAdapter,
     JwksKeyStore,
+    PasswordRehashStore,
     RateLimitStore,
     RefreshTokenStore,
     SessionStore,
+    UserStatusStore,
     UserStore,
     VerificationStore,
 )
@@ -39,11 +42,14 @@ __all__ = [
     "AuditLogAdapterContract",
     "ContractAdapter",
     "CoreAdapterContract",
+    "CreationAdapterContract",
     "FullAdapterContract",
     "JwksAdapterContract",
     "MaintenanceAdapterContract",
+    "PasswordRehashAdapterContract",
     "RateLimitAdapterContract",
     "RefreshTokenAdapterContract",
+    "UserStatusAdapterContract",
 ]
 
 
@@ -56,6 +62,14 @@ class ContractAdapter(
     Protocol,
 ):
     """All capabilities expected from fastauth's first-party adapters."""
+
+
+class UserStatusContractAdapter(UserStore, UserStatusStore, Protocol):
+    """User storage plus privileged activation changes."""
+
+
+class PasswordRehashContractAdapter(UserStore, AccountStore, PasswordRehashStore, Protocol):
+    """Setup stores for optional optimistic credential upgrades."""
 
 
 class CoreContractAdapter(
@@ -213,6 +227,149 @@ class CoreAdapterContract(AdapterContractBase):
             )
             is None
         )
+
+    async def test_nullable_usernames_coexist(self, adapter: CoreContractAdapter) -> None:
+        first = await adapter.create_user(User(email="null-one@example.com"))
+        second = await adapter.create_user(User(email="null-two@example.com"))
+        assert first.id != second.id
+
+    async def test_atomic_verification_has_exactly_one_concurrent_winner(
+        self,
+        adapter: CoreContractAdapter,
+    ) -> None:
+        row = await adapter.create_verification(
+            Verification(
+                identifier="atomic@example.com",
+                purpose=VerificationPurpose.EMAIL_OTP_SIGN_IN,
+                value_hash="valid",
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
+        results = await asyncio.gather(
+            *(
+                adapter.attempt_verification(
+                    row.identifier,
+                    row.purpose,
+                    "valid",
+                    now=attempt_time,
+                    max_attempts=3,
+                )
+                for attempt_time in [datetime.now(UTC)] * 12
+            )
+        )
+        assert sum(result.status == "accepted" for result in results) == 1
+        assert await adapter.get_active_verification(row.identifier, row.purpose) is None
+
+    async def test_atomic_verification_counts_concurrent_misses_and_burns_code(
+        self,
+        adapter: CoreContractAdapter,
+    ) -> None:
+        row = await adapter.create_verification(
+            Verification(
+                identifier="attempts@example.com",
+                purpose=VerificationPurpose.EMAIL_OTP_SIGN_IN,
+                value_hash="valid",
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
+        results = await asyncio.gather(
+            *(
+                adapter.attempt_verification(
+                    row.identifier,
+                    row.purpose,
+                    "wrong",
+                    now=attempt_time,
+                    max_attempts=3,
+                )
+                for attempt_time in [datetime.now(UTC)] * 3
+            )
+        )
+        assert sorted(result.attempt_count for result in results) == [1, 2, 3]
+        result = await adapter.attempt_verification(
+            row.identifier,
+            row.purpose,
+            "valid",
+            now=datetime.now(UTC),
+            max_attempts=3,
+        )
+        assert result.status != "accepted"
+        assert await adapter.get_active_verification(row.identifier, row.purpose) is None
+
+    async def test_new_verification_supersedes_old_even_after_consumption(
+        self,
+        adapter: CoreContractAdapter,
+    ) -> None:
+        old = await adapter.create_verification(
+            Verification(
+                identifier="superseded@example.com",
+                purpose=VerificationPurpose.PASSWORD_RESET,
+                value_hash="old",
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
+        await adapter.create_verification(old.model_copy(update={"value_hash": "new"}))
+        rejected = await adapter.attempt_verification(
+            old.identifier,
+            old.purpose,
+            "old",
+            now=datetime.now(UTC),
+        )
+        assert rejected.status == "invalid"
+        accepted = await adapter.attempt_verification(
+            old.identifier,
+            old.purpose,
+            "new",
+            now=datetime.now(UTC),
+        )
+        assert accepted.status == "accepted"
+        replay = await adapter.attempt_verification(
+            old.identifier,
+            old.purpose,
+            "old",
+            now=datetime.now(UTC),
+        )
+        assert replay.status != "accepted"
+
+    async def test_atomic_check_preserves_valid_code_but_counts_failed_attempts(
+        self,
+        adapter: CoreContractAdapter,
+    ) -> None:
+        now = datetime.now(UTC)
+        row = await adapter.create_verification(
+            Verification(
+                identifier="check@example.com",
+                purpose=VerificationPurpose.EMAIL_OTP_SIGN_IN,
+                value_hash="valid",
+                expires_at=now + timedelta(minutes=5),
+            )
+        )
+        checked = await adapter.attempt_verification(
+            row.identifier,
+            row.purpose,
+            "valid",
+            now=now,
+            max_attempts=3,
+            consume=False,
+        )
+        assert checked.status == "accepted"
+        assert await adapter.get_active_verification(row.identifier, row.purpose) is not None
+        missed = await adapter.attempt_verification(
+            row.identifier,
+            row.purpose,
+            "wrong",
+            now=now,
+            max_attempts=3,
+            consume=False,
+        )
+        assert missed.attempt_count == 1
+        expired = await adapter.attempt_verification(
+            row.identifier,
+            row.purpose,
+            "valid",
+            now=now + timedelta(minutes=6),
+            max_attempts=3,
+        )
+        assert expired.status == "expired"
 
     async def test_get_active_verification_and_update(
         self,
@@ -578,8 +735,218 @@ class RefreshTokenAdapterContract(AdapterContractBase):
         )
         assert second_rotate is None
 
+    @pytest.mark.parametrize(
+        "entrypoint", ["session", "user", "user_except", "family", "legacy_family"]
+    )
+    async def test_family_revocation_removes_access_sessions(
+        self, adapter: RefreshTokenContractAdapter, entrypoint: str
+    ) -> None:
+        user = await adapter.create_user(User(email="revoke-family@example.com"))
+        other = await adapter.create_user(User(email="unrelated-family@example.com"))
+        now = datetime.now(UTC)
+        families: dict[str, list[RefreshToken]] = {}
+        sessions: dict[str, list[Session]] = {}
+        for label, owner in (("target", user), ("kept", user), ("unrelated", other)):
+            sessions[label] = [
+                await adapter.create_session(
+                    Session(
+                        user_id=owner.id,
+                        token_hash=f"{label}-session-{index}",
+                        expires_at=now + timedelta(hours=1),
+                    )
+                )
+                for index in range(2)
+            ]
+            root_id = new_id()
+            root = await adapter.create_refresh_token(
+                RefreshToken(
+                    id=root_id,
+                    user_id=owner.id,
+                    session_id=sessions[label][0].id,
+                    token_hash=f"{label}-root",
+                    family_id=root_id,
+                    family_created_at=now,
+                    expires_at=now + timedelta(days=1),
+                )
+            )
+            successor = await adapter.rotate_refresh_token(
+                current_token_id=root.id,
+                new_token=RefreshToken(
+                    user_id=owner.id,
+                    session_id=sessions[label][1].id,
+                    token_hash=f"{label}-successor",
+                    family_id=root.family_id,
+                    family_created_at=now,
+                    expires_at=now + timedelta(days=1),
+                ),
+                consumed_at=now,
+            )
+            assert successor is not None
+            families[label] = [root, successor]
+
+        # Adapters may remove replaced access sessions during rotation (for example Mongo).
+        existing_session_ids: dict[str, set[str]] = {}
+        for label, family_sessions in sessions.items():
+            existing_session_ids[label] = {
+                session.id
+                for session in family_sessions
+                if await adapter.get_session_by_token_hash(session.token_hash) is not None
+            }
+            assert family_sessions[1].id in existing_session_ids[label]
+
+        if entrypoint == "session":
+            deleted = await adapter.delete_refresh_tokens_for_session(sessions["target"][0].id)
+        elif entrypoint == "user":
+            deleted = await adapter.delete_refresh_tokens_for_user(user.id)
+        elif entrypoint == "user_except":
+            deleted = await adapter.delete_refresh_tokens_for_user(
+                user.id, except_session_id=sessions["kept"][1].id
+            )
+        elif entrypoint == "family":
+            result = await adapter.delete_refresh_token_family(families["target"][0].family_id)
+            deleted = result.deleted_tokens
+            assert result.deleted_sessions == len(existing_session_ids["target"])
+            assert result.session_ids == frozenset(session.id for session in sessions["target"])
+        else:
+            deleted = await adapter.delete_refresh_tokens_in_family(families["target"][0].family_id)
+        assert deleted == (4 if entrypoint == "user" else 2)
+        for label in families:
+            retained = label == "unrelated" or (label == "kept" and entrypoint != "user")
+            for token in families[label]:
+                assert (
+                    await adapter.get_refresh_token_by_hash(token.token_hash) is not None
+                ) == retained
+            for session in sessions[label]:
+                assert (
+                    await adapter.get_session_by_token_hash(session.token_hash) is not None
+                ) == (retained and session.id in existing_session_ids[label])
+
+
+class PasswordRehashAdapterContract(AdapterContractBase):
+    """Contract for the optional PasswordRehashStore capability."""
+
+    async def test_password_rehash_compare_and_swap_preserves_concurrent_password_change(
+        self,
+        adapter: PasswordRehashContractAdapter,
+    ) -> None:
+        user = await adapter.create_user(User(email="rehash-cas@example.com"))
+        account = await adapter.create_account(
+            Account(
+                user_id=user.id,
+                provider_id=ProviderId.CREDENTIAL,
+                account_id=user.id,
+                password="old",
+            )
+        )
+        assert await adapter.replace_account_password(
+            account.id,
+            expected_hash="old",
+            new_hash="new",
+        )
+        assert not await adapter.replace_account_password(
+            account.id,
+            expected_hash="old",
+            new_hash="obsolete-rehash",
+        )
+        current = await adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
+        assert current is not None and current.password == "new"  # noqa: S105 - test hash sentinel
+
+
+class UserStatusAdapterContract(AdapterContractBase):
+    """Protected activation changes cannot be undone by stale profile writes."""
+
+    async def test_stale_user_update_cannot_undo_suspension(
+        self,
+        adapter: UserStatusContractAdapter,
+    ) -> None:
+        created = await adapter.create_user(User(email="status-race@example.com"))
+        stale = await adapter.get_user_by_id(created.id)
+        assert stale is not None
+        suspended = await adapter.set_user_active(created.id, active=False)
+        assert not suspended.active
+        stale.name = "A concurrent profile edit"
+        result = await adapter.update_user(stale)
+        assert not result.active
+        current = await adapter.get_user_by_id(created.id)
+        assert current is not None and not current.active
+        assert current.name == "A concurrent profile edit"
+        restored = await adapter.set_user_active(created.id, active=True)
+        assert restored.active
+
+
+class CreationAdapterContract(AdapterContractBase):
+    """Real-backend failure and cancellation checks for identity persistence."""
+
+    async def test_account_insert_failure_is_compensated_and_retryable(
+        self,
+        adapter: DatabaseAdapter,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from fastauth.flows.creation import persist_user_account
+
+        original_create = adapter.create_account
+
+        async def fail_after_insert(account: Account) -> Account:
+            await original_create(account)
+            raise RuntimeError("injected lost account acknowledgement")
+
+        monkeypatch.setattr(adapter, "create_account", fail_after_insert)
+        with pytest.raises(RuntimeError, match="lost account acknowledgement"):
+            await persist_user_account(
+                adapter,
+                User(email="rollback@example.com"),
+                provider_id=ProviderId.CREDENTIAL,
+                password_hash="hash",
+            )
+        assert await adapter.get_user_by_email("rollback@example.com") is None
+        monkeypatch.setattr(adapter, "create_account", original_create)
+        created = await persist_user_account(
+            adapter,
+            User(email="rollback@example.com"),
+            provider_id=ProviderId.CREDENTIAL,
+            password_hash="hash",
+        )
+        assert await adapter.get_account_for_user(created.id, ProviderId.CREDENTIAL) is not None
+
+    async def test_cancellation_finishes_identity_consistency_section(
+        self,
+        adapter: DatabaseAdapter,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from fastauth.flows.creation import persist_user_account
+
+        original_create = adapter.create_account
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def delayed_create(account: Account) -> Account:
+            started.set()
+            await release.wait()
+            return await original_create(account)
+
+        monkeypatch.setattr(adapter, "create_account", delayed_create)
+        task = asyncio.create_task(
+            persist_user_account(
+                adapter,
+                User(email="cancelled-creation@example.com"),
+                provider_id=ProviderId.CREDENTIAL,
+                password_hash="hash",
+            )
+        )
+        await asyncio.wait_for(started.wait(), timeout=10)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        user = await adapter.get_user_by_email("cancelled-creation@example.com")
+        assert user is not None
+        assert await adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL) is not None
+
 
 class FullAdapterContract(
+    CreationAdapterContract,
+    UserStatusAdapterContract,
+    PasswordRehashAdapterContract,
     CoreAdapterContract,
     RefreshTokenAdapterContract,
     ApiKeyAdapterContract,

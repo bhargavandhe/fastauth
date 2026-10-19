@@ -73,6 +73,14 @@ class EmailOtpPlugin(Plugin):
             raise RuntimeError("EmailOtpPlugin is not bound to an AuthContext")
         return self.context
 
+    def server_api_name(self) -> str:
+        return "otp"
+
+    def server_api(self) -> object:
+        from fastauth.runtime.services import EmailOtpApi
+
+        return EmailOtpApi(self.require_context())
+
     def capabilities(self) -> Sequence[Capability]:
         capabilities = [
             Capability(
@@ -303,6 +311,7 @@ class EmailOtpPlugin(Plugin):
                         method="POST",
                         path="/email-otp/request-email-change",
                         name="email_otp_request_email_change",
+                        auth_required=True,
                         tags=["EmailOTP"],
                         handler=self.request_email_change_handler,
                         response_model=EmptyResponse,
@@ -311,6 +320,7 @@ class EmailOtpPlugin(Plugin):
                         method="POST",
                         path="/email-otp/change-email",
                         name="email_otp_change_email",
+                        auth_required=True,
                         tags=["EmailOTP"],
                         handler=self.change_email_handler,
                         response_model=EmptyResponse,

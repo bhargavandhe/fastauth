@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from pydantic import ConfigDict, SecretStr, model_validator
 
-from fastauth.domain.enums import EmailMessageKind, ProviderId, VerificationPurpose
+from fastauth.domain.enums import EmailMessageKind, HookPhase, ProviderId, VerificationPurpose
 from fastauth.domain.events import (
     OtpGenerated,
     PasswordChanged,
@@ -17,17 +17,16 @@ from fastauth.domain.events import (
     UserUpdated,
 )
 from fastauth.domain.models import Account, EmailMessage, User, Verification, WireModel
-from fastauth.domain.value_objects import UserMetadata, Username
+from fastauth.domain.value_objects import ProfileName, UserMetadata, Username
 from fastauth.exceptions import (
     DuplicateError,
     FeatureNotEnabledError,
     InvalidCredentialsError,
     NotFoundError,
     PasswordAlreadySetError,
-    TokenExpiredError,
-    TokenInvalidError,
 )
 from fastauth.flows.callbacks import resolve_callback_url
+from fastauth.flows.challenges import consume_token
 from fastauth.flows.credentials import (
     EmptyResponse,
     record_failure_and_maybe_emit,
@@ -35,6 +34,7 @@ from fastauth.flows.credentials import (
 )
 from fastauth.plugins.email_password import require_email_password
 from fastauth.runtime.context import AuthContext
+from fastauth.runtime.hooks import update_user_with_hooks
 
 __all__ = [
     "DeleteAccountConfirmRequest",
@@ -56,7 +56,7 @@ class UpdateUserRequest(WireModel):
     """Authenticated profile update for caller-owned mutable user fields."""
 
     model_config = ConfigDict(extra="forbid")
-    name: str | None = None
+    name: ProfileName = None
     image: str | None = None
     metadata: UserMetadata | None = None
     username: Username | None = None
@@ -131,7 +131,7 @@ async def update_user(
     if not changed_fields:
         return user
 
-    updated = await context.adapter.update_user(user)
+    updated = await update_user_with_hooks(context, user, actor_user_id=user.id)
     if old_username is not None and updated.username is not None:
         await context.lockout_tracker.rekey(old_username, updated.username)
     await context.event_bus.publish(
@@ -166,7 +166,7 @@ async def set_password(
             ),
         )
 
-    account.password = context.password_hasher.hash(
+    account.password = await context.password_executor.hash(
         validate_password_policy(context, request.new_password),
     )
     await context.adapter.update_account(account)
@@ -298,16 +298,13 @@ async def confirm_delete_account(
     user_agent: str | None,
 ) -> EmptyResponse:
     token_hash = context.token_service.hash_only(request.token.get_secret_value())
-    verification = await context.adapter.get_verification(
+    await consume_token(
+        context,
         user.email,
         VerificationPurpose.ACCOUNT_DELETION,
         token_hash,
+        label="account-deletion",
     )
-    if verification is None:
-        raise TokenInvalidError(message="invalid account-deletion token")
-    if verification.expires_at <= datetime.now(UTC):
-        await context.adapter.delete_verification(verification.id)
-        raise TokenExpiredError(message="account-deletion token expired")
 
     await delete_account_state(context, user, ip=ip, user_agent=user_agent)
     return EmptyResponse(success=True)
@@ -326,7 +323,7 @@ async def verify_current_password(
     account = await context.adapter.get_account_for_user(user.id, ProviderId.CREDENTIAL)
     if account is None or account.password is None:
         raise NotFoundError(resource="credential_account")
-    if not context.password_hasher.verify(password.get_secret_value(), account.password):
+    if not await context.password_executor.verify(password.get_secret_value(), account.password):
         await record_failure_and_maybe_emit(context, identifier, ip, user_agent)
         raise InvalidCredentialsError()
     await context.lockout_tracker.reset(identifier)
@@ -339,7 +336,13 @@ async def delete_account_state(
     ip: str | None,
     user_agent: str | None,
 ) -> None:
-    await context.adapter.delete_user(user.id)
+    user_id = user.id
+    # Delete hooks may abort, but mutations must not redirect the authorized target.
+    await context.hooks.run(
+        HookPhase.BEFORE_DELETE, "user", user.model_copy(deep=True), actor_user_id=user_id
+    )
+    await context.adapter.delete_user(user_id)
+    await context.hooks.run(HookPhase.AFTER_DELETE, "user", user, actor_user_id=user_id)
     await context.event_bus.publish(
-        UserDeleted(user_id=user.id, ip_address=ip, user_agent=user_agent),
+        UserDeleted(user_id=user_id, ip_address=ip, user_agent=user_agent),
     )

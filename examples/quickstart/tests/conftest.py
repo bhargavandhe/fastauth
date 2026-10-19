@@ -26,10 +26,16 @@ from examples.quickstart.app import build_auth, build_options, create_app
 
 @pytest.fixture(scope="session")
 def mongo_url() -> Iterator[str]:
+    external_url = os.environ.get("FASTAUTH_TEST_MONGO_URL")
+    if external_url:
+        yield external_url
+        return
     try:
         container = MongoDbContainer("mongo:7")
         container.start()
     except Exception as exc:
+        if os.environ.get("FASTAUTH_REQUIRE_DATABASES") == "1":
+            pytest.fail(f"Required real database unavailable: {exc}")
         pytest.skip(f"Docker is required for quickstart tests: {exc}")
 
     yield container.get_connection_url()

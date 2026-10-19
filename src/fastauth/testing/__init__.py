@@ -8,10 +8,13 @@ from fastauth.testing.adapter_contract import (
     AuditLogAdapterContract,
     ContractAdapter,
     CoreAdapterContract,
+    CreationAdapterContract,
     FullAdapterContract,
     JwksAdapterContract,
+    PasswordRehashAdapterContract,
     RateLimitAdapterContract,
     RefreshTokenAdapterContract,
+    UserStatusAdapterContract,
 )
 
 __all__ = [
@@ -20,8 +23,11 @@ __all__ = [
     "AuditLogAdapterContract",
     "ContractAdapter",
     "CoreAdapterContract",
+    "CreationAdapterContract",
     "FullAdapterContract",
     "JwksAdapterContract",
+    "PasswordRehashAdapterContract",
     "RateLimitAdapterContract",
     "RefreshTokenAdapterContract",
+    "UserStatusAdapterContract",
 ]

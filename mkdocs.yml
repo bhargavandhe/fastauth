@@ -70,6 +70,10 @@ nav:
       - OpenAPI / Scalar: plugins/openapi.md
       - Test utils: plugins/test-utils.md
   - Guides:
+      - Migrating to 0.15: migrating/0.15.md
+      - 0.15 storage: migrating/0.15-storage.md
+      - 0.15 sessions: migrating/0.15-sessions.md
+      - 0.15 SDK and plugins: migrating/0.15-sdk.md
       - Migrating to 0.14: migrating/0.14.md
       - Migrating to 0.12: migrating/0.12.md
       - Migrating to 0.11: migrating/0.11.md
@@ -79,6 +83,7 @@ nav:
       - Bearer auth: guides/bearer-auth.md
       - KMS signing: guides/kms-signing.md
       - Deploying: guides/deploying.md
+      - Executable deployment recipes: guides/deployment-recipes.md
       - Maintenance: guides/maintenance.md
   - API stability: reference/api-stability.md
   - Reference: reference/index.md
