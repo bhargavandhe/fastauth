@@ -30,3 +30,27 @@ Every endpoint that consumes a session accepts the token via either:
 
 Bearer-only requests bypass CSRF (there is no cookie ambient authority to abuse).
 Both transports flow through the same `SessionStrategy.read(token)` call.
+
+## Automatic releases
+
+A release version in `pyproject.toml` and `fastauth.__version__` is published automatically
+once both **CI** and **Security** have successful **push** runs for the current `main` commit.
+Bump both versions together to a canonical PEP 440 version newer than every PyPI release.
+Already completed versions are no-ops on later commits. The existing `v*` tag trigger remains
+available, but it must identify the current `main` commit and pass the same checks.
+
+The publisher uses the existing `publish.yml` / `pypi` trusted-publisher identity. The publish
+job rechecks `main`, the latest required runs, and PyPI after any environment approval wait.
+Builds use the checked commit's timestamp for reproducible archives. No PR artifacts are used.
+Only after PyPI artifact digests are verified does the workflow create the tag and GitHub
+release, using `GITHUB_TOKEN` so the generated tag does not trigger another publishing run.
+
+Retry the publishing workflow after a transient failure. A complete PyPI upload with matching
+rebuilt hashes can finish a missing tag, release, or release asset. The workflow never
+replaces a tag or asset and never ignores upload errors. Partial PyPI uploads, mismatched
+hashes, yanked versions, or conflicting release metadata fail closed and require investigation;
+if an existing version cannot be safely completed, prepare a new version. Changing a build
+backend can change archive hashes, so a failed recovery must not be bypassed.
+
+Merging changes to this publishing workflow activates its automatic behavior. Repository
+and PyPI environment protections still apply; this workflow does not change those settings.

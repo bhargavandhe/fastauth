@@ -4,83 +4,192 @@ on:
   push:
     tags:
       - "v*"
+  workflow_run:
+    workflows: ["CI", "Security"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
 
+# Both workflow completions and tag pushes share one release lock.
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-fastauth-py
+  queue: max
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build distributions
+  gate:
+    name: Require successful main checks
+    if: >-
+      github.repository == 'bhargavandhe/fastauth' &&
+      (github.event_name == 'push' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+      sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      # The gate is trusted main code, never code from the triggering PR or artifacts.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Verify triggering commit and latest CI/Security push runs
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --script .github/scripts/release.py gate
+
+  build:
+    name: Build exact checked commit
+    needs: gate
+    if: needs.gate.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.check.outputs.action }}
+      version: ${{ steps.check.outputs.version }}
+      versions_digest: ${{ steps.check.outputs.versions_digest }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
-
       - uses: astral-sh/setup-uv@v10.2.0
-
-      - name: Verify tag and package versions agree
-        run: |
-          package_version="$(uv version --short)"
-          runtime_version="$(uv run python -c 'import fastauth; print(fastauth.__version__)')"
-          tag_version="${GITHUB_REF_NAME#v}"
-          test "$tag_version" = "$package_version"
-          test "$tag_version" = "$runtime_version"
-
+      - name: Use reproducible archive timestamps
+        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
       - name: Build
         run: uv build
-
       - name: Verify distributions
         run: uvx twine check dist/*
-
+      - name: Verify versions, PyPI state, and existing tag/release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          runtime_version="$(uv run --locked python -c 'import fastauth; print(fastauth.__version__)')"
+          uv run --script .github/scripts/release.py check \
+            --sha "$RELEASE_SHA" --runtime "$runtime_version"
       - name: Store distributions
+        if: steps.check.outputs.action != 'skip'
         uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
 
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [gate, build]
+    if: needs.build.outputs.action == 'publish'
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/fastauth-py
     permissions:
+      contents: read
+      actions: read
       id-token: write
     steps:
-      - name: Download distributions
+      - name: Download distributions from this run only
         uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
-
+      # Recheck after any environment approval wait, without checking out/executing source.
+      - name: Recheck main, required runs, and PyPI immediately before publishing
+        uses: actions/github-script@v8
+        env:
+          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          VERSIONS_DIGEST: ${{ needs.build.outputs.versions_digest }}
+        with:
+          script: |
+            const sha = process.env.RELEASE_SHA;
+            const main = await github.rest.repos.getCommit({...context.repo, ref: 'main'});
+            if (main.data.sha !== sha) throw new Error('Main advanced; refusing stale publish');
+            for (const workflow of ['ci.yml', 'security.yml']) {
+              const {data} = await github.rest.actions.listWorkflowRuns({
+                ...context.repo, workflow_id: workflow, branch: 'main', event: 'push',
+                head_sha: sha, per_page: 100
+              });
+              const run = data.workflow_runs.sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt)[0];
+              if (data.total_count !== data.workflow_runs.length || !run ||
+                  run.head_sha !== sha || run.head_branch !== 'main' || run.event !== 'push' ||
+                  run.repository.full_name !== process.env.GITHUB_REPOSITORY ||
+                  run.head_repository?.full_name !== process.env.GITHUB_REPOSITORY ||
+                  run.path.split('@')[0] !== `.github/workflows/${workflow}` ||
+                  run.status !== 'completed' || run.conclusion !== 'success') {
+                throw new Error(`Latest ${workflow} push run is not successful for the release SHA`);
+              }
+            }
+            const tag = `v${process.env.RELEASE_VERSION}`;
+            let target;
+            try {
+              const {data} = await github.rest.git.getRef({...context.repo, ref: `tags/${tag}`});
+              target = data.object;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            for (let depth = 0; target?.type === 'tag' && depth < 10; depth++) {
+              const {data} = await github.rest.git.getTag({...context.repo, tag_sha: target.sha});
+              target = data.object;
+            }
+            if (target && (target.type !== 'commit' || target.sha !== sha)) {
+              throw new Error('Release tag points to another commit');
+            }
+            try {
+              await github.rest.repos.getReleaseByTag({...context.repo, tag});
+              throw new Error('GitHub release already exists before PyPI publish');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const response = await fetch('https://pypi.org/pypi/fastauth-py/json');
+            if (!response.ok) throw new Error(`PyPI lookup failed: ${response.status}`);
+            const project = await response.json();
+            const digest = require('node:crypto').createHash('sha256')
+              .update(JSON.stringify(Object.keys(project.releases).sort())).digest('hex');
+            if (digest !== process.env.VERSIONS_DIGEST ||
+                (project.releases[process.env.RELEASE_VERSION] || []).length !== 0) {
+              throw new Error('PyPI changed since the build; rerun to inspect the new state');
+            }
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
 
   release:
-    name: Create GitHub Release
-    needs: [build, publish]
+    name: Create or complete verified GitHub Release
+    needs: [gate, build, publish]
+    if: >-
+      always() && needs.build.result == 'success' &&
+      (needs.publish.result == 'success' ||
+       (needs.publish.result == 'skipped' && needs.build.outputs.action == 'release'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Download exact published distributions
         uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
-
-      - name: Create release and attach distributions
+      - name: Verify PyPI digests, then create tag and release without overwriting
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "$GITHUB_REF_NAME" dist/*
-          --repo "$GITHUB_REPOSITORY"
-          --verify-tag
-          --generate-notes
-          --title "$GITHUB_REF_NAME"
+          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: >-
+          uv run --script .github/scripts/release.py finish
+          --sha "$RELEASE_SHA" --version "$RELEASE_VERSION"
