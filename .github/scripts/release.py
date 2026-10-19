@@ -266,7 +266,8 @@ def inspect(version: str, sha: str) -> ReleaseState:
     local = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in (ROOT / "dist").iterdir()
-        if path.is_file()
+        # uv build creates this metadata file only in the default dist/ directory.
+        if path.is_file() and path.name != ".gitignore"
     }
     expected = {f"fastauth_py-{version}.tar.gz", f"fastauth_py-{version}-py3-none-any.whl"}
     if local.keys() != expected:
