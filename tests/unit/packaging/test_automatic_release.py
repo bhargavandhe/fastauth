@@ -520,3 +520,90 @@ def test_actual_prepublish_script_rechecks_state(scenario: str) -> None:
     assert json.loads(result.stdout)["ok"] is (
         scenario in ("success", "same-tag", "annotated-tag")
     ), result.stdout
+
+
+@pytest.fixture(scope="module")
+def default_build(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Exercise uv's default dist/ behavior, including its generated .gitignore."""
+    import os
+    import shutil
+    import subprocess
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv is required to reproduce the publishing build")
+    project = tmp_path_factory.mktemp("release-default-build")
+    for name in (
+        "pyproject.toml",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md",
+        "API_STABILITY.md",
+        "SECURITY.md",
+    ):
+        shutil.copyfile(ROOT / name, project / name)
+    shutil.copytree(ROOT / "src", project / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    environment = os.environ.copy()
+    environment["SOURCE_DATE_EPOCH"] = "1700000000"
+    subprocess.run([uv, "build"], cwd=project, env=environment, check=True, capture_output=True)
+    assert (project / "dist/.gitignore").read_text() == "*"
+    return project
+
+
+def test_inspect_and_check_accept_actual_default_uv_build(
+    release: Any, default_build: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import hashlib
+    import tomllib
+
+    import fastauth
+
+    version = tomllib.loads((default_build / "pyproject.toml").read_text())["project"]["version"]
+    monkeypatch.setattr(release, "ROOT", default_build)
+
+    def pypi(url: str, model: Any, **kwargs: Any) -> Any:
+        assert url == "https://pypi.org/pypi/fastauth-py/json"
+        return model(releases={})
+
+    def absent(path: str, model: Any, **kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(release, "read_model", pypi)
+    monkeypatch.setattr(release, "github", absent)
+    state = release.inspect(version, SHA)
+    names = {f"fastauth_py-{version}-py3-none-any.whl", f"fastauth_py-{version}.tar.gz"}
+    assert set(state.local) == names
+    for name in names:
+        assert (
+            state.local[name]
+            == hashlib.sha256((default_build / "dist" / name).read_bytes()).hexdigest()
+        )
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_run")
+    release.check(SHA, fastauth.__version__)
+    assert f"version={version}\naction=publish\n" in output.read_text()
+
+
+@pytest.mark.parametrize("unexpected", [".unexpected", "extra.whl", "extra.tar.gz", "notes.txt"])
+def test_inspect_still_rejects_every_other_extra_file(
+    release: Any,
+    default_build: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    unexpected: str,
+) -> None:
+    import shutil
+    import tomllib
+
+    version = tomllib.loads((default_build / "pyproject.toml").read_text())["project"]["version"]
+    shutil.copytree(default_build / "dist", tmp_path / "dist")
+    (tmp_path / "dist" / unexpected).write_text("unexpected content")
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="exactly"):
+        release.inspect(version, SHA)
+
+
+def test_distribution_upload_explicitly_excludes_build_metadata() -> None:
+    workflow = (ROOT / ".github/workflows/publish.yml").read_text()
+    assert "path: |\n            dist/*.whl\n            dist/*.tar.gz\n" in workflow
