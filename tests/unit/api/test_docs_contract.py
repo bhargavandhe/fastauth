@@ -300,11 +300,13 @@ def test_workflows_pin_setup_uv_to_a_full_release_tag(filename: str) -> None:
 def test_publish_workflow_validates_version_and_attaches_exact_artifacts() -> None:
     workflow = read_project_file(".github/workflows/publish.yml")
 
-    assert 'package_version="$(uv version --short)"' in workflow
-    assert 'runtime_version="$(uv run python' in workflow
-    assert 'tag_version="${GITHUB_REF_NAME#v}"' in workflow
-    assert "needs: [build, publish]" in workflow
-    assert 'gh release create "$GITHUB_REF_NAME" dist/*' in workflow
+    assert 'runtime_version="$(uv run --locked python' in workflow
+    assert "release.py check" in workflow
+    assert '--sha "$RELEASE_SHA" --runtime "$runtime_version"' in workflow
+    assert "needs: [gate, build, publish]" in workflow
+    assert "Download exact published distributions" in workflow
+    assert "release.py finish" in workflow
+    assert '--sha "$RELEASE_SHA" --version "$RELEASE_VERSION"' in workflow
 
 
 def test_security_workflow_audits_the_complete_uv_lock() -> None:
