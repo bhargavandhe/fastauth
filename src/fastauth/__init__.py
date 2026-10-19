@@ -105,4 +105,4 @@ __all__ = [
     "openapi",
     "test_utils",
 ]
-__version__ = "0.15.0"
+__version__ = "0.16.0"

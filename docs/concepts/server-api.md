@@ -28,13 +28,30 @@ your own authorization policy.
 Trusted code can read the same safe DTO by exactly one selector:
 
 ```python
-by_id = await auth.api.get_user(by_id=user_id)
-by_email = await auth.api.get_user(by_email="admin@app.com")
-by_username = await auth.api.get_user(by_username="admin")
+by_id = await auth.users.get(by_id=user_id)
+by_email = await auth.users.get(by_email="admin@app.com")
+by_username = await auth.users.get(by_username="admin")
 ```
 
 Each call returns `UserView | None`. Passing zero or multiple selectors raises
-`InvalidRequestError`.
+`InvalidRequestError`. Email lookup uses the same lowercasing and `EmailStr`
+validation as `auth.api.get_user()`, which remains supported.
+
+For an add-member-by-email workflow, authorize the acting user's permission to
+manage the target organization before looking up the prospective member:
+
+```python
+# After your application's organization-membership authorization check:
+member = await auth.users.get(by_email="colleague@example.com")
+if member is not None:
+    member_id = member.id  # Pass to your application's membership service.
+```
+
+Lookup does not add membership, authenticate the caller, or check organization
+permissions. It returns a safe profile DTO, including email and metadata, so
+only expose fields your caller is authorized to see. Keep this operation on the
+server; do not expose an unrestricted public email-lookup endpoint. Handle a
+missing member according to your application's invitation and privacy policy.
 
 ## Authentication actions
 

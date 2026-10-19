@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def test_release_version_and_pydantic_floor() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    assert project["version"] == fastauth.__version__ == "0.15.0"
+    assert project["version"] == fastauth.__version__ == "0.16.0"
     assert "pydantic[email]>=2.11,<3" in project["dependencies"]
     assert "typer>=0.17.5" in project["optional-dependencies"]["cli"]
     assert "joserfc>=1.5" in project["optional-dependencies"]["jwt"]
