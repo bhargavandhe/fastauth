@@ -21,7 +21,7 @@ from fastauth.messaging.email import TemplateRenderer
 
 
 async def main() -> None:
-    assert fastauth.__version__ == importlib.metadata.version("fastauth-py") == "0.15.0"
+    assert fastauth.__version__ == importlib.metadata.version("fastauth-py") == "0.16.0"
     python_requirement = importlib.metadata.metadata("fastauth-py")["Requires-Python"]
     assert {bound.strip() for bound in python_requirement.split(",")} == {">=3.11", "<3.14"}
     location = Path(fastauth.__file__).resolve()

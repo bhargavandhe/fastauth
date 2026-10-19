@@ -15,7 +15,7 @@ clients and the FastAuth-managed Postgres engine, including when startup fails.
 ## Memory: single-process development
 
 ```bash
-pip install 'fastauth-py==0.15.0' 'uvicorn>=0.30' 'httpx>=0.27'
+pip install 'fastauth-py==0.16.0' 'uvicorn>=0.30' 'httpx>=0.27'
 uvicorn examples.deployment.memory:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
@@ -80,7 +80,7 @@ Verify your domain/provider account and test delivery in your own staging system
 ## MongoDB
 
 ```bash
-pip install 'fastauth-py[beanie,cli]==0.15.0' 'httpx>=0.27' 'uvicorn>=0.30'
+pip install 'fastauth-py[beanie,cli]==0.16.0' 'httpx>=0.27' 'uvicorn>=0.30'
 # Existing 0.14 DBs: run the offline Python storage migration linked below first.
 # Use the same database connection and collection names.
 fastauth migrate --mongo-url "mongodb://db.example.com:27017" --database "myapp"
@@ -99,7 +99,7 @@ before choosing cleanup policies. The factory sets `plugin_migration_mode="check
 ## Postgres
 
 ```bash
-pip install 'fastauth-py[postgres,cli]==0.15.0' 'httpx>=0.27' 'uvicorn>=0.30'
+pip install 'fastauth-py[postgres,cli]==0.16.0' 'httpx>=0.27' 'uvicorn>=0.30'
 # Substitute your deployment connection; avoid putting credentials in shell history.
 fastauth migrate --postgres-url "postgresql+asyncpg://user:pass@db.example.com/myapp"
 uvicorn examples.deployment.postgres:create_app --factory --host 0.0.0.0 --port 8000 --workers 4

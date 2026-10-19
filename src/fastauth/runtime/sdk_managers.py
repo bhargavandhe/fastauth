@@ -192,6 +192,24 @@ class UsersManager:
     def __init__(self, auth: FastAuth) -> None:
         self._auth = auth
 
+    async def get(
+        self,
+        *,
+        by_id: UserIdInput | None = None,
+        by_email: EmailStr | str | None = None,
+        by_username: Username | str | None = None,
+    ) -> UserView | None:
+        """Read a safe user view by exactly one selector from trusted server code.
+
+        Returns None when no user matches. Request-derived lookups require the
+        application's own authorization; this method exposes no HTTP endpoint.
+        """
+        return await self._auth.api.get_user(
+            by_id=by_id,
+            by_email=by_email,
+            by_username=by_username,
+        )
+
     async def update(
         self,
         uid: UserIdInput,

@@ -4,6 +4,16 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-19
+
+### Added
+
+- `auth.users.get()` provides a typed, trusted-server lookup by exactly one of
+  user ID, email, or username, returning `UserView | None`. It delegates to the
+  existing `auth.api.get_user()` and preserves validation and email normalization.
+- Documented authorized add-member-by-email lookups without exposing a public
+  email-lookup endpoint.
+
 ## [0.15.0] — 2026-10-02
 
 ### Added
