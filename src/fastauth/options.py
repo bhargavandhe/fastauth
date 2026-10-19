@@ -433,7 +433,7 @@ class MongoDatabaseRuntime:
             plugin_migration_mode
         )
         self.adapter = BeanieAdapter(
-            database,  # type: ignore[arg-type]
+            database,
             collection_prefix=collection_prefix,
             collection_suffix=collection_suffix,
         )
@@ -451,7 +451,7 @@ class MongoDatabaseRuntime:
         plan = build_schema_plan_from_registry(auth_runtime.context.plugins)
         try:
             await init_beanie_documents(
-                self.database,  # type: ignore[arg-type]
+                self.database,
                 collection_prefix=self.collection_prefix,
                 collection_suffix=self.collection_suffix,
             )

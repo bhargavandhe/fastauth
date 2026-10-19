@@ -6,6 +6,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, FastAuthOptions, email_password
 from fastauth.api.commands import BearerCredentialDelivery
+from fastauth.api.responses import AuthenticationResponse
 from fastauth.database import custom
 from fastauth.flows.credentials import SignUpEmailRequest, sign_out, sign_up_email
 from fastauth.flows.refresh import RefreshTokenRequest, refresh_session
@@ -43,6 +44,8 @@ async def test_logout_revokes_database_session_created_by_concurrent_refresh() -
         ip=None,
         user_agent=None,
     )
+    assert isinstance(response, AuthenticationResponse)
+    assert initial is not None
     assert response.credentials is not None and response.credentials.refresh_token is not None
     logout = asyncio.create_task(sign_out(auth.context, initial.token))
     try:

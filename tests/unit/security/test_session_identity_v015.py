@@ -7,6 +7,7 @@ import pytest
 from joserfc import jwk, jwt
 from pydantic import SecretStr
 
+from fastauth.api.responses import AuthenticationResponse
 from fastauth.domain.enums import JwtAlgorithm
 from fastauth.domain.models import User
 from fastauth.security.jwt import JwksRegistry, JwtSessionStrategy, LocalKmsSigner
@@ -128,6 +129,8 @@ async def test_refresh_renews_jwt_identity_and_authentication_age() -> None:
         ip=None,
         user_agent=None,
     )
+    assert isinstance(response, AuthenticationResponse)
+    assert initial is not None
     assert response.credentials is not None and response.credentials.refresh_token is not None
     refreshed, renewed = await refresh_session(
         auth.context,

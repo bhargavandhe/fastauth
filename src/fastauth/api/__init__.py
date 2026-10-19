@@ -33,7 +33,9 @@ from fastauth.api.commands import (
 from fastauth.api.responses import (
     AuthenticationResponse,
     CredentialsView,
+    EmailVerificationRequiredResponse,
     SessionView,
+    SignUpResponse,
     UserView,
 )
 
@@ -47,6 +49,7 @@ __all__ = [
     "CredentialDelivery",
     "CredentialsView",
     "DeleteUserCommand",
+    "EmailVerificationRequiredResponse",
     "GetSessionCommand",
     "ListSessionsCommand",
     "RefreshSessionCommand",
@@ -64,6 +67,7 @@ __all__ = [
     "SignInUsernameCommand",
     "SignOutCommand",
     "SignUpEmailCommand",
+    "SignUpResponse",
     "UpdateUserCommand",
     "UserPrincipal",
     "UserView",

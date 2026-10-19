@@ -34,7 +34,11 @@ from fastauth.api.commands import (
     UserPrincipal,
     VerifyPasswordCommand,
 )
-from fastauth.api.responses import AuthenticationResponse, UserView
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    UserView,
+)
 from fastauth.domain.value_objects import UserMetadata, Username
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.flows.sessions import ListSessionsResponse, RevokeSessionsResponse
@@ -78,7 +82,7 @@ class SignUpManager:
         username: Username | None = None,
         context: RequestContext | None = None,
         delivery: CredentialDelivery | None = None,
-    ) -> AuthenticationResponse:
+    ) -> AuthenticationResponse | EmailVerificationRequiredResponse:
         return await self._auth.api.sign_up.email(
             SignUpEmailCommand(
                 email=email,

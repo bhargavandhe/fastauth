@@ -12,7 +12,7 @@ from argon2 import Type
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from pydantic import Field, SecretStr, TypeAdapter, ValidationError
 
-from fastauth.exceptions import InvalidRequestError
+from fastauth.exceptions import InvalidRequestError, PasswordTooShortError
 from fastauth.options import PasswordOptions
 
 __all__ = ["Argon2idHasher", "BoundedPasswordHasher", "CredentialService", "PasswordHasher"]
@@ -38,6 +38,8 @@ class CredentialService:
 
     def validate_password(self, password: SecretStr) -> str:
         value = password.get_secret_value()
+        if len(value) < self.config.min_length:
+            raise PasswordTooShortError(min_length=self.config.min_length)
         try:
             return self.password_adapter.validate_python(value, strict=True)
         except ValidationError as exc:

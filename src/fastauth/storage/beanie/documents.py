@@ -284,7 +284,7 @@ class AuditLogDoc(Document):
 class RateLimitDoc(Document):
     id: PydanticObjectId | None = Field(default=None, alias="_id")
     key: str
-    count: int  # pyright: ignore[reportIncompatibleMethodOverride]
+    hits: int = Field(alias="count")
     last_request_ms: int
 
     class Settings:
@@ -586,7 +586,8 @@ def to_audit_log(doc: AuditLogDoc) -> AuditLog:
 
 
 def to_rate_limit(doc: RateLimitDoc) -> RateLimit:
-    data = doc.model_dump()
+    data = doc.model_dump(exclude={"hits"})
+    data["count"] = doc.hits
     if doc.id is not None:
         data["id"] = str(doc.id)
     return RateLimit.model_validate(data)

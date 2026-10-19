@@ -7,6 +7,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, audit_logs, email_otp, jwt
 from fastauth.api.commands import BearerCredentialDelivery, RequestContext
+from fastauth.api.responses import AuthenticationResponse
 from fastauth.domain.enums import HookPhase
 from fastauth.domain.events import OtpGenerated
 from fastauth.exceptions import FeatureNotEnabledError, InvalidCredentialsError, TokenInvalidError
@@ -72,6 +73,7 @@ async def test_complete_typed_service_flows(auth_factory: Callable[..., FastAuth
     signed = await auth.otp.sign_in(
         SignInOtpRequest(email=user.email, otp=code, delivery=BearerCredentialDelivery())
     )
+    assert isinstance(signed, AuthenticationResponse)
     assert signed.credentials is not None
     token = SecretStr(signed.credentials.token.root)
     with pytest.raises(TokenInvalidError):
@@ -149,6 +151,7 @@ async def test_audit_admin_and_plugin_namespace_contract(
     signed = await auth.sign_up.email(
         "audit@example.com", SecretStr("Password123!"), delivery=BearerCredentialDelivery()
     )
+    assert isinstance(signed, AuthenticationResponse)
     assert signed.credentials is not None
     with pytest.raises(CsrfError, match="admin access"):
         await auth.audit.list_all(SecretStr(signed.credentials.token.root))

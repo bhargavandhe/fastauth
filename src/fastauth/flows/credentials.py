@@ -17,7 +17,12 @@ from fastauth.api.commands import (
     CookieCredentialDelivery,
     CredentialDelivery,
 )
-from fastauth.api.responses import AuthenticationResponse, authentication_response
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    authentication_response,
+    user_view,
+)
 from fastauth.domain.enums import HookPhase, ProviderId
 from fastauth.domain.events import (
     AccountLockedOut,
@@ -28,7 +33,7 @@ from fastauth.domain.events import (
     UserSignedUp,
 )
 from fastauth.domain.models import User, WireModel
-from fastauth.domain.value_objects import Username, normalize_email
+from fastauth.domain.value_objects import ProfileName, Username, normalize_email
 from fastauth.exceptions import EmailNotVerifiedError, InvalidCredentialsError, InvalidRequestError
 from fastauth.flows.creation import persist_user_account
 from fastauth.plugins.email_password import email_password_options
@@ -143,7 +148,7 @@ class SignUpEmailRequest(WireModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
     password: SecretStr
-    name: str | None = None
+    name: ProfileName = None
     username: Username | None = None
     delivery: CredentialDelivery = Field(default_factory=CookieCredentialDelivery)
 
@@ -185,7 +190,8 @@ async def sign_up_email(
     *,
     ip: str | None,
     user_agent: str | None,
-) -> tuple[SessionResponse, SessionContext]:
+    app_base_url: str | None = None,
+) -> tuple[SessionResponse | EmailVerificationRequiredResponse, SessionContext | None]:
     validate_email_password_delivery(context, request.delivery)
     plugin_options = email_password_options(context)
     if plugin_options is not None and plugin_options.require_username and request.username is None:
@@ -207,7 +213,14 @@ async def sign_up_email(
     )
     await context.hooks.run(HookPhase.AFTER_CREATE, "user", user, actor_user_id=user.id)
 
-    session_context = await context.session_strategy.create(user, ip=ip, user_agent=user_agent)
+    verification_required = (
+        context.config.email_verification.require_verified_for_sign_in and not user.email_verified
+    )
+    session_context = (
+        None
+        if verification_required
+        else await context.session_strategy.create(user, ip=ip, user_agent=user_agent)
+    )
 
     await context.event_bus.publish(
         UserSignedUp(
@@ -217,6 +230,21 @@ async def sign_up_email(
             user_agent=user_agent,
         ),
     )
+    if session_context is None:
+        from fastauth.flows.verification import (
+            SendVerificationEmailRequest,
+            send_verification_email,
+        )
+
+        await send_verification_email(
+            context,
+            SendVerificationEmailRequest(email=user.email),
+            ip=ip,
+            user_agent=user_agent,
+            app_base_url=app_base_url,
+        )
+        return EmailVerificationRequiredResponse(user=user_view(user)), None
+
     await context.event_bus.publish(
         SessionCreated(
             user_id=user.id,

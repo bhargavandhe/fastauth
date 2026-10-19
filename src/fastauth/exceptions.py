@@ -24,6 +24,7 @@ __all__ = [
     "MaintenanceError",
     "NotFoundError",
     "PasswordAlreadySetError",
+    "PasswordTooShortError",
     "PolicyDeniedError",
     "RateLimitError",
     "RefreshSessionConsistencyError",
@@ -73,7 +74,12 @@ class DuplicateError(AdapterError):
     default_code = "DUPLICATE"
 
     def __init__(self, *, resource: str, field: str, code: str | None = None) -> None:
-        super().__init__(code=code, message=f"{resource} with duplicate {field}")
+        message = (
+            "An account with this email already exists."
+            if resource == "user" and field == "email"
+            else f"{resource} with duplicate {field}"
+        )
+        super().__init__(code=code, message=message)
 
 
 class PasswordAlreadySetError(FastAuthError):
@@ -96,6 +102,14 @@ class InvalidRequestError(FastAuthError):
 
     def __init__(self, *, message: str) -> None:
         super().__init__(message=message)
+
+
+class PasswordTooShortError(InvalidRequestError):
+    default_code = "PASSWORD_TOO_SHORT"
+
+    def __init__(self, *, min_length: int) -> None:
+        self.min_length = min_length
+        super().__init__(message=f"Password must be at least {min_length} characters long.")
 
 
 class FeatureNotEnabledError(FastAuthError):
@@ -242,6 +256,7 @@ EXCEPTION_HTTP_STATUS: dict[type[FastAuthError], int] = {
     NotFoundError: HTTPStatus.NOT_FOUND,
     DuplicateError: HTTPStatus.CONFLICT,
     InvalidRequestError: HTTPStatus.BAD_REQUEST,
+    PasswordTooShortError: HTTPStatus.BAD_REQUEST,
     FeatureNotEnabledError: HTTPStatus.NOT_FOUND,
     PasswordAlreadySetError: HTTPStatus.CONFLICT,
     FastAuthDependencyError: HTTPStatus.UNAUTHORIZED,

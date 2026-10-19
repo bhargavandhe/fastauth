@@ -51,6 +51,20 @@ Verification links are built from `FastAuthOptions.app.base_url` and
 `callback_path`. Set `callback_url_override` only when the verification link
 must use a different origin.
 
+When `require_verified_for_sign_in=True`, email/password signup creates the
+user and credential account, sends a verification email automatically, and
+returns `{"user": {...}, "verificationRequired": true}`. It creates no session,
+access token, refresh token, or session cookie. Clients should show a check-your-email
+screen and use the verification flow above; `/auth/send-verification-email` can
+resend the message. The Python `auth.sign_up.email(...)` and
+`auth.api.sign_up.email(...)` methods return an `EmailVerificationRequiredResponse`
+for this outcome. Narrow the result with `isinstance(result,
+EmailVerificationRequiredResponse)` before accessing authenticated-only fields.
+
+With the option disabled, signup continues to return `AuthenticationResponse`
+and issue a session as before. The OpenAPI `SignUpResponse` schema describes
+both outcomes without adding an extra JSON envelope.
+
 ## Custom email transport
 
 Replace the default `ConsoleEmailSender` with your provider's adapter:

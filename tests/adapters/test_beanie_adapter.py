@@ -21,6 +21,7 @@ from fastauth.domain.models import (
     ApiKey,
     AuditLog,
     JwksKey,
+    RateLimit,
     RefreshToken,
     Session,
     User,
@@ -42,6 +43,7 @@ from fastauth.plugins.schema import (
     TableSpec,
 )
 from fastauth.storage.beanie import BeanieAdapter, init_beanie_documents
+from fastauth.storage.beanie.documents import RateLimitDoc
 from fastauth.storage.beanie.plugin_migrations import execute_mongo_plugin_migrations
 from tests.adapters.adapter_contract import FullAdapterContract
 from tests.adapters.session_matrix import SessionMatrixContract
@@ -88,6 +90,43 @@ class TestBeanieAdapter(FullAdapterContract, SessionMatrixContract):
         for name in await beanie_database.list_collection_names():
             await beanie_database[name].delete_many({})
         return BeanieAdapter(beanie_database)
+
+    @pytest.mark.parametrize("legacy_row", [False, True])
+    async def test_rate_limit_counter_alias_preserves_bson_and_beanie_count(
+        self,
+        adapter: BeanieAdapter,
+        beanie_database: AsyncDatabase[Any],
+        legacy_row: bool,
+    ) -> None:
+        collection = beanie_database[RateLimitDoc.Settings.name]
+        bucket = RateLimit(key="ip:path", count=3, last_request_ms=1000)
+        if legacy_row:
+            await collection.insert_one({"key": bucket.key, "count": 3, "last_request_ms": 1000})
+        else:
+            await adapter.upsert_rate_limit(bucket)
+
+        assert await RateLimitDoc.count() == 1
+        document = await RateLimitDoc.find_one({"key": bucket.key})
+        assert document is not None
+        assert document.hits == 3
+        stored = await adapter.get_rate_limit(bucket.key)
+        assert stored is not None
+        assert stored.count == 3
+
+        stored.count = 5
+        await adapter.upsert_rate_limit(stored)
+        assert await adapter.increment_rate_limit(bucket.key, window_ms=1000, now_ms=1100) == (
+            6,
+            1000,
+        )
+        updated = await adapter.get_rate_limit(bucket.key)
+        assert updated is not None
+        assert updated.count == 6
+        raw = await collection.find_one({"key": bucket.key})
+        assert raw is not None
+        assert raw["count"] == 6
+        assert "hits" not in raw
+        assert await RateLimitDoc.count() == 1
 
     async def test_custom_collection_affixes_select_custom_collections(
         self,

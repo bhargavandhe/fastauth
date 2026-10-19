@@ -17,7 +17,7 @@ from fastauth.domain.events import (
     UserUpdated,
 )
 from fastauth.domain.models import Account, EmailMessage, User, Verification, WireModel
-from fastauth.domain.value_objects import UserMetadata, Username
+from fastauth.domain.value_objects import ProfileName, UserMetadata, Username
 from fastauth.exceptions import (
     DuplicateError,
     FeatureNotEnabledError,
@@ -56,7 +56,7 @@ class UpdateUserRequest(WireModel):
     """Authenticated profile update for caller-owned mutable user fields."""
 
     model_config = ConfigDict(extra="forbid")
-    name: str | None = None
+    name: ProfileName = None
     image: str | None = None
     metadata: UserMetadata | None = None
     username: Username | None = None

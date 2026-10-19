@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 from fastapi import Request, Response
 
 from fastauth.api.commands import CookieCredentialDelivery
-from fastauth.api.responses import UserView, user_view
+from fastauth.api.responses import (
+    EmailVerificationRequiredResponse,
+    SignUpResponse,
+    UserView,
+    user_view,
+)
 from fastauth.flows.change_email import (
     ConfirmEmailChangeRequest,
     RequestEmailChangeRequest,
@@ -69,15 +74,20 @@ class EmailPasswordRouteHandlers:
         body: SignUpEmailRequest,
         request: Request,
         response: Response,
-    ) -> SessionResponse:
+    ) -> SessionResponse | EmailVerificationRequiredResponse:
         context = self.plugin.require_context()
         result, session_context = await sign_up_email(
             context,
             body,
             ip=client_ip(request, context),
             user_agent=request.headers.get("user-agent"),
+            app_base_url=(
+                resolve_request_base_url(request, context)
+                if context.config.email_verification.require_verified_for_sign_in
+                else None
+            ),
         )
-        if isinstance(body.delivery, CookieCredentialDelivery):
+        if session_context is not None and isinstance(body.delivery, CookieCredentialDelivery):
             set_session_cookie(
                 response,
                 context,
@@ -341,7 +351,7 @@ class EmailPasswordRouteHandlers:
                 "/sign-up/email",
                 name="sign_up_email",
                 tags=["Auth"],
-                response_model=SessionResponse,
+                response_model=SignUpResponse,
                 handler=self.sign_up_email_handler,
             ),
             EndpointSpec.post(

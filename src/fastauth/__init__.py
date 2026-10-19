@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from fastauth.api.responses import AuthenticationResponse, SessionView, UserView
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    SessionView,
+    SignUpResponse,
+    UserView,
+)
 from fastauth.deprecations import FastAuthDeprecationWarning
 from fastauth.domain.events import AuthEvent
 from fastauth.domain.value_objects import ApiKeyId, RefreshTokenId, SessionId, UserId
@@ -65,6 +71,7 @@ __all__ = [
     "Capability",
     "CapabilityId",
     "CapabilityRegistry",
+    "EmailVerificationRequiredResponse",
     "EventBus",
     "FastAuth",
     "FastAuthDeprecationWarning",
@@ -86,6 +93,7 @@ __all__ = [
     "RefreshTokenId",
     "SessionId",
     "SessionView",
+    "SignUpResponse",
     "UserId",
     "UserView",
     "__version__",

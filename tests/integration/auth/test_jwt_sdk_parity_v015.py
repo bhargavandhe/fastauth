@@ -79,6 +79,7 @@ async def test_jwt_session_operations_preserve_current_refresh_family(
         other = await auth.sign_in.email(
             "jwt-sdk@example.com", SecretStr("Password123!"), delivery=BearerCredentialDelivery()
         )
+    assert isinstance(current, AuthenticationResponse)
     assert current.credentials is not None and current.credentials.refresh_token is not None
     assert other.credentials is not None and other.credentials.refresh_token is not None
     assert current.session.id.root.startswith("jwt:")

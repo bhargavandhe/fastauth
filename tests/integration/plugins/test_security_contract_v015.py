@@ -10,6 +10,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, email_password
 from fastauth.api.commands import BearerCredentialDelivery
+from fastauth.api.responses import AuthenticationResponse
 from fastauth.database import custom
 from fastauth.flows.credentials import EmptyResponse
 from fastauth.options import CookieOptions, CsrfOptions, FastAuthOptions, RateLimitOptions
@@ -65,6 +66,7 @@ async def test_declared_security_is_enforced_on_mounted_routes() -> None:
         anonymous = await client.post("/custom/protected")
         assert anonymous.status_code == 401
         assert (await client.get("/custom/private")).status_code == 404
+        assert isinstance(result, AuthenticationResponse)
         assert result.credentials is not None
         token = result.credentials.token.root
         assert (

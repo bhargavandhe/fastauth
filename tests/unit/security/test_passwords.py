@@ -27,3 +27,26 @@ def test_needs_rehash_when_config_changes() -> None:
     legacy = weak.hash("hello")
     assert strong.needs_rehash(legacy) is True
     assert strong.needs_rehash(strong.hash("hello")) is False
+
+
+def test_short_password_has_typed_error_and_configured_minimum() -> None:
+    import pytest
+    from pydantic import SecretStr
+
+    from fastauth.exceptions import PasswordTooShortError
+    from fastauth.security.passwords import CredentialService
+
+    service = CredentialService(PasswordOptions(min_length=12))
+    with pytest.raises(PasswordTooShortError) as caught:
+        service.validate_password(SecretStr("short"))
+    assert caught.value.min_length == 12
+    assert caught.value.code == "PASSWORD_TOO_SHORT"
+    assert caught.value.message == "Password must be at least 12 characters long."
+
+
+def test_duplicate_email_message_is_human_readable() -> None:
+    from fastauth.exceptions import DuplicateError
+
+    error = DuplicateError(resource="user", field="email")
+    assert error.code == "DUPLICATE"
+    assert error.message == "An account with this email already exists."

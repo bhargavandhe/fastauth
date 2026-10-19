@@ -562,6 +562,26 @@
         "title": "EmailOtpPurpose",
         "type": "string"
       },
+      "EmailVerificationRequiredResponse": {
+        "additionalProperties": false,
+        "description": "An account was created, but email verification must precede authentication.",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserView"
+          },
+          "verificationRequired": {
+            "const": true,
+            "default": true,
+            "title": "Verificationrequired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "EmailVerificationRequiredResponse",
+        "type": "object"
+      },
       "EmptyResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1282,6 +1302,8 @@
           "name": {
             "anyOf": [
               {
+                "maxLength": 100,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1317,6 +1339,18 @@
         ],
         "title": "SignUpEmailRequest",
         "type": "object"
+      },
+      "SignUpResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AuthenticationResponse"
+          },
+          {
+            "$ref": "#/components/schemas/EmailVerificationRequiredResponse"
+          }
+        ],
+        "description": "HTTP schema for signup's authenticated and verification-required outcomes.",
+        "title": "SignUpResponse"
       },
       "TokenResponse": {
         "additionalProperties": false,
@@ -1418,6 +1452,8 @@
           "name": {
             "anyOf": [
               {
+                "maxLength": 100,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -6598,7 +6634,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthenticationResponse"
+                  "$ref": "#/components/schemas/SignUpResponse"
                 }
               }
             },

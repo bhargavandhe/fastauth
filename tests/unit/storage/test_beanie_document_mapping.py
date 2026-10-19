@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -18,6 +20,50 @@ from fastauth.domain.models import (
     Verification,
 )
 from fastauth.storage.beanie import documents
+
+
+def test_beanie_documents_import_without_shadowing_warnings() -> None:
+    result = subprocess.run(
+        [sys.executable, "-W", "error::UserWarning", "-c", "import fastauth.storage.beanie"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_username_unique_index_only_includes_strings() -> None:
+    index = next(
+        index.document
+        for index in documents.UserDoc.Settings.indexes
+        if list(index.document["key"]) == ["username"]
+    )
+
+    assert index["unique"] is True
+    assert index["partialFilterExpression"] == {"username": {"$type": "string"}}
+    assert "sparse" not in index
+
+
+def test_rate_limit_counter_does_not_shadow_beanie_count() -> None:
+    rate_limit = RateLimit(key="ip:path", count=3, last_request_ms=123)
+
+    document = documents.from_rate_limit(rate_limit, include_id=False)
+
+    assert callable(document.count)
+    assert document.hits == 3
+    assert "count" not in documents.RateLimitDoc.model_fields
+
+
+def test_rate_limit_counter_preserves_bson_count_and_domain_round_trip() -> None:
+    rate_limit = RateLimit(id=str(ObjectId()), key="ip:path", count=3, last_request_ms=123)
+
+    document = documents.from_rate_limit(rate_limit)
+    stored = document.model_dump(by_alias=True)
+
+    assert stored["count"] == 3
+    assert "hits" not in stored
+    assert documents.to_rate_limit(document) == rate_limit
 
 
 def test_beanie_documents_do_not_subclass_domain_models() -> None:

@@ -80,6 +80,27 @@ async def test_invalid_password_leaves_no_identity_and_corrected_retry_succeeds(
 
 
 @pytest.mark.parametrize("path", ["server", "signup"])
+async def test_password_hash_failure_leaves_no_identity_before_retry(
+    path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapter = InMemoryAdapter()
+    auth = make_auth(adapter)
+
+    async def fail_hash(password: str) -> str:
+        raise RuntimeError("password hash failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(auth.context.password_executor, "hash", fail_hash)
+        with pytest.raises(RuntimeError, match="password hash failed"):
+            await create(auth, path)
+    assert await adapter.get_user_by_email("create@example.com") is None
+    assert not adapter.accounts
+    assert not adapter.sessions
+    await create(auth, path)
+    assert await adapter.get_user_by_email("create@example.com") is not None
+
+
+@pytest.mark.parametrize("path", ["server", "signup"])
 async def test_account_failure_compensates_identity_before_corrected_retry(path: str) -> None:
     adapter = FailingCreationAdapter()
     adapter.fail_account = True

@@ -8,6 +8,7 @@ from pydantic import SecretStr
 
 from fastauth import FastAuth, email_password
 from fastauth.api.commands import BearerCredentialDelivery, SignInEmailCommand, SignUpEmailCommand
+from fastauth.api.responses import AuthenticationResponse
 from fastauth.database import custom
 from fastauth.exceptions import PolicyDeniedError
 from fastauth.options import FastAuthOptions, PasswordOptions, RateLimitOptions, SessionOptions
@@ -28,14 +29,16 @@ def build_auth(*, verified: bool = False) -> FastAuth:
     )
 
 
-async def sign_up(auth: FastAuth):
-    return await auth.api.sign_up.email(
+async def sign_up(auth: FastAuth) -> AuthenticationResponse:
+    response = await auth.api.sign_up.email(
         SignUpEmailCommand(
             email="policy@example.com",
             password=SecretStr("password123"),
             delivery=BearerCredentialDelivery(include_refresh_token=False),
         )
     )
+    assert isinstance(response, AuthenticationResponse)
+    return response
 
 
 async def test_suspension_blocks_password_and_existing_session_and_is_audited() -> None:
@@ -201,6 +204,7 @@ async def test_logout_restricted_bootstrap_also_revokes_refresh() -> None:
             delivery=BearerCredentialDelivery(),
         )
     )
+    assert isinstance(response, AuthenticationResponse)
     assert response.credentials is not None
     assert response.credentials.refresh_token is not None
     await auth.api.sign_out(SignOutCommand(token=SecretStr(response.credentials.token.root)))

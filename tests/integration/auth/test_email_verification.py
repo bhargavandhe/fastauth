@@ -167,10 +167,7 @@ async def test_require_verified_for_sign_in_blocks_unverified_email(
     assert blocked.status_code == 403
     assert blocked.json()["code"] == "EMAIL_NOT_VERIFIED"
 
-    await require_verified_client.post(
-        "/auth/send-verification-email",
-        json={"email": SIGNUP["email"]},
-    )
+    assert len(email_outbox.outbox) == 1
     parsed = next(
         urlparse(line.strip())
         for line in email_outbox.outbox[0].text.splitlines()

@@ -114,7 +114,7 @@ async def test_sign_up_rejects_short_password(client: httpx.AsyncClient) -> None
         json={"email": "x@example.com", "password": "short"},
     )
     assert response.status_code == 400
-    assert response.json()["code"] == "INVALID_REQUEST"
+    assert response.json()["code"] == "PASSWORD_TOO_SHORT"
 
 
 async def test_sign_in_email_round_trip(
@@ -362,3 +362,17 @@ async def test_global_option_can_require_verified_email_for_sign_in() -> None:
         )
         assert response.status_code == 403
         assert response.json()["code"] == "EMAIL_NOT_VERIFIED"
+
+
+async def test_signup_profile_name_is_normalized_and_bounded(client: httpx.AsyncClient) -> None:
+    rejected = await client.post(
+        "/auth/sign-up/email",
+        json={"email": "name@example.com", "password": "correct-horse-staple", "name": "x" * 20000},
+    )
+    assert rejected.status_code == 422
+    accepted = await client.post(
+        "/auth/sign-up/email",
+        json={"email": "name@example.com", "password": "correct-horse-staple", "name": "  Alice  "},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["user"]["name"] == "Alice"

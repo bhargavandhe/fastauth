@@ -31,7 +31,12 @@ from fastauth.api.commands import (
     UserPrincipal,
     VerifyPasswordCommand,
 )
-from fastauth.api.responses import AuthenticationResponse, UserView, user_view
+from fastauth.api.responses import (
+    AuthenticationResponse,
+    EmailVerificationRequiredResponse,
+    UserView,
+    user_view,
+)
 from fastauth.domain.enums import SessionStrategyKind
 from fastauth.domain.models import User, WireModel
 from fastauth.domain.value_objects import UserId, UserMetadata, Username
@@ -624,7 +629,9 @@ class SignUpApi:
     def __init__(self, api: AuthApi) -> None:
         self._api = api
 
-    async def email(self, command: SignUpEmailCommand) -> AuthenticationResponse:
+    async def email(
+        self, command: SignUpEmailCommand
+    ) -> AuthenticationResponse | EmailVerificationRequiredResponse:
         require_email_password(self._api.context)
         response, _session = await sign_up_email_flow(
             self._api.context,

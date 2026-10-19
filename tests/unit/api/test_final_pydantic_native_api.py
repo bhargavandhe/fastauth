@@ -13,7 +13,7 @@ from fastauth.api.commands import (
     SignInEmailCommand,
     SignUpEmailCommand,
 )
-from fastauth.api.responses import CredentialsView, SessionView, UserView
+from fastauth.api.responses import AuthenticationResponse, CredentialsView, SessionView, UserView
 from fastauth.domain.models import Session, User
 from fastauth.domain.value_objects import (
     ApiKeyId,
@@ -270,6 +270,7 @@ async def test_nested_server_api_executes_email_commands() -> None:
     )
 
     assert sign_up.user.email == "alice@example.com"
+    assert isinstance(sign_up, AuthenticationResponse)
     assert sign_up.credentials is not None
     assert sign_in.user.id == sign_up.user.id
     assert sign_in.credentials is not None

@@ -7,8 +7,9 @@ Only fields intended for HTTP clients are represented here.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, RootModel
 from pydantic.alias_generators import to_camel
 
 from fastauth.domain.models import ApiKey, Session, User
@@ -27,9 +28,11 @@ __all__ = [
     "ApiKeyView",
     "AuthenticationResponse",
     "CredentialsView",
+    "EmailVerificationRequiredResponse",
     "ErrorResponse",
     "ResponseModel",
     "SessionView",
+    "SignUpResponse",
     "UserView",
     "api_key_view",
     "authentication_response",
@@ -88,6 +91,19 @@ class AuthenticationResponse(ResponseModel):
     user: UserView
     session: SessionView
     credentials: CredentialsView | None = None
+
+
+class EmailVerificationRequiredResponse(ResponseModel):
+    """An account was created, but email verification must precede authentication."""
+
+    user: UserView
+    verification_required: Literal[True] = True
+
+
+class SignUpResponse(RootModel[AuthenticationResponse | EmailVerificationRequiredResponse]):
+    """HTTP schema for signup's authenticated and verification-required outcomes."""
+
+    model_config = ConfigDict(frozen=True)
 
 
 class ApiKeyView(ResponseModel):
