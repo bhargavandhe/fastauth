@@ -41,7 +41,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Verify triggering commit and latest CI/Security push runs
         id: gate
         env:
@@ -62,7 +62,7 @@ jobs:
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Use reproducible archive timestamps
         run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
       - name: Build
@@ -108,7 +108,7 @@ jobs:
           path: dist/
       # Recheck after any environment approval wait, without checking out/executing source.
       - name: Recheck main, required runs, and PyPI immediately before publishing
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_SHA: ${{ needs.gate.outputs.sha }}
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
@@ -181,7 +181,7 @@ jobs:
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Download exact published distributions
         uses: actions/download-artifact@v8
         with:
